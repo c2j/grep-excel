@@ -1,11 +1,11 @@
 [package]
-name = "search_excel"
+name = "grep_excel"
 version = "0.1.0"
 edition = "2021"
 description = "TUI tool for searching Excel files with full-text and wildcard search"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/c2j/Search_Excel"
+repository = "https://github.com/c2j/grep-excel"
 keywords = ["excel", "search", "tui", "duckdb"]
 categories = ["command-line-utilities", "text-processing"]
 
@@ -14,12 +14,20 @@ ratatui = "0.30"
 crossterm = "0.28"
 tui-input = "0.11"
 calamine = { version = "0.26", features = ["chrono"] }
+zip = "2"
 duckdb = { version = "1.1", features = ["bundled"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 thiserror = "2"
 unicode-width = "0.2"
 chrono = "0.4"
+csv = "1"
+regex = "1"
+rfd = { version = "0.15", optional = true }
+
+[features]
+default = ["file-dialog"]
+file-dialog = ["dep:rfd"]
 
 [profile.release]
 opt-level = 3

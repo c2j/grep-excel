@@ -20,23 +20,23 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact_name: search_excel-x86_64-pc-windows-msvc
+            artifact_name: grep_excel-x86_64-pc-windows-msvc
             archive: zip
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: search_excel-x86_64-apple-darwin
+            artifact_name: grep_excel-x86_64-apple-darwin
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: search_excel-aarch64-apple-darwin
+            artifact_name: grep_excel-aarch64-apple-darwin
             archive: tar.gz
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            artifact_name: search_excel-x86_64-unknown-linux-gnu
+            artifact_name: grep_excel-x86_64-unknown-linux-gnu
             archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
-            artifact_name: search_excel-aarch64-unknown-linux-gnu
+            artifact_name: grep_excel-aarch64-unknown-linux-gnu
             archive: tar.gz
 
     runs-on: ${{ matrix.os }}
@@ -65,20 +65,20 @@ jobs:
         env:
           DUCKDB_DOWNLOAD_LIB: "1"
           RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C link-arg=rstrtmgr.lib' || '' }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features
 
       - name: Archive (zip)
         if: matrix.archive == 'zip'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ${{ matrix.artifact_name }}.zip search_excel.exe
+          7z a ${{ matrix.artifact_name }}.zip grep_excel.exe
 
       - name: Archive (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
-          chmod +x search_excel
-          tar czf ${{ matrix.artifact_name }}.tar.gz search_excel
+          chmod +x grep_excel
+          tar czf ${{ matrix.artifact_name }}.tar.gz grep_excel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
