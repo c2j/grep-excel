@@ -1,34 +1,51 @@
-mod app;
-mod database;
-mod event;
-mod excel;
-
-use crate::app::App;
-use crate::database::{Database, SearchMode, SearchQuery};
-use crate::event::create_event_channel;
 use anyhow::Result;
 use clap::Parser;
+use grep_excel::app::App;
+use grep_excel::engine::{DefaultEngine, SearchEngine};
+use grep_excel::event::create_event_channel;
+use grep_excel::types::{SearchMode, SearchQuery};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Parser, Debug)]
-#[command(name = "grep_excel")]
-#[command(about = "TUI tool for searching Excel/CSV files with grep-like patterns")]
+#[command(
+    name = "grep_excel",
+    about = "",
+    long_about = ""
+)]
 struct Args {
     #[arg(name = "FILES")]
     files: Vec<PathBuf>,
 
-    #[arg(short, long)]
+    #[arg(short, long, help = "Search query string")]
     query: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, help = "Filter to a specific column name")]
     column: Option<String>,
 
-    #[arg(short = 'm', long, default_value = "fulltext", value_parser = ["fulltext", "exact", "wildcard", "regex"])]
+    #[arg(
+        short = 'm',
+        long,
+        default_value = "fulltext",
+        value_parser = ["fulltext", "exact", "wildcard", "regex"],
+        help = "Search mode: fulltext (substring), exact (precise), wildcard (SQL LIKE), regex"
+    )]
     mode: String,
 }
 
 fn main() -> Result<()> {
+    grep_excel::i18n::init();
+
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{}", grep_excel::i18n::help_full_text());
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("grep_excel {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let args = Args::parse();
 
     if args.query.is_some() {
@@ -39,7 +56,7 @@ fn main() -> Result<()> {
 }
 
 fn run_tui(args: &Args) -> Result<()> {
-    let database = Database::new()?;
+    let database = DefaultEngine::new()?;
     let (event_tx, event_rx) = create_event_channel();
     let mut app = App::new(database, event_tx, event_rx);
 
@@ -53,23 +70,21 @@ fn run_tui(args: &Args) -> Result<()> {
 }
 
 fn run_cli(args: &Args) -> Result<()> {
-    let mut db = Database::new()?;
+    let mut db = DefaultEngine::new()?;
 
     for file in &args.files {
         if !file.exists() {
-            eprintln!("文件不存在: {}", file.display());
+            eprintln!("{}", grep_excel::i18n::cli_file_not_found(&file.display().to_string()));
             continue;
         }
-        match db.import_excel(file, |_, _| {}) {
+        match db.import_excel(file, &|_, _| {}) {
             Ok(info) => {
                 eprintln!(
-                    "已导入: {} ({} 工作表, {} 行)",
-                    info.name,
-                    info.sheets.len(),
-                    info.total_rows
+                    "{}",
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                 )
             }
-            Err(e) => eprintln!("导入失败 {}: {}", file.display(), e),
+            Err(e) => eprintln!("{}", grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())),
         }
     }
 
@@ -88,13 +103,13 @@ fn run_cli(args: &Args) -> Result<()> {
     let (results, stats) = match db.search(&query) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("搜索失败: {}", e);
+            eprintln!("{}", grep_excel::i18n::cli_search_failed(&e.to_string()));
             return Ok(());
         }
     };
 
     if results.is_empty() {
-        println!("未找到匹配项: \"{}\"", query.text);
+        println!("{}", grep_excel::i18n::cli_no_matches(&query.text));
         return Ok(());
     }
 
@@ -121,15 +136,19 @@ fn run_cli(args: &Args) -> Result<()> {
             &result.row,
             &result.matched_columns,
             &widths,
+            query.mode,
+            &query.text,
         );
     }
 
     println!();
     println!(
-        "共 {} 条匹配 (搜索 {} 行, 耗时 {}ms)",
-        stats.total_matches,
-        stats.total_rows_searched,
-        stats.search_duration.as_millis()
+        "{}",
+        grep_excel::i18n::cli_match_summary(
+            stats.total_matches,
+            stats.total_rows_searched,
+            stats.search_duration.as_millis()
+        )
     );
 
     if !stats.matches_per_sheet.is_empty() {
@@ -146,7 +165,7 @@ fn run_cli(args: &Args) -> Result<()> {
 
 fn compute_cli_col_widths(
     col_names: &[String],
-    results: &[crate::database::SearchResult],
+    results: &[grep_excel::types::SearchResult],
 ) -> Vec<usize> {
     let mut widths: Vec<usize> = col_names
         .iter()
@@ -185,22 +204,61 @@ fn print_separator(widths: &[usize]) {
     println!("  {}", parts.join("─┼─"));
 }
 
-fn print_row(col_names: &[String], row: &[String], matched: &[usize], widths: &[usize]) {
+fn print_row(
+    col_names: &[String],
+    row: &[String],
+    matched: &[usize],
+    widths: &[usize],
+    mode: SearchMode,
+    query_text: &str,
+) {
     let parts: Vec<String> = col_names
         .iter()
         .enumerate()
         .map(|(i, _)| {
             let value = row.get(i).cloned().unwrap_or_default();
-            let is_matched = matched.contains(&i);
             let padded = pad_to(&value, widths[i]);
-            if is_matched {
-                format!("\x1b[1;32m{}\x1b[0m", padded)
+            if matched.contains(&i) {
+                let spans = grep_excel::engine::find_match_spans(mode, query_text, &value);
+                if spans.is_empty() {
+                    format!("\x1b[1;32m{}\x1b[0m", padded)
+                } else {
+                    highlight_ansi(&padded, &value, &spans, widths[i])
+                }
             } else {
                 padded
             }
         })
         .collect();
     println!("  {}", parts.join(" │ "));
+}
+
+fn highlight_ansi(
+    padded: &str,
+    original: &str,
+    spans: &[(usize, usize)],
+    _width: usize,
+) -> String {
+    let green = "\x1b[1;32m";
+    let reset = "\x1b[0m";
+    let mut result = String::new();
+    let mut last_end = 0;
+    for &(start, end) in spans {
+        if start > last_end {
+            result.push_str(&original[last_end..start]);
+        }
+        result.push_str(green);
+        result.push_str(&original[start..end.min(original.len())]);
+        result.push_str(reset);
+        last_end = end.max(last_end);
+    }
+    if last_end < original.len() {
+        result.push_str(&original[last_end..]);
+    }
+    if padded.len() > original.len() {
+        result.push_str(&padded[original.len()..]);
+    }
+    result
 }
 
 fn pad_to(s: &str, width: usize) -> String {

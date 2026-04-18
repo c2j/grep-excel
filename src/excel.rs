@@ -122,6 +122,58 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
     Ok(sheets_data)
 }
 
+/// Process Excel sheets one at a time via callback, reducing peak memory.
+/// The callback receives each SheetData and its index. The SheetData is dropped
+/// after the callback returns, before the next sheet is loaded.
+pub fn for_each_sheet<F>(path: &Path, mut handler: F) -> Result<Vec<(String, usize)>>
+where
+    F: FnMut(SheetData, usize) -> Result<()>,
+{
+    let mut workbook = open_workbook_auto(path)?;
+    let sheet_names = workbook.sheet_names().to_vec();
+    let xlsx_widths = parse_xlsx_col_widths(path);
+    let has_xlsx_widths = !xlsx_widths.is_empty();
+
+    let mut sheet_info = Vec::new();
+
+    for (sheet_idx, sheet_name) in sheet_names.iter().enumerate() {
+        let range = match workbook.worksheet_range(sheet_name) {
+            Ok(range) => range,
+            Err(_) => continue,
+        };
+
+        let rows: Vec<Vec<String>> = range
+            .rows()
+            .map(|row| row.iter().map(data_to_string).collect())
+            .collect();
+
+        if rows.len() < 2 {
+            continue;
+        }
+
+        let headers = rows[0].clone();
+        let data_rows: Vec<Vec<String>> = rows[1..].to_vec();
+        let col_widths = if has_xlsx_widths {
+            xlsx_widths.get(sheet_idx).cloned().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let row_count = data_rows.len();
+        let sheet_data = SheetData {
+            name: sheet_name.clone(),
+            headers,
+            rows: data_rows,
+            col_widths,
+        };
+
+        handler(sheet_data, sheet_idx)?;
+        sheet_info.push((sheet_name.clone(), row_count));
+    }
+
+    Ok(sheet_info)
+}
+
 fn parse_xlsx_col_widths(path: &Path) -> Vec<Vec<f64>> {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,

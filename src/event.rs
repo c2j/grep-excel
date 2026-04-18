@@ -1,4 +1,4 @@
-use crate::database::{FileInfo, SearchResult, SearchStats};
+use crate::types::{FileInfo, SearchResult, SearchStats};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use std::sync::mpsc;
