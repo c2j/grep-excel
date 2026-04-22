@@ -32,6 +32,10 @@ struct Args {
     )]
     mode: String,
 
+    #[cfg(feature = "mcp-server")]
+    #[arg(long, help = "Start MCP server mode (stdio)")]
+    mcp: bool,
+
     #[arg(short = 'e', long, help = "Export search results to a CSV file")]
     export: Option<PathBuf>,
 }
@@ -50,6 +54,13 @@ fn main() -> Result<()> {
     }
 
     let args = Args::parse();
+
+    #[cfg(feature = "mcp-server")]
+    if args.mcp {
+        return tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(grep_excel::mcp::run_mcp_server());
+    }
 
     if args.query.is_some() {
         return run_cli(&args);
