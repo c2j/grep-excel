@@ -815,15 +815,16 @@ pub fn help_full_text() -> String {
             format!(
                 "grep_excel {version}\n\n\
                 基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
-                用法: grep_excel [FILES...] [OPTIONS]\n\n\
-                 选项:\n\
-                                   -q, --query <QUERY>      搜索查询字符串\n\
-                                   -c, --column <COLUMN>    筛选指定列名\n\
-                                   -m, --mode <MODE>        搜索模式 [默认: fulltext]\n\
-                                            可选: fulltext, exact, wildcard, regex\n\
-                                   -e, --export <PATH>      将搜索结果导出为 CSV 文件\n\
-                                   -h, --help               显示帮助信息\n\
-                                   -V, --version            显示版本号\n\n\
+                 用法: grep_excel [FILES...] [OPTIONS]\n\n\
+                  选项:\n\
+                                    -q, --query <QUERY>      搜索查询字符串\n\
+                                    -c, --column <COLUMN>    筛选指定列名\n\
+                                    -m, --mode <MODE>        搜索模式 [默认: fulltext]\n\
+                                             可选: fulltext, exact, wildcard, regex\n\
+                                    -e, --export <PATH>      将搜索结果导出为 CSV 文件\n\
+                                         --mcp              启动 MCP Server 模式 (stdio)\n\
+                                    -h, --help               显示帮助信息\n\
+                                    -V, --version            显示版本号\n\n\
                 搜索模式:\n\n\
                 \x1b[1mfulltext\x1b[0m (默认)\n\
                 \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
@@ -855,15 +856,16 @@ pub fn help_full_text() -> String {
             format!(
                 "grep_excel {version}\n\n\
                 TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
-                Usage: grep_excel [FILES...] [OPTIONS]\n\n\
-                 Options:\n\
-                                   -q, --query <QUERY>      Search query string\n\
-                                   -c, --column <COLUMN>    Filter to a specific column name\n\
-                                   -m, --mode <MODE>        Search mode [default: fulltext]\n\
-                                            Choices: fulltext, exact, wildcard, regex\n\
-                                   -e, --export <PATH>      Export search results to a CSV file\n\
-                                   -h, --help               Show help information\n\
-                                   -V, --version            Show version\n\n\
+                 Usage: grep_excel [FILES...] [OPTIONS]\n\n\
+                  Options:\n\
+                                    -q, --query <QUERY>      Search query string\n\
+                                    -c, --column <COLUMN>    Filter to a specific column name\n\
+                                    -m, --mode <MODE>        Search mode [default: fulltext]\n\
+                                             Choices: fulltext, exact, wildcard, regex\n\
+                                    -e, --export <PATH>      Export search results to a CSV file\n\
+                                         --mcp              Start MCP Server mode (stdio)\n\
+                                    -h, --help               Show help information\n\
+                                    -V, --version            Show version\n\n\
                 Search Modes:\n\n\
                 \x1b[1mfulltext\x1b[0m (default)\n\
                 \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\

@@ -39,6 +39,7 @@ engine-sqlite = ["dep:rusqlite"]
 engine-memory = []
 file-dialog = ["dep:rfd"]
 mcp-server = ["dep:rmcp", "dep:tokio", "dep:serde", "dep:serde_json", "dep:schemars"]
+full = ["engine-memory", "file-dialog", "mcp-server"]
 
 [profile.release]
 opt-level = 3
