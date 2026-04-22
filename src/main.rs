@@ -31,6 +31,9 @@ struct Args {
         help = "Search mode: fulltext (substring), exact (precise), wildcard (SQL LIKE), regex"
     )]
     mode: String,
+
+    #[arg(short = 'e', long, help = "Export search results to a CSV file")]
+    export: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -116,7 +119,15 @@ fn run_cli(args: &Args) -> Result<()> {
     let mut last_file = String::new();
     let mut last_sheet = String::new();
 
-    for result in &results {
+    if let Some(ref export_path) = args.export {
+        match grep_excel::engine::export_results_csv(&results, export_path) {
+            Ok(()) => eprintln!("{}", grep_excel::i18n::cli_export_done(&export_path.display().to_string())),
+            Err(e) => eprintln!("{}", grep_excel::i18n::cli_export_failed(&e.to_string())),
+        }
+    }
+
+    if args.export.is_none() {
+        for result in &results {
         if result.file_name != last_file || result.sheet_name != last_sheet {
             if !last_file.is_empty() {
                 println!();
@@ -137,8 +148,9 @@ fn run_cli(args: &Args) -> Result<()> {
             &result.matched_columns,
             &widths,
             query.mode,
-            &query.text,
-        );
+             &query.text,
+         );
+     }
     }
 
     println!();
