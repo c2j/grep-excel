@@ -8,6 +8,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
+struct SheetQueryMeta {
+    table_name: String,
+    col_names: Vec<String>,
+    row_count: usize,
+}
+
 pub struct DuckDbEngine {
     conn: Connection,
 }
@@ -274,6 +280,204 @@ impl SearchEngine for DuckDbEngine {
         self.conn.execute("DELETE FROM files", [])?;
         Ok(())
     }
+
+        fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult> {
+            super::validate_sql(sql)?;
+            let start = std::time::Instant::now();
+
+            let limited_sql = format!("SELECT * FROM ({}) LIMIT {}", sql, limit);
+            let mut stmt = self.conn.prepare(&limited_sql)?;
+            let mut rows = stmt.query([])?;
+            let columns = rows.as_ref().unwrap().column_names();
+            let col_count = columns.len();
+
+            let mut result_rows = Vec::new();
+            while let Some(row) = rows.next()? {
+                let mut values = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
+                }
+                result_rows.push(values);
+            }
+
+            let row_count = result_rows.len();
+            let truncated = row_count >= limit;
+            let duration = start.elapsed();
+
+            Ok(crate::types::SqlResult {
+                columns,
+                rows: result_rows,
+                row_count,
+                truncated,
+                duration,
+            })
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_name, s.row_count, s.col_names
+                 FROM sheets s JOIN files f ON s.file_id = f.file_id
+                 WHERE f.file_name = ?
+                 ORDER BY s.sheet_id"
+            )?;
+
+            let sheet_infos: Vec<SheetMetadataInfo> = stmt.query_map(params![file_name], |row| {
+                let sheet_name: String = row.get(0)?;
+                let row_count: i32 = row.get(1)?;
+                let col_names_str: String = row.get(2)?;
+                let columns: Vec<String> = if col_names_str.is_empty() {
+                    vec![]
+                } else {
+                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                };
+                Ok(SheetMetadataInfo {
+                    sheet_name,
+                    row_count: row_count as usize,
+                    columns,
+                })
+            })?.collect::<Result<Vec<_>, _>>()?;
+
+            if sheet_infos.is_empty() {
+                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+            }
+
+            Ok(FileMetadataInfo {
+                file_name: file_name.to_string(),
+                sheet_count: sheet_infos.len(),
+                sheets: sheet_infos,
+            })
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+
+            let col_list: String = meta.col_names.iter()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let sql = format!(
+                "SELECT {} FROM {} USING SAMPLE {}",
+                col_list,
+                quote_ident(&meta.table_name),
+                sample_size
+            );
+
+            let rows = self.query_rows(&sql, &meta.col_names)?;
+            let total_rows = meta.row_count;
+            let row_count = rows.len();
+
+            Ok(SheetDataResult {
+                file_name: file_name.to_string(),
+                sheet_name: sheet_name.to_string(),
+                columns: meta.col_names,
+                rows,
+                row_count,
+                total_rows,
+                truncated: row_count < total_rows,
+            })
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn get_sheet_data(
+            &self,
+            file_name: &str,
+            sheet_name: &str,
+            start_row: Option<usize>,
+            end_row: Option<usize>,
+            columns: Option<&[String]>,
+        ) -> Result<SheetDataResult> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+
+            let selected_cols: Vec<String> = if let Some(cols) = columns {
+                cols.to_vec()
+            } else {
+                meta.col_names.clone()
+            };
+
+            let col_indices: Vec<usize> = selected_cols.iter()
+                .filter_map(|c| meta.col_names.iter().position(|h| h == c))
+                .collect();
+            let col_names: Vec<String> = col_indices.iter()
+                .map(|&i| meta.col_names[i].clone())
+                .collect();
+
+            let col_list: String = col_names.iter()
+                .map(|c| quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let start = start_row.unwrap_or(0);
+            let limit = end_row.unwrap_or(meta.row_count).saturating_sub(start);
+
+            let sql = format!(
+                "SELECT {} FROM {} LIMIT {} OFFSET {}",
+                col_list,
+                quote_ident(&meta.table_name),
+                limit,
+                start
+            );
+
+            let rows = self.query_rows(&sql, &col_names)?;
+            let total_rows = meta.row_count;
+
+            Ok(SheetDataResult {
+                file_name: file_name.to_string(),
+                sheet_name: sheet_name.to_string(),
+                columns: col_names,
+                rows,
+                row_count: rows.len(),
+                total_rows,
+                truncated: false,
+            })
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
+            use crate::engine::write_xlsx;
+
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
+                 FROM sheets s JOIN files f ON s.file_id = f.file_id
+                 WHERE f.file_name = ?
+                 ORDER BY s.sheet_id"
+            )?;
+
+            let sheet_rows: Vec<(String, String, Vec<String>)> = stmt.query_map(params![file_name], |row| {
+                let sheet_name: String = row.get(0)?;
+                let table_name: String = row.get(1)?;
+                let col_names_str: String = row.get(2)?;
+                let col_names: Vec<String> = if col_names_str.is_empty() {
+                    vec![]
+                } else {
+                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                };
+                Ok((sheet_name, table_name, col_names))
+            })?.collect::<Result<Vec<_>, _>>()?;
+
+            if sheet_rows.is_empty() {
+                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+            }
+
+            let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
+            for (sheet_name, table_name, col_names) in &sheet_rows {
+                let col_list: String = col_names.iter()
+                    .map(|c| quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
+                let rows = self.query_rows(&sql, col_names)?;
+                sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
+            }
+
+            let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data.iter()
+                .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
+                .collect();
+
+            write_xlsx(&refs, output_path)
+        }
 }
 
 impl DuckDbEngine {
@@ -514,6 +718,47 @@ impl DuckDbEngine {
         })
     }
 
+    fn get_sheet_metadata_query(&self, file_name: &str, sheet_name: &str) -> Result<SheetQueryMeta> {
+        let result = self.conn.query_row(
+            "SELECT s.table_name, s.col_names, s.row_count
+             FROM sheets s JOIN files f ON s.file_id = f.file_id
+             WHERE f.file_name = ? AND s.sheet_name = ?",
+            params![file_name, sheet_name],
+            |row| {
+                let table_name: String = row.get(0)?;
+                let col_names_str: String = row.get(1)?;
+                let col_names: Vec<String> = if col_names_str.is_empty() {
+                    vec![]
+                } else {
+                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                };
+                let row_count: i32 = row.get(2)?;
+                Ok((table_name, col_names, row_count as usize))
+            }
+        );
+
+        match result {
+            Ok((table_name, col_names, row_count)) => Ok(SheetQueryMeta { table_name, col_names, row_count }),
+            Err(_) => anyhow::bail!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ),
+        }
+    }
+
+    fn query_rows(&self, sql: &str, col_names: &[String]) -> Result<Vec<Vec<String>>> {
+        let mut stmt = self.conn.prepare(sql)?;
+        let col_count = col_names.len();
+        let rows: Vec<Vec<String>> = stmt.query_map([], |row| {
+            let mut values = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
+            }
+            Ok(values)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     fn build_wide_where_clause(query: &SearchQuery, col_names: &[String]) -> (String, Vec<String>) {
         let mut parts = Vec::new();
         let mut values = Vec::new();
@@ -555,4 +800,5 @@ impl DuckDbEngine {
         };
         (where_sql, values)
     }
+
 }

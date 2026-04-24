@@ -155,4 +155,146 @@ impl SearchEngine for MemEngine {
         self.sheets.clear();
         Ok(())
     }
+
+    fn execute_sql(&self, _sql: &str, _limit: usize) -> Result<crate::types::SqlResult> {
+        anyhow::bail!(
+            "SQL queries are not supported with the memory engine. \
+             Rebuild with --features engine-duckdb or engine-sqlite."
+        );
+    }
+
+    #[cfg(feature = "mcp-server")]
+    fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
+        let sheets: Vec<&MemSheet> = self.sheets.iter()
+            .filter(|s| s.file_name == file_name)
+            .collect();
+
+        if sheets.is_empty() {
+            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+        }
+
+        let sheet_infos: Vec<SheetMetadataInfo> = sheets.iter()
+            .map(|s| SheetMetadataInfo {
+                sheet_name: s.sheet_name.clone(),
+                row_count: s.rows.len(),
+                columns: s.headers.clone(),
+            })
+            .collect();
+
+        Ok(FileMetadataInfo {
+            file_name: file_name.to_string(),
+            sheet_count: sheet_infos.len(),
+            sheets: sheet_infos,
+        })
+    }
+
+    #[cfg(feature = "mcp-server")]
+    fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
+        let sheet = self.sheets.iter()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let total_rows = sheet.rows.len();
+        let sample_size = sample_size.min(total_rows);
+
+        let mut sampled = Vec::new();
+        if sample_size > 0 && total_rows > 0 {
+            if sample_size >= total_rows {
+                sampled = sheet.rows.clone();
+            } else {
+                for i in 0..sample_size {
+                    let idx = i * total_rows / sample_size;
+                    sampled.push(sheet.rows[idx].clone());
+                }
+            }
+        }
+
+        Ok(SheetDataResult {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            columns: sheet.headers.clone(),
+            rows: sampled,
+            row_count: sample_size.min(total_rows),
+            total_rows,
+            truncated: sample_size < total_rows,
+        })
+    }
+
+    #[cfg(feature = "mcp-server")]
+    fn get_sheet_data(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: Option<usize>,
+        end_row: Option<usize>,
+        columns: Option<&[String]>,
+    ) -> Result<SheetDataResult> {
+        let sheet = self.sheets.iter()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let total_rows = sheet.rows.len();
+        let start = start_row.unwrap_or(0).min(total_rows);
+        let end = end_row.unwrap_or(total_rows).min(total_rows);
+
+        let rows_slice = &sheet.rows[start..end];
+
+        let (col_indices, result_columns): (Vec<usize>, Vec<String>) = if let Some(cols) = columns {
+            let indices: Vec<usize> = cols.iter()
+                .filter_map(|c| sheet.headers.iter().position(|h| h == c))
+                .collect();
+            let names: Vec<String> = indices.iter()
+                .map(|&i| sheet.headers[i].clone())
+                .collect();
+            (indices, names)
+        } else {
+            let indices: Vec<usize> = (0..sheet.headers.len()).collect();
+            (indices, sheet.headers.clone())
+        };
+
+        let result_rows: Vec<Vec<String>> = rows_slice.iter()
+            .map(|row| {
+                col_indices.iter()
+                    .map(|&i| row.get(i).cloned().unwrap_or_default())
+                    .collect()
+            })
+            .collect();
+
+        let row_count = result_rows.len();
+
+        Ok(SheetDataResult {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            columns: result_columns,
+            rows: result_rows,
+            row_count,
+            total_rows,
+            truncated: false,
+        })
+    }
+
+    #[cfg(feature = "mcp-server")]
+    fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
+        use crate::engine::write_xlsx;
+
+        let sheets: Vec<&MemSheet> = self.sheets.iter()
+            .filter(|s| s.file_name == file_name)
+            .collect();
+
+        if sheets.is_empty() {
+            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+        }
+
+        let sheet_data: Vec<(&str, &[String], &[Vec<String>])> = sheets.iter()
+            .map(|s| (s.sheet_name.as_str(), &s.headers[..], &s.rows[..]))
+            .collect();
+
+        write_xlsx(&sheet_data, output_path)
+    }
 }
