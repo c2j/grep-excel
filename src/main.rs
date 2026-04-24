@@ -38,6 +38,12 @@ struct Args {
 
     #[arg(short = 'e', long, help = "Export search results to a CSV file")]
     export: Option<PathBuf>,
+
+    #[arg(short = 'x', long, help = "Execute a SQL SELECT query against imported data")]
+    sql: Option<String>,
+
+    #[arg(short = 'g', long, help = "Aggregate column: count distinct values in matched rows")]
+    aggregate: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -60,6 +66,10 @@ fn main() -> Result<()> {
         return tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(grep_excel::mcp::run_mcp_server());
+    }
+
+    if args.sql.is_some() {
+        return run_sql_cli(&args);
     }
 
     if args.query.is_some() {
@@ -133,7 +143,7 @@ fn run_cli(args: &Args) -> Result<()> {
     if let Some(ref export_path) = args.export {
         match grep_excel::engine::export_results_csv(&results, export_path) {
             Ok(()) => eprintln!("{}", grep_excel::i18n::cli_export_done(&export_path.display().to_string())),
-            Err(e) => eprintln!("{}", grep_excel::i18n::cli_export_failed(&e.to_string())),
+            Err(e) => eprintln!("{}", grep_excel::i18n::cli_export_failed()),
         }
     }
 
@@ -182,6 +192,117 @@ fn run_cli(args: &Args) -> Result<()> {
             .collect();
         println!("  [{}]", per_sheet.join(", "));
     }
+
+    if let Some(ref agg_col) = args.aggregate {
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for result in &results {
+            if let Some(col_idx) = result.col_names.iter().position(|c| c == agg_col) {
+                if let Some(value) = result.row.get(col_idx) {
+                    if !value.is_empty() {
+                        *counts.entry(value.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        if !counts.is_empty() {
+            let mut sorted_counts: Vec<_> = counts.iter().collect();
+            sorted_counts.sort_by(|a, b| b.1.cmp(a.1));
+            let agg_parts: Vec<String> = sorted_counts
+                .into_iter()
+                .map(|(k, v)| format!("{} ({})", k, v))
+                .collect();
+            println!(
+                "  {}: {}",
+                grep_excel::i18n::cli_aggregate_label(agg_col),
+                agg_parts.join(", ")
+            );
+        } else {
+            println!(
+                "  {}",
+                grep_excel::i18n::cli_aggregate_no_data(agg_col)
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn run_sql_cli(args: &Args) -> Result<()> {
+    let mut db = DefaultEngine::new()?;
+
+    for file in &args.files {
+        if !file.exists() {
+            eprintln!("{}", grep_excel::i18n::cli_file_not_found(&file.display().to_string()));
+            continue;
+        }
+        match db.import_excel(file, &|_, _| {}) {
+            Ok(info) => {
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                );
+            }
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+            ),
+        }
+    }
+
+    let sql = args.sql.as_ref().unwrap();
+    let result = match db.execute_sql(sql, 10000) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{}", grep_excel::i18n::cli_sql_failed(&e.to_string()));
+            return Ok(());
+        }
+    };
+
+    if result.rows.is_empty() {
+        println!("{}", grep_excel::i18n::cli_sql_no_results());
+        return Ok(());
+    }
+
+    let widths: Vec<usize> = result
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let name_w = UnicodeWidthStr::width(name.as_str());
+            let max_data_w = result
+                .rows
+                .iter()
+                .take(200)
+                .filter_map(|r| r.get(i))
+                .map(|c| UnicodeWidthStr::width(c.as_str()))
+                .max()
+                .unwrap_or(0);
+            name_w.max(max_data_w).min(40)
+        })
+        .collect();
+
+    print_header(&result.columns, &widths);
+    print_separator(&widths);
+
+    for row in &result.rows {
+        let parts: Vec<String> = row
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| pad_to(cell, widths.get(i).copied().unwrap_or(10)))
+            .collect();
+        println!("  {}", parts.join(" │ "));
+    }
+
+    println!();
+    println!(
+        "{}",
+        grep_excel::i18n::cli_match_summary(
+            result.row_count,
+            result.row_count,
+            result.duration.as_millis()
+        )
+    );
 
     Ok(())
 }

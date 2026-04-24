@@ -1,4 +1,4 @@
-use crate::types::{FileInfo, SearchResult, SearchStats};
+use crate::types::{FileInfo, SearchResult, SearchStats, SqlResult};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use std::sync::mpsc;
@@ -8,6 +8,7 @@ pub enum AppEvent {
     Tick,
     FileImported(Result<FileInfo>),
     SearchCompleted(Result<(Vec<SearchResult>, SearchStats)>),
+    SqlCompleted(Result<SqlResult>),
     Progress(usize, usize),
 }
 

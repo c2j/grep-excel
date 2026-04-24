@@ -1,3 +1,4 @@
+use crate::app::theme::theme;
 use crate::types::{FileSample, SearchMode, SearchResult};
 use anyhow::Result;
 use crossterm::{
@@ -189,12 +190,12 @@ pub fn format_sample_preview(sample: &FileSample, max_width: u16) -> Vec<Line<'s
     let mut header_spans = vec![Span::styled(INDENT.to_string(), Style::default())];
     for (i, h) in sample.headers.iter().take(visible).enumerate() {
         if i > 0 {
-            header_spans.push(Span::styled(SEP, Style::default().fg(Color::DarkGray)));
+            header_spans.push(Span::styled(SEP, Style::default().fg(theme().text_dim)));
         }
         header_spans.push(Span::styled(
             pad_to(h, widths[i]),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme().label)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -204,19 +205,19 @@ pub fn format_sample_preview(sample: &FileSample, max_width: u16) -> Vec<Line<'s
     let sep_str = format!("{}{}", INDENT, "─".repeat(sep_len));
     lines.push(Line::from(Span::styled(
         sep_str,
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(theme().text_dim),
     )));
 
     for row in sample.rows.iter().take(MAX_ROWS) {
         let mut row_spans = vec![Span::styled(INDENT.to_string(), Style::default())];
         for i in 0..visible {
             if i > 0 {
-                row_spans.push(Span::styled(SEP, Style::default().fg(Color::DarkGray)));
+                row_spans.push(Span::styled(SEP, Style::default().fg(theme().text_dim)));
             }
             let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
             row_spans.push(Span::styled(
                 pad_to(cell, widths[i]),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(theme().text_dim),
             ));
         }
         lines.push(Line::from(row_spans));
