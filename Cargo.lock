@@ -1566,6 +1566,7 @@ dependencies = [
  "rfd",
  "rmcp",
  "rusqlite",
+ "rust_xlsxwriter",
  "schemars",
  "serde",
  "serde_json",
@@ -3287,6 +3288,15 @@ dependencies = [
  "serde",
  "serde_json",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "rust_xlsxwriter"
+version = "0.82.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61a82de4e7b30fc427909f2c5aafaada88cc7ae8316edabae435f74341f9278"
+dependencies = [
+ "zip 2.4.2",
 ]
 
 [[package]]
