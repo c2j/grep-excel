@@ -713,20 +713,22 @@ pub fn help_full_text() -> String {
         Lang::Zh => {
             let version = env!("CARGO_PKG_VERSION");
             format!(
-                "grep_excel {version}\n\n\
-                基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
-                 用法: grep_excel [FILES...] [OPTIONS]\n\n\
-                  选项:\n\
-                                    -q, --query <QUERY>      搜索查询字符串\n\
-                                    -c, --column <COLUMN>    筛选指定列名\n\
-                                    -m, --mode <MODE>        搜索模式 [默认: fulltext]\n\
-                                             可选: fulltext, exact, wildcard, regex\n\
-                                    -e, --export <PATH>      将搜索结果导出为 CSV 文件\n\
-                                    -x, --sql <QUERY>        执行 SQL SELECT 查询\n\
-                                    -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
-                                         --mcp              启动 MCP Server 模式 (stdio)\n\
-                                    -h, --help               显示帮助信息\n\
-                                    -V, --version            显示版本号\n\n\
+                 "grep_excel {version}\n\n\
+                 基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
+                  用法: grep_excel [FILES...] [OPTIONS]\n\n\
+                   选项:\n\
+                                     -q, --query <QUERY>      搜索查询字符串\n\
+                                     -c, --column <COLUMN>    筛选指定列名\n\
+                                     -s, --sheet <SHEET>      筛选指定 Sheet 名称\n\
+                                     -m, --mode <MODE>        搜索模式 [默认: fulltext]\n\
+                                              可选: fulltext, exact, wildcard, regex\n\
+                                     -v, --invert             反向匹配: 返回未命中的行\n\
+                                     -e, --export <PATH>      将搜索结果导出为 CSV 文件\n\
+                                     -x, --sql <QUERY>        执行 SQL SELECT 查询\n\
+                                     -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
+                                          --mcp              启动 MCP Server 模式 (stdio)\n\
+                                     -h, --help               显示帮助信息\n\
+                                     -V, --version            显示版本号\n\n\
                 搜索模式:\n\n\
                 \x1b[1mfulltext\x1b[0m (默认)\n\
                 \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
@@ -757,20 +759,22 @@ pub fn help_full_text() -> String {
         Lang::En => {
             let version = env!("CARGO_PKG_VERSION");
             format!(
-                "grep_excel {version}\n\n\
-                TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
-                 Usage: grep_excel [FILES...] [OPTIONS]\n\n\
-                  Options:\n\
-                                    -q, --query <QUERY>      Search query string\n\
-                                    -c, --column <COLUMN>    Filter to a specific column name\n\
-                                    -m, --mode <MODE>        Search mode [default: fulltext]\n\
-                                             Choices: fulltext, exact, wildcard, regex\n\
-                                    -e, --export <PATH>      Export search results to a CSV file\n\
-                                    -x, --sql <QUERY>        Execute a SQL SELECT query\n\
-                                    -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
-                                         --mcp              Start MCP Server mode (stdio)\n\
-                                    -h, --help               Show help information\n\
-                                    -V, --version            Show version\n\n\
+                 "grep_excel {version}\n\n\
+                 TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
+                  Usage: grep_excel [FILES...] [OPTIONS]\n\n\
+                   Options:\n\
+                                     -q, --query <QUERY>      Search query string\n\
+                                     -c, --column <COLUMN>    Filter to a specific column name\n\
+                                     -s, --sheet <SHEET>      Filter to a specific sheet name\n\
+                                     -m, --mode <MODE>        Search mode [default: fulltext]\n\
+                                              Choices: fulltext, exact, wildcard, regex\n\
+                                     -v, --invert             Invert match: show non-matching rows\n\
+                                     -e, --export <PATH>      Export search results to a CSV file\n\
+                                     -x, --sql <QUERY>        Execute a SQL SELECT query\n\
+                                     -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
+                                          --mcp              Start MCP Server mode (stdio)\n\
+                                     -h, --help               Show help information\n\
+                                     -V, --version            Show version\n\n\
                 Search Modes:\n\n\
                 \x1b[1mfulltext\x1b[0m (default)\n\
                 \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\
