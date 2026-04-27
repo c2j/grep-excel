@@ -14,6 +14,23 @@ pub trait SearchEngine: Send {
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)>;
     fn list_files(&self) -> Vec<FileInfo>;
     fn clear(&mut self) -> Result<()>;
+    fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult>;
+
+    #[cfg(feature = "mcp-server")]
+    fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo>;
+    #[cfg(feature = "mcp-server")]
+    fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult>;
+    #[cfg(feature = "mcp-server")]
+    fn get_sheet_data(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: Option<usize>,
+        end_row: Option<usize>,
+        columns: Option<&[String]>,
+    ) -> Result<SheetDataResult>;
+    #[cfg(feature = "mcp-server")]
+    fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()>;
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
@@ -149,6 +166,43 @@ pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+/// Validate that SQL is a read-only SELECT statement.
+/// Returns an error for DDL/DML or empty input.
+pub fn validate_sql(sql: &str) -> Result<()> {
+    let trimmed = sql.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("SQL query is empty");
+    }
+    let upper = trimmed.to_uppercase();
+    // Allow WITH ... SELECT (CTE) and plain SELECT
+    if !upper.starts_with("SELECT") && !upper.starts_with("WITH") {
+        anyhow::bail!(
+            "Only SELECT statements are allowed. Your query starts with: {}",
+            trimmed.split_whitespace().next().unwrap_or("")
+        );
+    }
+    // Reject multi-statement attempts (semicolon could chain commands)
+    if sql.contains(';') {
+        anyhow::bail!("Multiple SQL statements are not allowed. Remove semicolons.");
+    }
+    // Reject common DDL/DML keywords (check with leading space or at start)
+    let upper_with_space = format!(" {} ", upper);
+    for forbidden in &[
+        " INSERT ", " UPDATE ", " DELETE ", " DROP ", " CREATE ", " ALTER ",
+        " ATTACH ", " DETACH ", " COPY ", " EXPORT ", " PRAGMA ",
+        " TRUNCATE ", " GRANT ", " REVOKE ", " VACUUM ", " REINDEX ",
+        " CALL ", " LOAD ", " INSTALL ", " ANALYZE ",
+    ] {
+        if upper_with_space.contains(forbidden) {
+            anyhow::bail!(
+                "Forbidden keyword found: {}. Only SELECT queries are allowed.",
+                forbidden.trim()
+            );
+        }
+    }
+    Ok(())
+}
+
 // ── Conditional engine selection ────────────────────────────────────────────
 
 #[cfg(feature = "engine-duckdb")]
@@ -163,10 +217,10 @@ mod memory;
 #[cfg(feature = "engine-duckdb")]
 pub use duckdb::DuckDbEngine as DefaultEngine;
 
-#[cfg(feature = "engine-sqlite")]
+#[cfg(all(feature = "engine-sqlite", not(feature = "engine-duckdb")))]
 pub use sqlite::SqliteEngine as DefaultEngine;
 
-#[cfg(feature = "engine-memory")]
+#[cfg(all(feature = "engine-memory", not(any(feature = "engine-duckdb", feature = "engine-sqlite"))))]
 pub use memory::MemEngine as DefaultEngine;
 
 #[cfg(not(any(
@@ -175,6 +229,44 @@ pub use memory::MemEngine as DefaultEngine;
     feature = "engine-memory"
 )))]
 compile_error!("Enable one engine feature: engine-duckdb, engine-sqlite, or engine-memory");
+
+#[cfg(feature = "mcp-server")]
+pub fn write_xlsx(
+    sheets: &[(&str, &[String], &[Vec<String>])],
+    output_path: &Path,
+) -> Result<()> {
+    use rust_xlsxwriter::Workbook;
+
+    let mut workbook = Workbook::new();
+
+    for (sheet_name, headers, rows) in sheets {
+        let worksheet = workbook.add_worksheet()
+            .set_name(*sheet_name)
+            .map_err(|e| anyhow::anyhow!("Failed to create sheet '{}': {}", sheet_name, e))?;
+
+        for (col_idx, header) in headers.iter().enumerate() {
+            worksheet.write_string(0, col_idx as u16, header)
+                .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
+        }
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            for (col_idx, value) in row.iter().enumerate() {
+                if let Ok(num) = value.parse::<f64>() {
+                    worksheet.write_number((row_idx + 1) as u32, col_idx as u16, num)
+                        .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
+                } else {
+                    worksheet.write_string((row_idx + 1) as u32, col_idx as u16, value)
+                        .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
+                }
+            }
+        }
+    }
+
+    workbook.save(output_path)
+        .map_err(|e| anyhow::anyhow!("Failed to save xlsx: {}", e))?;
+
+    Ok(())
+}
 
 pub fn find_match_spans(mode: SearchMode, query: &str, value: &str) -> Vec<(usize, usize)> {
     if query.is_empty() || value.is_empty() {

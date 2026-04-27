@@ -9,6 +9,8 @@ impl App {
             AppMode::Normal => self.handle_normal_mode(key),
             AppMode::EditingSearch => self.handle_search_edit_mode(key),
             AppMode::EditingColumn => self.handle_column_edit_mode(key),
+            AppMode::EditingAggregate => self.handle_aggregate_edit_mode(key),
+            AppMode::EditingSql => self.handle_sql_edit_mode(key),
             AppMode::SelectFile => self.handle_select_file_mode(key),
             AppMode::Help => self.handle_help_mode(key),
             AppMode::DetailPanel => self.handle_detail_panel_mode(key),
@@ -35,6 +37,9 @@ impl App {
             KeyCode::Char('c') => {
                 self.mode = AppMode::EditingColumn;
             }
+            KeyCode::Char('a') => {
+                self.mode = AppMode::EditingAggregate;
+            }
             KeyCode::Tab => {
                 self.search_mode = match self.search_mode {
                     SearchMode::FullText => SearchMode::ExactMatch,
@@ -48,6 +53,12 @@ impl App {
             KeyCode::Enter => {
                 if self.results.is_empty() || self.loading {
                     self.execute_search();
+                } else if self.is_flat_view_active() {
+                    let results = self.get_flat_current_results();
+                    if !results.is_empty() {
+                        self.mode = AppMode::DetailPanel;
+                        self.detail_scroll = 0;
+                    }
                 } else {
                     let current_results: Vec<&SearchResult> = self.get_current_results();
                     if !current_results.is_empty() {
@@ -81,31 +92,73 @@ impl App {
                 self.select_tab(index);
             }
             KeyCode::Left => {
-                if self.col_offset > 0 {
+                if self.is_flat_view_active() {
+                    if let Some(sheet_name) = self.get_flat_current_sheet_name() {
+                        let offset = self.get_flat_col_offset(&sheet_name);
+                        if offset > 0 {
+                            self.set_flat_col_offset(&sheet_name, offset - 1);
+                        }
+                    }
+                } else if self.col_offset > 0 {
                     self.col_offset -= 1;
                 }
             }
             KeyCode::Right => {
-                let col_count = self.get_current_col_count();
-                if self.col_offset < col_count.saturating_sub(1) {
-                    self.col_offset += 1;
+                if self.is_flat_view_active() {
+                    if let Some(sheet_name) = self.get_flat_current_sheet_name() {
+                        let col_count = self.get_flat_current_col_count();
+                        let offset = self.get_flat_col_offset(&sheet_name);
+                        if offset < col_count.saturating_sub(1) {
+                            self.set_flat_col_offset(&sheet_name, offset + 1);
+                        }
+                    }
+                } else {
+                    let col_count = self.get_current_col_count();
+                    if self.col_offset < col_count.saturating_sub(1) {
+                        self.col_offset += 1;
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.navigate_table(-1);
+                if self.is_flat_view_active() {
+                    self.navigate_flat_view(-1);
+                } else {
+                    self.navigate_table(-1);
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.navigate_table(1);
+                if self.is_flat_view_active() {
+                    self.navigate_flat_view(1);
+                } else {
+                    self.navigate_table(1);
+                }
             }
             KeyCode::Char('g') => {
-                self.table_state.select(Some(0));
-                self.scroll_state = self.scroll_state.position(0);
+                if self.is_flat_view_active() {
+                    self.flat_selected_sheet = 0;
+                    self.flat_row_index = 0;
+                    self.flat_scroll_offset = 0;
+                } else {
+                    self.table_state.select(Some(0));
+                    self.scroll_state = self.scroll_state.position(0);
+                }
             }
             KeyCode::Char('G') => {
-                let results = self.get_current_results();
-                let last = results.len().saturating_sub(1);
-                self.table_state.select(Some(last));
-                self.scroll_state = self.scroll_state.position(last);
+                if self.is_flat_view_active() {
+                    let sheet_names = self.get_sorted_sheet_names();
+                    if let Some(last_sheet) = sheet_names.last() {
+                        self.flat_selected_sheet = sheet_names.len().saturating_sub(1);
+                        if let Some(results) = self.results_by_sheet.get(last_sheet) {
+                            self.flat_row_index = results.len().saturating_sub(1);
+                            self.flat_scroll_offset = self.flat_row_index;
+                        }
+                    }
+                } else {
+                    let results = self.get_current_results();
+                    let last = results.len().saturating_sub(1);
+                    self.table_state.select(Some(last));
+                    self.scroll_state = self.scroll_state.position(last);
+                }
             }
             KeyCode::Char('H') => {
                 if self.col_offset > 0 {
@@ -130,6 +183,15 @@ impl App {
                     self.table_state.select(Some(0));
                     self.detail_scroll = 0;
                     self.result_limit = 5000;
+                    self.sql_result = None;
+                    self.sql_input = tui_input::Input::default();
+                    self.flat_view = false;
+                    self.flat_selected_sheet = 0;
+                    self.flat_row_index = 0;
+                    self.flat_scroll_offset = 0;
+                    self.flat_col_offsets.clear();
+                    self.aggregate_input = tui_input::Input::default();
+                    self.aggregate_stats = None;
                     self.status_message = crate::i18n::status_cleared().to_string();
                 }
             }
@@ -141,6 +203,23 @@ impl App {
             }
             KeyCode::Char('s') => {
                 self.export_results();
+            }
+            KeyCode::Char('v') => {
+                if self.tab_state == 0 && self.results_by_sheet.len() > 1 {
+                    self.flat_view = !self.flat_view;
+                    self.flat_selected_sheet = 0;
+                    self.flat_row_index = 0;
+                    self.flat_scroll_offset = 0;
+                    let view_name = if self.flat_view {
+                        crate::i18n::status_view_flat()
+                    } else {
+                        crate::i18n::status_view_table()
+                    };
+                    self.status_message = crate::i18n::status_mode_changed(view_name);
+                }
+            }
+            KeyCode::Char('S') => {
+                self.mode = AppMode::EditingSql;
             }
             _ => {}
         }
@@ -177,6 +256,44 @@ impl App {
             }
             _ => {
                 self.column_input
+                    .handle_event(&crossterm::event::Event::Key(key));
+            }
+        }
+    }
+
+    fn handle_aggregate_edit_mode(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Enter => {
+                self.refresh_aggregate_stats();
+                self.mode = AppMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.aggregate_input = tui_input::Input::default();
+                self.refresh_aggregate_stats();
+                self.mode = AppMode::Normal;
+            }
+            _ => {
+                self.aggregate_input
+                    .handle_event(&crossterm::event::Event::Key(key));
+            }
+        }
+    }
+
+    fn handle_sql_edit_mode(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Enter => {
+                self.execute_sql_query();
+                self.mode = AppMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.mode = AppMode::Normal;
+            }
+            _ => {
+                self.sql_input
                     .handle_event(&crossterm::event::Event::Key(key));
             }
         }
@@ -244,6 +361,11 @@ impl App {
             self.table_state.select(Some(0));
             self.update_scroll_state();
             self.detail_scroll = 0;
+            if index == 0 {
+                self.flat_selected_sheet = 0;
+                self.flat_row_index = 0;
+                self.flat_scroll_offset = 0;
+            }
         }
     }
 
@@ -293,6 +415,50 @@ impl App {
 
     pub(super) fn get_current_col_count(&self) -> usize {
         let results = self.get_current_results();
+        results
+            .iter()
+            .find(|r| !r.col_names.is_empty())
+            .map(|r| r.col_names.len())
+            .unwrap_or(0)
+    }
+
+    pub(super) fn navigate_flat_view(&mut self, direction: i32) {
+        let sheet_names = self.get_sorted_sheet_names();
+        if sheet_names.is_empty() {
+            return;
+        }
+
+        let current_sheet = &sheet_names[self.flat_selected_sheet];
+        let results = self.results_by_sheet.get(current_sheet).unwrap();
+        let new_row = self.flat_row_index as i32 + direction;
+
+        if new_row < 0 {
+            if self.flat_selected_sheet > 0 {
+                self.flat_selected_sheet -= 1;
+                let prev_sheet = &sheet_names[self.flat_selected_sheet];
+                let prev_results = self.results_by_sheet.get(prev_sheet).unwrap();
+                self.flat_row_index = prev_results.len().saturating_sub(1);
+                self.flat_scroll_offset = self.flat_row_index;
+            }
+        } else if new_row >= results.len() as i32 {
+            if self.flat_selected_sheet < sheet_names.len() - 1 {
+                self.flat_selected_sheet += 1;
+                self.flat_row_index = 0;
+                self.flat_scroll_offset = 0;
+            }
+        } else {
+            self.flat_row_index = new_row as usize;
+            let visible_rows = 10;
+            if self.flat_row_index < self.flat_scroll_offset {
+                self.flat_scroll_offset = self.flat_row_index;
+            } else if self.flat_row_index >= self.flat_scroll_offset + visible_rows {
+                self.flat_scroll_offset = self.flat_row_index.saturating_sub(visible_rows - 1);
+            }
+        }
+    }
+
+    pub(super) fn get_flat_current_col_count(&self) -> usize {
+        let results = self.get_flat_current_results();
         results
             .iter()
             .find(|r| !r.col_names.is_empty())

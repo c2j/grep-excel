@@ -26,6 +26,12 @@ csv = "1"
 regex = "1"
 parking_lot = "0.12"
 rfd = { version = "0.15", optional = true }
+rmcp = { version = "1.5", features = ["server", "transport-io"], optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+schemars = { version = "1", optional = true }
+rust_xlsxwriter = { version = "0.82", optional = true }
 
 [features]
 default = ["engine-memory", "file-dialog"]
@@ -33,6 +39,9 @@ engine-duckdb = ["dep:duckdb"]
 engine-sqlite = ["dep:rusqlite"]
 engine-memory = []
 file-dialog = ["dep:rfd"]
+mcp-server = ["dep:rmcp", "dep:tokio", "dep:serde", "dep:serde_json", "dep:schemars", "dep:rust_xlsxwriter"]
+rust_xlsxwriter = ["dep:rust_xlsxwriter"]
+full = ["engine-memory", "file-dialog", "mcp-server"]
 
 [profile.release]
 opt-level = 3

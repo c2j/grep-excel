@@ -1,5 +1,6 @@
 mod handlers;
 pub mod render;
+mod theme;
 mod ui;
 
 use crate::engine::{
@@ -25,6 +26,8 @@ pub enum AppMode {
     Normal,
     EditingSearch,
     EditingColumn,
+    EditingAggregate,
+    EditingSql,
     SelectFile,
     Help,
     DetailPanel,
@@ -55,6 +58,15 @@ pub struct App {
     pub(crate) detail_scroll: usize,
     pub(crate) visible_col_count: usize,
     pub(crate) result_limit: usize,
+    pub(crate) sql_input: Input,
+    pub(crate) sql_result: Option<crate::types::SqlResult>,
+    pub(crate) flat_view: bool,
+    pub(crate) flat_selected_sheet: usize,
+    pub(crate) flat_row_index: usize,
+    pub(crate) flat_scroll_offset: usize,
+    pub(crate) flat_col_offsets: HashMap<String, usize>,
+    pub(crate) aggregate_input: Input,
+    pub(crate) aggregate_stats: Option<crate::types::AggregateStats>,
 }
 
 impl App {
@@ -93,6 +105,15 @@ impl App {
             detail_scroll: 0,
             visible_col_count: 0,
             result_limit: 5000,
+            sql_input: Input::default(),
+            sql_result: None,
+            flat_view: false,
+            flat_selected_sheet: 0,
+            flat_row_index: 0,
+            flat_scroll_offset: 0,
+            flat_col_offsets: HashMap::new(),
+            aggregate_input: Input::default(),
+            aggregate_stats: None,
         }
     }
 
@@ -127,6 +148,29 @@ impl App {
         });
     }
 
+    pub fn execute_sql_query(&mut self) {
+        if self.sql_input.value().is_empty() {
+            return;
+        }
+
+        self.loading = true;
+        self.status_message = crate::i18n::status_executing_sql().to_string();
+        self.error_message = None;
+
+        let sql = self.sql_input.value().to_string();
+        let limit = self.result_limit;
+        let db = Arc::clone(&self.database);
+        let tx = self.event_tx.clone();
+
+        std::thread::spawn(move || {
+            let result = {
+                let db_guard = db.read();
+                db_guard.0.execute_sql(&sql, limit)
+            };
+            let _ = tx.send(AppEvent::SqlCompleted(result));
+        });
+    }
+
     pub fn execute_search(&mut self) {
         if self.search_input.value().is_empty() {
             return;
@@ -146,6 +190,8 @@ impl App {
             },
             mode: self.search_mode,
             limit: self.result_limit,
+            sheet: None,
+            invert: false,
         };
 
         let db = Arc::clone(&self.database);
@@ -203,6 +249,12 @@ impl App {
                         self.col_offset = 0;
                         self.table_state.select(Some(0));
                         self.update_scroll_state();
+                        self.flat_view = self.results_by_sheet.len() > 1;
+                        self.flat_selected_sheet = 0;
+                        self.flat_row_index = 0;
+                        self.flat_scroll_offset = 0;
+                        self.flat_col_offsets.clear();
+                        self.refresh_aggregate_stats();
 
                         self.status_message = if stats.truncated {
                             crate::i18n::status_matches_truncated(
@@ -226,6 +278,35 @@ impl App {
             }
             AppEvent::Progress(current, total) => {
                 self.status_message = crate::i18n::status_progress(current, total);
+            }
+            AppEvent::SqlCompleted(result) => {
+                self.loading = false;
+                match result {
+                    Ok(sql_result) => {
+                        let count = sql_result.row_count;
+                        let duration = sql_result.duration.as_secs_f64();
+                        let truncated = sql_result.truncated;
+                        self.sql_result = Some(sql_result);
+                        self.error_message = None;
+                        self.results.clear();
+                        self.results_by_sheet.clear();
+                        self.stats = None;
+                        self.tab_state = 0;
+                        self.col_offset = 0;
+                        self.table_state.select(Some(0));
+                        self.update_scroll_state();
+
+                        self.status_message = if truncated {
+                            crate::i18n::status_sql_truncated(count, self.result_limit, duration)
+                        } else {
+                            crate::i18n::status_sql_done(count, duration)
+                        };
+                    }
+                    Err(e) => {
+                        self.error_message = Some(crate::i18n::status_sql_error(&e.to_string()));
+                        self.status_message = crate::i18n::status_sql_failed().to_string();
+                    }
+                }
             }
         }
     }
@@ -272,5 +353,71 @@ impl App {
 
         render::restore_terminal()?;
         Ok(())
+    }
+
+    pub(crate) fn get_sorted_sheet_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.results_by_sheet.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    pub(crate) fn get_flat_current_sheet_name(&self) -> Option<String> {
+        let names = self.get_sorted_sheet_names();
+        names.get(self.flat_selected_sheet).cloned()
+    }
+
+    pub(crate) fn get_flat_current_results(&self) -> Vec<&SearchResult> {
+        if let Some(sheet_name) = self.get_flat_current_sheet_name() {
+            self.results_by_sheet
+                .get(&sheet_name)
+                .map(|v| v.iter().collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub(crate) fn is_flat_view_active(&self) -> bool {
+        self.tab_state == 0 && self.flat_view && self.results_by_sheet.len() > 1
+    }
+
+    pub(crate) fn get_flat_col_offset(&self, sheet_name: &str) -> usize {
+        self.flat_col_offsets.get(sheet_name).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_flat_col_offset(&mut self, sheet_name: &str, offset: usize) {
+        self.flat_col_offsets.insert(sheet_name.to_string(), offset);
+    }
+
+    pub(crate) fn compute_aggregate_stats(&self) -> Option<crate::types::AggregateStats> {
+        let col_name = self.aggregate_input.value();
+        if col_name.is_empty() {
+            return None;
+        }
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+
+        for result in &self.results {
+            if let Some(col_idx) = result.col_names.iter().position(|c| c == col_name) {
+                if let Some(value) = result.row.get(col_idx) {
+                    if !value.is_empty() {
+                        *counts.entry(value.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        if counts.is_empty() {
+            None
+        } else {
+            Some(crate::types::AggregateStats {
+                column: col_name.to_string(),
+                counts,
+            })
+        }
+    }
+
+    pub(crate) fn refresh_aggregate_stats(&mut self) {
+        self.aggregate_stats = self.compute_aggregate_stats();
     }
 }
