@@ -56,7 +56,9 @@ grep_excel [FILES...] [OPTIONS]
 |------|-------|-------------|
 | `--query` | `-q` | Search query string |
 | `--column` | `-c` | Filter to specific column name |
+| `--sheet` | `-s` | Filter to specific sheet name |
 | `--mode` | `-m` | Search mode: `fulltext` (default), `exact`, `wildcard`, or `regex` |
+| `--invert` | `-v` | Invert match: show rows that do NOT match |
 | `--sql` | `-x` | Execute a SQL `SELECT` query against imported data |
 | `--export` | `-e` | Export search results to a CSV file |
 | `--mcp` | — | Start MCP server mode (stdio) |
@@ -81,6 +83,16 @@ grep_excel data.xlsx -q "Jo%" -m wildcard
 Regex multi-keyword search (use `|` for OR):
 ```bash
 grep_excel data.xlsx -q "张三|李四" -m regex
+```
+
+Search a specific sheet only:
+```bash
+grep_excel data.xlsx -q "Engineering" -s Employees
+```
+
+Invert match — find rows that do NOT contain the query:
+```bash
+grep_excel data.xlsx -q "Engineering" -v
 ```
 
 Launch in TUI mode (no CLI arguments):
@@ -164,9 +176,11 @@ Search across all imported files with fulltext/exact/wildcard/regex modes.
 - **Parameters:**
   - `query` (string) — Search query string
   - `column` (string, optional) — Filter to a specific column name
+  - `sheet` (string, optional) — Filter to a specific sheet name
   - `mode` (string, optional) — Search mode: `fulltext` (default), `exact`, `wildcard`, or `regex`
   - `limit` (integer, optional, default: 100) — Maximum results to return
   - `aggregate` (string, optional) — Column name to count distinct values in matched rows
+  - `invert` (boolean, optional, default: false) — Invert match: return rows that do NOT match
 
 #### `execute_sql`
 Execute a SQL `SELECT` query against imported data.

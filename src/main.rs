@@ -23,6 +23,9 @@ struct Args {
     #[arg(short, long, help = "Filter to a specific column name")]
     column: Option<String>,
 
+    #[arg(short, long, help = "Filter to a specific sheet name")]
+    sheet: Option<String>,
+
     #[arg(
         short = 'm',
         long,
@@ -44,6 +47,9 @@ struct Args {
 
     #[arg(short = 'g', long, help = "Aggregate column: count distinct values in matched rows")]
     aggregate: Option<String>,
+
+    #[arg(short = 'v', long, help = "Invert match: show rows that do NOT match the query")]
+    invert: bool,
 }
 
 fn main() -> Result<()> {
@@ -122,6 +128,8 @@ fn run_cli(args: &Args) -> Result<()> {
             _ => SearchMode::FullText,
         },
         limit: usize::MAX,
+        sheet: args.sheet.clone(),
+        invert: args.invert,
     };
 
     let (results, stats) = match db.search(&query) {

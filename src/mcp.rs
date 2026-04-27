@@ -27,12 +27,16 @@ pub struct SearchParams {
     pub query: String,
     #[schemars(description = "Filter to a specific column name")]
     pub column: Option<String>,
+    #[schemars(description = "Filter to a specific sheet name")]
+    pub sheet: Option<String>,
     #[schemars(description = "Search mode: fulltext, exact, wildcard, regex")]
     pub mode: Option<String>,
     #[schemars(description = "Maximum results to return (default: 100)")]
     pub limit: Option<usize>,
     #[schemars(description = "Aggregate column: count distinct values in matched rows")]
     pub aggregate: Option<String>,
+    #[schemars(description = "Invert match: return rows that do NOT match the query")]
+    pub invert: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -313,6 +317,8 @@ impl GrepExcelServer {
             column: params.column,
             mode,
             limit: params.limit.unwrap_or(100),
+            sheet: params.sheet,
+            invert: params.invert.unwrap_or(false),
         };
         let aggregate_col = params.aggregate;
         let db = Arc::clone(&self.db);
