@@ -74,6 +74,12 @@ impl SearchEngine for MemEngine {
             if sheet.headers.is_empty() {
                 continue;
             }
+            // Filter by sheet name if specified
+            if let Some(ref sheet_name) = query.sheet {
+                if sheet.sheet_name != *sheet_name {
+                    continue;
+                }
+            }
 
             total_rows_searched += sheet.rows.len();
             let mut sheet_matches = 0;
@@ -85,7 +91,10 @@ impl SearchEngine for MemEngine {
                 }
 
                 let matched_columns = find_matched_columns(query, row, &sheet.headers);
-                if matched_columns.is_empty() {
+                let is_match = !matched_columns.is_empty();
+
+                // Invert mode: include rows that do NOT match
+                if query.invert == is_match {
                     continue;
                 }
 
@@ -94,7 +103,7 @@ impl SearchEngine for MemEngine {
                     file_name: sheet.file_name.clone(),
                     row: row.clone(),
                     col_names: sheet.headers.clone(),
-                    matched_columns,
+                    matched_columns: if query.invert { vec![] } else { matched_columns },
                     col_widths: sheet.col_widths.clone(),
                 });
                 sheet_matches += 1;

@@ -126,10 +126,15 @@ impl SearchEngine for DuckDbEngine {
             if meta.col_names.is_empty() {
                 continue;
             }
+            if let Some(ref sheet_name) = query.sheet {
+                if meta.sheet_name != *sheet_name {
+                    continue;
+                }
+            }
 
             let (where_sql, search_values) = Self::build_wide_where_clause(query, &meta.col_names);
 
-            if where_sql == "1=0" {
+            if where_sql == "1=0" && !query.invert {
                 continue;
             }
 
@@ -145,11 +150,22 @@ impl SearchEngine for DuckDbEngine {
             } else {
                 String::new()
             };
+            let effective_where = if where_sql == "1=0" {
+                if query.invert {
+                    "1=1".to_string()
+                } else {
+                    "1=0".to_string()
+                }
+            } else if query.invert {
+                format!("NOT ({})", where_sql)
+            } else {
+                where_sql
+            };
             let sql = format!(
                 "SELECT {} FROM {} WHERE {}{}",
                 col_list,
                 quote_ident(&meta.table_name),
-                where_sql,
+                effective_where,
                 limit_clause
             );
 

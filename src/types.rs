@@ -24,6 +24,8 @@ pub struct SearchQuery {
     pub column: Option<String>,
     pub mode: SearchMode,
     pub limit: usize,
+    pub sheet: Option<String>,
+    pub invert: bool,
 }
 
 #[derive(Debug, Clone)]

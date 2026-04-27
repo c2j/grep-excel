@@ -190,6 +190,8 @@ impl App {
             },
             mode: self.search_mode,
             limit: self.result_limit,
+            sheet: None,
+            invert: false,
         };
 
         let db = Arc::clone(&self.database);
