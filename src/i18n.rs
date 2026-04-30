@@ -724,8 +724,10 @@ pub fn help_full_text() -> String {
                                               可选: fulltext, exact, wildcard, regex\n\
                                      -v, --invert             反向匹配: 返回未命中的行\n\
                                      -e, --export <PATH>      将搜索结果导出为 CSV 文件\n\
-                                     -x, --sql <QUERY>        执行 SQL SELECT 查询\n\
-                                     -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
+                                      -x, --sql <QUERY>        执行 SQL SELECT 查询\n\
+                                      -t, --list-tables        列出已导入表及其别名和列名\n\
+                                      -f, --format <FORMAT>    输出格式: markdown (默认) 或 pretty\n\
+                                      -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
                                           --mcp              启动 MCP Server 模式 (stdio)\n\
                                      -h, --help               显示帮助信息\n\
                                      -V, --version            显示版本号\n\n\
@@ -749,11 +751,13 @@ pub fn help_full_text() -> String {
                 支持完整的 Rust 正则语法。\n\
                 \x1b[2m示例: --query \"张三|李四\" --mode regex  → 匹配包含任一关键词的单元格\x1b[0m\n\
                 \x1b[2m示例: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → 匹配日期格式\x1b[0m\n\n\
-                \x1b[1m提示:\x1b[0m\n\
-                • 使用 --column 限定搜索范围到指定列名\n\
-                • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
-                • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
-                • 不带 --query 运行将启动交互式 TUI 模式\n"
+                 \x1b[1m提示:\x1b[0m\n\
+                 • 使用 --column 限定搜索范围到指定列名\n\
+                 • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
+                 • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
+                 • 使用 --list-tables 查看文件到表名的映射关系\n\
+                 • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
+                 • 不带 --query 运行将启动交互式 TUI 模式\n"
             )
         }
         Lang::En => {
@@ -770,8 +774,10 @@ pub fn help_full_text() -> String {
                                               Choices: fulltext, exact, wildcard, regex\n\
                                      -v, --invert             Invert match: show non-matching rows\n\
                                      -e, --export <PATH>      Export search results to a CSV file\n\
-                                     -x, --sql <QUERY>        Execute a SQL SELECT query\n\
-                                     -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
+                                      -x, --sql <QUERY>        Execute a SQL SELECT query\n\
+                                      -t, --list-tables        List imported tables with aliases and columns\n\
+                                      -f, --format <FORMAT>    Output format: markdown (default) or pretty\n\
+                                      -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
                                           --mcp              Start MCP Server mode (stdio)\n\
                                      -h, --help               Show help information\n\
                                      -V, --version            Show version\n\n\
@@ -795,11 +801,13 @@ pub fn help_full_text() -> String {
                 keywords. Supports full Rust regex syntax.\n\
                 \x1b[2mExample: --query \"foo|bar\" --mode regex  → matches cells containing either keyword\x1b[0m\n\
                 \x1b[2mExample: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → matches date patterns\x1b[0m\n\n\
-                \x1b[1mTips:\x1b[0m\n\
-                • Use --column to restrict search to a specific column name\n\
-                • Combine --query and --mode for CLI one-shot search\n\
-                • Use --aggregate <column> to count distinct values in matched rows\n\
-                • Run without --query to launch interactive TUI mode\n"
+                 \x1b[1mTips:\x1b[0m\n\
+                 • Use --column to restrict search to a specific column name\n\
+                 • Combine --query and --mode for CLI one-shot search\n\
+                 • Use --aggregate <column> to count distinct values in matched rows\n\
+                 • Use --list-tables to see file-to-table name mapping\n\
+                 • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
+                 • Run without --query to launch interactive TUI mode\n"
             )
         }
     }
@@ -893,4 +901,65 @@ pub fn filelist_title() -> &'static str {
 
 pub fn export_dialog_title() -> &'static str {
     match current() { Lang::Zh => "导出结果", Lang::En => "Export Results" }
+}
+
+pub fn cli_list_tables_empty() -> &'static str {
+    match current() {
+        Lang::Zh => "未导入任何文件。请指定文件路径。",
+        Lang::En => "No files imported. Please specify file paths.",
+    }
+}
+
+pub fn cli_list_tables_header() -> &'static str {
+    match current() {
+        Lang::Zh => "可用表:",
+        Lang::En => "Available tables:",
+    }
+}
+
+pub fn cli_list_tables_entry(alias: &str, table_name: &str, rows: usize, columns: &str) -> String {
+    match current() {
+        Lang::Zh => format!("{} → {} ({} 行) [{}]", alias, table_name, rows, columns),
+        Lang::En => format!("{} → {} ({} rows) [{}]", alias, table_name, rows, columns),
+    }
+}
+
+pub fn cli_list_tables_footer(count: usize) -> String {
+    match current() {
+        Lang::Zh => format!("共 {} 张表。在 SQL 中使用别名或内部名称进行查询。", count),
+        Lang::En => format!("{} table(s) total. Use alias or internal name in SQL queries.", count),
+    }
+}
+
+pub fn sql_info_title() -> &'static str {
+    match current() {
+        Lang::Zh => " 可用表 (SQL) ",
+        Lang::En => " Available Tables (SQL) ",
+    }
+}
+
+pub fn sql_info_col_alias() -> &'static str {
+    match current() { Lang::Zh => "别名", Lang::En => "Alias" }
+}
+
+pub fn sql_info_col_table() -> &'static str {
+    match current() { Lang::Zh => "内部名", Lang::En => "Table" }
+}
+
+pub fn sql_info_col_columns() -> &'static str {
+    match current() { Lang::Zh => "列", Lang::En => "Columns" }
+}
+
+pub fn sql_info_footer() -> &'static str {
+    match current() {
+        Lang::Zh => " Enter: 输入SQL │ Esc: 取消 │ ↑↓: 滚动 ",
+        Lang::En => " Enter: Type SQL │ Esc: Cancel │ ↑↓: Scroll ",
+    }
+}
+
+pub fn status_no_tables() -> &'static str {
+    match current() {
+        Lang::Zh => "未导入任何文件，请先按 o 导入文件",
+        Lang::En => "No files imported. Press o to import files first",
+    }
 }
