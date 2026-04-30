@@ -15,6 +15,7 @@ pub trait SearchEngine: Send {
     fn list_files(&self) -> Vec<FileInfo>;
     fn clear(&mut self) -> Result<()>;
     fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult>;
+    fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo>;
 
     #[cfg(feature = "mcp-server")]
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo>;
@@ -164,6 +165,19 @@ pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
 
 pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+pub(crate) fn sanitize_schema_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    match sanitized.to_lowercase().as_str() {
+        "main" | "information_schema" | "pg_catalog" | "sys" => {
+            format!("file_{}", sanitized)
+        }
+        _ => sanitized,
+    }
 }
 
 /// Validate that SQL is a read-only SELECT statement.
