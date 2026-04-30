@@ -65,7 +65,7 @@ jobs:
         env:
           DUCKDB_DOWNLOAD_LIB: "1"
           RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C link-arg=rstrtmgr.lib' || '' }}
-        run: cargo build --release --target ${{ matrix.target }} --no-default-features
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features engine-memory
 
       - name: Archive (zip)
         if: matrix.archive == 'zip'
