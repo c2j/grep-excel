@@ -41,6 +41,10 @@ impl App {
         if self.mode == AppMode::SelectFile {
             self.draw_file_list_popup(frame);
         }
+
+        if self.mode == AppMode::SqlTableInfo {
+            self.draw_sql_table_info_popup(frame);
+        }
     }
 
     fn draw_title_bar(&self, frame: &mut Frame, area: Rect) {
@@ -50,6 +54,7 @@ impl App {
             AppMode::EditingColumn => (crate::i18n::appmode_column(), theme().highlight),
             AppMode::EditingAggregate => (crate::i18n::appmode_aggregate(), theme().highlight),
             AppMode::EditingSql => (crate::i18n::appmode_sql(), theme().info),
+            AppMode::SqlTableInfo => (crate::i18n::appmode_sql(), theme().info),
             AppMode::Help => (crate::i18n::appmode_help(), theme().info),
             AppMode::SelectFile => (crate::i18n::appmode_file(), theme().info),
             AppMode::DetailPanel => (crate::i18n::appmode_detail(), theme().info),
@@ -1422,6 +1427,16 @@ impl App {
                 Span::styled("[Esc]", Style::default().fg(theme().label)),
                 Span::raw(crate::i18n::hint_cancel()),
             ],
+            AppMode::SqlTableInfo => vec![
+                Span::styled(" [Enter]", Style::default().fg(theme().label)),
+                Span::raw(crate::i18n::hint_execute()),
+                Span::styled("[Esc]", Style::default().fg(theme().label)),
+                Span::raw(crate::i18n::hint_cancel()),
+                Span::styled("[↑↓]", Style::default().fg(theme().label)),
+                Span::raw(crate::i18n::hint_scroll_up()),
+                Span::raw("/"),
+                Span::raw(crate::i18n::hint_scroll_down()),
+            ],
             AppMode::Help => vec![
                 Span::styled(" [Esc/?/h]", Style::default().fg(theme().label)),
                 Span::raw(crate::i18n::hint_close_help()),
@@ -1615,6 +1630,75 @@ impl App {
 
         frame.render_widget(Clear, area);
         frame.render_stateful_widget(list, area, &mut self.file_list_state);
+    }
+
+    fn draw_sql_table_info_popup(&mut self, frame: &mut Frame) {
+        let area = centered_rect(65, 70, frame.area());
+
+        let alias_style = Style::default()
+            .fg(theme().highlight)
+            .add_modifier(Modifier::BOLD);
+        let dim_style = Style::default().fg(theme().text_dim);
+        let col_style = Style::default().fg(theme().text);
+        let header_style = Style::default()
+            .fg(theme().label)
+            .add_modifier(Modifier::BOLD);
+        let footer_style = Style::default()
+            .fg(theme().text_dim)
+            .add_modifier(Modifier::ITALIC);
+
+        let mut lines: Vec<Line> = vec![Line::from("")];
+
+        lines.push(Line::from(vec![
+            Span::styled(crate::i18n::sql_info_col_alias(), header_style),
+            Span::styled("  │  ", dim_style),
+            Span::styled(crate::i18n::sql_info_col_table(), header_style),
+            Span::styled("  │  ", dim_style),
+            Span::styled(crate::i18n::sql_info_col_columns(), header_style),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "─".repeat(60),
+            dim_style,
+        )));
+
+        let visible_height = area.height as usize;
+        let max_scroll = self.table_aliases.len().saturating_sub(1);
+        let scroll = self.table_info_scroll.min(max_scroll);
+        let max_visible = visible_height.saturating_sub(6);
+        let end = (scroll + max_visible).min(self.table_aliases.len());
+
+        for alias in self.table_aliases.iter().skip(scroll).take(end - scroll) {
+            let cols_display = if alias.columns.len() > 5 {
+                format!("{}, ...", alias.columns[..5].join(", "))
+            } else {
+                alias.columns.join(", ")
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!(" {}", alias.alias), alias_style),
+                Span::styled(" │ ", dim_style),
+                Span::styled(alias.table_name.clone(), dim_style),
+                Span::styled(" │ ", dim_style),
+                Span::styled(cols_display, col_style),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            crate::i18n::sql_info_footer(),
+            footer_style,
+        )));
+
+        let popup = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(crate::i18n::sql_info_title()),
+            )
+            .alignment(Alignment::Left);
+
+        frame.render_widget(Clear, area);
+        frame.render_widget(popup, area);
     }
 
     pub(super) fn export_results(&mut self) {

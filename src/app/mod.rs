@@ -28,6 +28,7 @@ pub enum AppMode {
     EditingColumn,
     EditingAggregate,
     EditingSql,
+    SqlTableInfo,
     SelectFile,
     Help,
     DetailPanel,
@@ -67,6 +68,8 @@ pub struct App {
     pub(crate) flat_col_offsets: HashMap<String, usize>,
     pub(crate) aggregate_input: Input,
     pub(crate) aggregate_stats: Option<crate::types::AggregateStats>,
+    pub(crate) table_aliases: Vec<crate::types::TableAliasInfo>,
+    pub(crate) table_info_scroll: usize,
 }
 
 impl App {
@@ -114,6 +117,8 @@ impl App {
             flat_col_offsets: HashMap::new(),
             aggregate_input: Input::default(),
             aggregate_stats: None,
+            table_aliases: Vec::new(),
+            table_info_scroll: 0,
         }
     }
 
@@ -221,6 +226,10 @@ impl App {
                 match result {
                     Ok(file_info) => {
                         self.file_list.push(file_info.clone());
+                        {
+                            let db_guard = self.database.read();
+                            self.table_aliases = db_guard.0.list_table_aliases();
+                        }
                         self.status_message = crate::i18n::status_imported(&file_info.name);
                         self.error_message = None;
                     }
