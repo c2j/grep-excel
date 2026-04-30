@@ -134,6 +134,21 @@ impl SqliteEngine {
             params![file_id, &sheet_name, &table_name, row_count as i32, &col_names_str, ""],
         )?;
 
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let dotted_alias = format!("{}.{}", file_stem, sheet_name);
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                quote_ident(&dotted_alias),
+                quote_ident(&table_name),
+            ),
+            [],
+        );
+
         Ok(FileInfo {
             name: file_name,
             sheets: vec![(sheet_name.clone(), row_count)],
@@ -238,6 +253,21 @@ impl SqliteEngine {
                 "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
                 params![file_id, &sheet.name, &table_name, row_count, &col_names_str, &col_widths_str],
             )?;
+
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let dotted_alias = format!("{}.{}", file_stem, sheet.name);
+            let _ = self.conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
 
             sheet_info.push((sheet.name, row_count as usize));
         }
@@ -572,6 +602,22 @@ impl SearchEngine for SqliteEngine {
     }
 
     fn clear(&mut self) -> Result<()> {
+        {
+            let mut stmt = self.conn.prepare(
+                "SELECT name FROM sqlite_master WHERE type='view'",
+            )?;
+            let views: Vec<String> = stmt
+                .query_map([], |row| row.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            for view in &views {
+                let _ = self.conn.execute(
+                    &format!("DROP VIEW IF EXISTS {}", quote_ident(view)),
+                    [],
+                );
+            }
+        }
+
         let mut stmt = self.conn.prepare("SELECT table_name FROM sheets")?;
         let table_names: Vec<String> = stmt
             .query_map([], |row| row.get(0))?
@@ -587,6 +633,7 @@ impl SearchEngine for SqliteEngine {
 
         self.conn.execute("DELETE FROM sheets", [])?;
         self.conn.execute("DELETE FROM files", [])?;
+        let _ = self.conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('files', 'sheets')", []);
         Ok(())
     }
 
@@ -621,6 +668,52 @@ impl SearchEngine for SqliteEngine {
             truncated,
             duration,
         })
+    }
+
+    fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo> {
+        let mut stmt = match self.conn.prepare(
+            "SELECT s.table_name, s.sheet_name, s.row_count, s.col_names, f.file_name
+             FROM sheets s JOIN files f ON s.file_id = f.file_id
+             ORDER BY f.file_id, s.sheet_id"
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let rows: Vec<(String, String, i32, String, String)> = match stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i32>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        }) {
+            Ok(mapped) => mapped.filter_map(|r| r.ok()).collect(),
+            Err(_) => return Vec::new(),
+        };
+
+        rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
+            let columns: Vec<String> = if col_names_str.is_empty() {
+                vec![]
+            } else {
+                col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+            };
+            let file_stem = std::path::Path::new(&file_name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let alias = format!("{}.{}", file_stem, sheet_name);
+            crate::types::TableAliasInfo {
+                table_name,
+                alias,
+                file_name,
+                sheet_name,
+                row_count: row_count as usize,
+                columns,
+            }
+        }).collect()
     }
 
     #[cfg(feature = "mcp-server")]

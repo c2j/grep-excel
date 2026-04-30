@@ -277,6 +277,59 @@ impl SearchEngine for DuckDbEngine {
     }
 
     fn clear(&mut self) -> Result<()> {
+        {
+            let schemas: Vec<String> = self
+                .conn
+                .prepare(
+                    "SELECT schema_name FROM information_schema.schemata \
+                     WHERE schema_name NOT IN ('main', 'information_schema', 'pg_catalog')",
+                )
+                .ok()
+                .map(|mut stmt| {
+                    stmt.query_map([], |row: &::duckdb::Row| row.get::<_, String>(0))
+                        .ok()
+                        .map(|mapped| {
+                            mapped
+                                .filter_map(|r: Result<String, ::duckdb::Error>| r.ok())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            for schema in &schemas {
+                let _ = self.conn.execute(
+                    &format!("DROP SCHEMA IF EXISTS {} CASCADE", quote_ident(schema)),
+                    [],
+                );
+            }
+        }
+
+        {
+            let views: Vec<String> = self
+                .conn
+                .prepare(
+                    "SELECT view_name FROM information_schema.views \
+                     WHERE view_schema = 'main'",
+                )
+                .ok()
+                .map(|mut stmt| {
+                    stmt.query_map([], |row: &::duckdb::Row| row.get::<_, String>(0))
+                        .ok()
+                        .map(|mapped| {
+                            mapped
+                                .filter_map(|r: Result<String, ::duckdb::Error>| r.ok())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            for view in &views {
+                let _ = self
+                    .conn
+                    .execute(&format!("DROP VIEW IF EXISTS {}", quote_ident(view)), []);
+            }
+        }
+
         let mut stmt = self.conn.prepare("SELECT table_name FROM sheets")?;
         let table_names: Vec<String> = {
             let mapped = stmt.query_map([], |row: &::duckdb::Row| row.get::<_, String>(0))?;
@@ -294,6 +347,8 @@ impl SearchEngine for DuckDbEngine {
 
         self.conn.execute("DELETE FROM sheets", [])?;
         self.conn.execute("DELETE FROM files", [])?;
+        let _ = self.conn.execute("ALTER SEQUENCE file_id_seq RESTART WITH 1", []);
+        let _ = self.conn.execute("ALTER SEQUENCE sheet_id_seq RESTART WITH 1", []);
         Ok(())
     }
 
@@ -327,6 +382,52 @@ impl SearchEngine for DuckDbEngine {
                 truncated,
                 duration,
             })
+        }
+
+        fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo> {
+            let mut stmt = match self.conn.prepare(
+                "SELECT s.table_name, s.sheet_name, s.row_count, s.col_names, f.file_name
+                 FROM sheets s JOIN files f ON s.file_id = f.file_id
+                 ORDER BY f.file_id, s.sheet_id"
+            ) {
+                Ok(s) => s,
+                Err(_) => return Vec::new(),
+            };
+
+            let rows: Vec<(String, String, i32, String, String)> = match stmt.query_map([], |row: &::duckdb::Row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            }) {
+                Ok(mapped) => mapped.filter_map(|r: Result<_, ::duckdb::Error>| r.ok()).collect(),
+                Err(_) => return Vec::new(),
+            };
+
+            rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
+                let columns: Vec<String> = if col_names_str.is_empty() {
+                    vec![]
+                } else {
+                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                };
+                let file_stem = std::path::Path::new(&file_name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let alias = format!("{}.{}", file_stem, sheet_name);
+                crate::types::TableAliasInfo {
+                    table_name,
+                    alias,
+                    file_name,
+                    sheet_name,
+                    row_count: row_count as usize,
+                    columns,
+                }
+            }).collect()
         }
 
         #[cfg(feature = "mcp-server")]
@@ -562,6 +663,35 @@ impl DuckDbEngine {
             params![file_id, &sheet_name, &table_name, row_count as i32, &col_names_str, ""],
         )?;
 
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let safe_schema = sanitize_schema_name(&file_stem);
+        let _ = self.conn.execute(
+            &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+            [],
+        );
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                quote_ident(&safe_schema),
+                quote_ident(&sheet_name),
+                quote_ident(&table_name),
+            ),
+            [],
+        );
+        let dotted_alias = format!("{}.{}", file_stem, sheet_name);
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                quote_ident(&dotted_alias),
+                quote_ident(&table_name),
+            ),
+            [],
+        );
+
         Ok(FileInfo {
             name: file_name,
             sheets: vec![(sheet_name.clone(), row_count as usize)],
@@ -708,6 +838,35 @@ impl DuckDbEngine {
                     [],
                 );
             }
+
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let safe_schema = sanitize_schema_name(&file_stem);
+            let _ = conn.execute(
+                &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+                [],
+            );
+            let _ = conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                    quote_ident(&safe_schema),
+                    quote_ident(&sheet_data.name),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+            let dotted_alias = format!("{}.{}", file_stem, sheet_data.name);
+            let _ = conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
 
             if sample_capture.is_none() {
                 *sample_capture = Some(FileSample {

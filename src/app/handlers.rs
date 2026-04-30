@@ -11,6 +11,7 @@ impl App {
             AppMode::EditingColumn => self.handle_column_edit_mode(key),
             AppMode::EditingAggregate => self.handle_aggregate_edit_mode(key),
             AppMode::EditingSql => self.handle_sql_edit_mode(key),
+            AppMode::SqlTableInfo => self.handle_sql_table_info_mode(key),
             AppMode::SelectFile => self.handle_select_file_mode(key),
             AppMode::Help => self.handle_help_mode(key),
             AppMode::DetailPanel => self.handle_detail_panel_mode(key),
@@ -219,7 +220,16 @@ impl App {
                 }
             }
             KeyCode::Char('S') => {
-                self.mode = AppMode::EditingSql;
+                if self.table_aliases.is_empty() {
+                    let db_guard = self.database.read();
+                    self.table_aliases = db_guard.0.list_table_aliases();
+                }
+                if self.table_aliases.is_empty() {
+                    self.status_message = crate::i18n::status_no_tables().to_string();
+                } else {
+                    self.table_info_scroll = 0;
+                    self.mode = AppMode::SqlTableInfo;
+                }
             }
             _ => {}
         }
@@ -296,6 +306,26 @@ impl App {
                 self.sql_input
                     .handle_event(&crossterm::event::Event::Key(key));
             }
+        }
+    }
+
+    fn handle_sql_table_info_mode(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Enter => {
+                self.mode = AppMode::EditingSql;
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.mode = AppMode::Normal;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.table_info_scroll = self.table_info_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.table_info_scroll = self.table_info_scroll.saturating_add(1);
+            }
+            _ => {}
         }
     }
 

@@ -50,6 +50,18 @@ struct Args {
 
     #[arg(short = 'v', long, help = "Invert match: show rows that do NOT match the query")]
     invert: bool,
+
+    #[arg(short = 't', long, help = "List imported tables with friendly names and columns")]
+    list_tables: bool,
+
+    #[arg(
+        short = 'f',
+        long,
+        default_value = "markdown",
+        value_parser = ["markdown", "pretty"],
+        help = "Output format: markdown (default) or pretty (unicode table)"
+    )]
+    format: String,
 }
 
 fn main() -> Result<()> {
@@ -72,6 +84,10 @@ fn main() -> Result<()> {
         return tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(grep_excel::mcp::run_mcp_server());
+    }
+
+    if args.list_tables {
+        return run_list_tables_cli(&args);
     }
 
     if args.sql.is_some() {
@@ -156,30 +172,51 @@ fn run_cli(args: &Args) -> Result<()> {
     }
 
     if args.export.is_none() {
-        for result in &results {
-        if result.file_name != last_file || result.sheet_name != last_sheet {
-            if !last_file.is_empty() {
-                println!();
+        if args.format == "pretty" {
+            for result in &results {
+                if result.file_name != last_file || result.sheet_name != last_sheet {
+                    if !last_file.is_empty() {
+                        println!();
+                    }
+                    println!("{} / {}", result.file_name, result.sheet_name);
+                    last_file = result.file_name.clone();
+                    last_sheet = result.sheet_name.clone();
+
+                    let widths = compute_cli_col_widths(&result.col_names, &results);
+                    print_header(&result.col_names, &widths);
+                    print_separator(&widths);
+                }
+
+                let widths = compute_cli_col_widths(&result.col_names, &results);
+                print_row(
+                    &result.col_names,
+                    &result.row,
+                    &result.matched_columns,
+                    &widths,
+                    query.mode,
+                     &query.text,
+                 );
             }
-            println!("{} / {}", result.file_name, result.sheet_name);
-            last_file = result.file_name.clone();
-            last_sheet = result.sheet_name.clone();
+        } else {
+            let mut first = true;
+            for result in &results {
+                if result.file_name != last_file || result.sheet_name != last_sheet {
+                    if !first {
+                        println!();
+                    }
+                    first = false;
+                    println!("**{} / {}**", result.file_name, result.sheet_name);
+                    last_file = result.file_name.clone();
+                    last_sheet = result.sheet_name.clone();
 
-            let widths = compute_cli_col_widths(&result.col_names, &results);
-            print_header(&result.col_names, &widths);
-            print_separator(&widths);
+                    let sep: Vec<String> = result.col_names.iter().map(|_| "---".to_string()).collect();
+                    println!("| {} |", result.col_names.join(" | "));
+                    println!("| {} |", sep.join(" | "));
+                }
+
+                println!("| {} |", result.row.join(" | "));
+            }
         }
-
-        let widths = compute_cli_col_widths(&result.col_names, &results);
-        print_row(
-            &result.col_names,
-            &result.row,
-            &result.matched_columns,
-            &widths,
-            query.mode,
-             &query.text,
-         );
-     }
     }
 
     println!();
@@ -258,6 +295,15 @@ fn run_sql_cli(args: &Args) -> Result<()> {
         }
     }
 
+    let aliases = db.list_table_aliases();
+    if !aliases.is_empty() {
+        eprintln!();
+        for alias in &aliases {
+            eprintln!("  {}", alias.table_name);
+        }
+        eprintln!();
+    }
+
     let sql = args.sql.as_ref().unwrap();
     let result = match db.execute_sql(sql, 10000) {
         Ok(r) => r,
@@ -290,16 +336,36 @@ fn run_sql_cli(args: &Args) -> Result<()> {
         })
         .collect();
 
-    print_header(&result.columns, &widths);
-    print_separator(&widths);
+    if let Some(ref export_path) = args.export {
+        let mut wtr = csv::Writer::from_path(export_path)?;
+        wtr.write_record(&result.columns)?;
+        for row in &result.rows {
+            wtr.write_record(row)?;
+        }
+        wtr.flush()?;
+        eprintln!(
+            "{}",
+            grep_excel::i18n::cli_export_done(&export_path.display().to_string())
+        );
+    } else if args.format == "pretty" {
+        print_header(&result.columns, &widths);
+        print_separator(&widths);
 
-    for row in &result.rows {
-        let parts: Vec<String> = row
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| pad_to(cell, widths.get(i).copied().unwrap_or(10)))
-            .collect();
-        println!("  {}", parts.join(" │ "));
+        for row in &result.rows {
+            let parts: Vec<String> = row
+                .iter()
+                .enumerate()
+                .map(|(i, cell)| pad_to(cell, widths.get(i).copied().unwrap_or(10)))
+                .collect();
+            println!("  {}", parts.join(" │ "));
+        }
+    } else {
+        let sep: Vec<String> = result.columns.iter().map(|_| "---".to_string()).collect();
+        println!("| {} |", result.columns.join(" | "));
+        println!("| {} |", sep.join(" | "));
+        for row in &result.rows {
+            println!("| {} |", row.join(" | "));
+        }
     }
 
     println!();
@@ -310,6 +376,67 @@ fn run_sql_cli(args: &Args) -> Result<()> {
             result.row_count,
             result.duration.as_millis()
         )
+    );
+
+    Ok(())
+}
+
+fn run_list_tables_cli(args: &Args) -> Result<()> {
+    let mut db = DefaultEngine::new()?;
+
+    for file in &args.files {
+        if !file.exists() {
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
+            continue;
+        }
+        match db.import_excel(file, &|_, _| {}) {
+            Ok(info) => {
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_imported(
+                        &info.name,
+                        info.sheets.len(),
+                        info.total_rows
+                    )
+                );
+            }
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(
+                    &file.display().to_string(),
+                    &e.to_string()
+                )
+            ),
+        }
+    }
+
+    let aliases = db.list_table_aliases();
+    if aliases.is_empty() {
+        println!("{}", grep_excel::i18n::cli_list_tables_empty());
+        return Ok(());
+    }
+
+    println!("{}", grep_excel::i18n::cli_list_tables_header());
+    for alias in &aliases {
+        let cols_str = alias.columns.join(", ");
+        println!(
+            "  {}",
+            grep_excel::i18n::cli_list_tables_entry(
+                &alias.alias,
+                &alias.table_name,
+                alias.row_count,
+                &cols_str,
+            )
+        );
+    }
+
+    println!();
+    println!(
+        "{}",
+        grep_excel::i18n::cli_list_tables_footer(aliases.len())
     );
 
     Ok(())

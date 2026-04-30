@@ -172,6 +172,29 @@ impl SearchEngine for MemEngine {
         );
     }
 
+    fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo> {
+        self.sheets
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| {
+                let file_stem = std::path::Path::new(&s.file_name)
+                    .file_stem()
+                    .and_then(|st| st.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let alias = format!("{}.{}", file_stem, s.sheet_name);
+                crate::types::TableAliasInfo {
+                    table_name: format!("sheet_mem_{}", idx),
+                    alias,
+                    file_name: s.file_name.clone(),
+                    sheet_name: s.sheet_name.clone(),
+                    row_count: s.rows.len(),
+                    columns: s.headers.clone(),
+                }
+            })
+            .collect()
+    }
+
     #[cfg(feature = "mcp-server")]
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
         let sheets: Vec<&MemSheet> = self.sheets.iter()

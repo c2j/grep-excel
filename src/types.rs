@@ -92,3 +92,13 @@ pub struct SheetDataResult {
     pub total_rows: usize,
     pub truncated: bool,
 }
+
+#[derive(Debug, Clone)]
+pub struct TableAliasInfo {
+    pub table_name: String,
+    pub alias: String,
+    pub file_name: String,
+    pub sheet_name: String,
+    pub row_count: usize,
+    pub columns: Vec<String>,
+}
