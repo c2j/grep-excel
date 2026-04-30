@@ -96,7 +96,7 @@ jobs:
       - name: Build
         env:
           DUCKDB_DOWNLOAD_LIB: "1"
-          RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C link-arg=rstrtmgr.lib' || '' }}
+          RUSTFLAGS: ${{ startsWith(matrix.target, 'x86_64-pc-windows') && '-C link-arg=rstrtmgr.lib --cfg getrandom_backend="windows_legacy"' || '' }}
         run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
       - name: Archive (zip)
