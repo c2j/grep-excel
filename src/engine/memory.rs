@@ -195,7 +195,6 @@ impl SearchEngine for MemEngine {
             .collect()
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
         let sheets: Vec<&MemSheet> = self.sheets.iter()
             .filter(|s| s.file_name == file_name)
@@ -220,7 +219,6 @@ impl SearchEngine for MemEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
         let sheet = self.sheets.iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
@@ -255,7 +253,6 @@ impl SearchEngine for MemEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_data(
         &self,
         file_name: &str,
@@ -311,22 +308,157 @@ impl SearchEngine for MemEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
-    fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
-        use crate::engine::write_xlsx;
+    fn save_as(&self, _file_name: &str, _output_path: &Path) -> Result<()> {
+        #[cfg(feature = "mcp-server")]
+        {
+            use crate::engine::write_xlsx;
 
-        let sheets: Vec<&MemSheet> = self.sheets.iter()
-            .filter(|s| s.file_name == file_name)
-            .collect();
+            let sheets: Vec<&MemSheet> = self.sheets.iter()
+                .filter(|s| s.file_name == _file_name)
+                .collect();
 
-        if sheets.is_empty() {
-            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+            if sheets.is_empty() {
+                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", _file_name);
+            }
+
+            let sheet_data: Vec<(&str, &[String], &[Vec<String>])> = sheets.iter()
+                .map(|s| (s.sheet_name.as_str(), &s.headers[..], &s.rows[..]))
+                .collect();
+
+            return write_xlsx(&sheet_data, _output_path);
+        }
+        #[cfg(not(feature = "mcp-server"))]
+        anyhow::bail!("save_as requires the mcp-server feature")
+    }
+
+    fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let col_idx = sheet.headers.iter()
+            .position(|h| h == column)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Column '{}' not found in sheet '{}'.", column, sheet_name
+            ))?;
+
+        if row >= sheet.rows.len() {
+            anyhow::bail!("Row index {} is out of bounds (total rows: {}).", row, sheet.rows.len());
         }
 
-        let sheet_data: Vec<(&str, &[String], &[Vec<String>])> = sheets.iter()
-            .map(|s| (s.sheet_name.as_str(), &s.headers[..], &s.rows[..]))
+        sheet.rows[row][col_idx] = value.to_string();
+        Ok(())
+    }
+
+    fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let mut count = 0;
+        for (row, column, value) in updates {
+            if let Some(col_idx) = sheet.headers.iter().position(|h| h == column) {
+                if *row < sheet.rows.len() {
+                    sheet.rows[*row][col_idx] = value.clone();
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let col_count = sheet.headers.len();
+        let mut padded_rows: Vec<Vec<String>> = rows.into_iter()
+            .map(|mut row| {
+                if row.len() < col_count {
+                    row.resize(col_count, String::new());
+                } else if row.len() > col_count {
+                    row.truncate(col_count);
+                }
+                row
+            })
             .collect();
 
-        write_xlsx(&sheet_data, output_path)
+        let insert_pos = start_row.min(sheet.rows.len());
+        if insert_pos == sheet.rows.len() {
+            sheet.rows.append(&mut padded_rows);
+        } else {
+            sheet.rows.splice(insert_pos..insert_pos, padded_rows);
+        }
+        Ok(())
+    }
+
+    fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        if start_row >= sheet.rows.len() {
+            return Ok(0);
+        }
+
+        let end = (start_row + count).min(sheet.rows.len());
+        let deleted = end - start_row;
+        sheet.rows.drain(start_row..end);
+        Ok(deleted)
+    }
+
+    fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        if sheet.headers.iter().any(|h| h == column_name) {
+            anyhow::bail!("Column '{}' already exists in sheet '{}'.", column_name, sheet_name);
+        }
+
+        sheet.headers.push(column_name.to_string());
+        sheet.col_widths.push(10.0);
+        for row in &mut sheet.rows {
+            row.push(default_value.to_string());
+        }
+        Ok(())
+    }
+
+    fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+        let sheet = self.sheets.iter_mut()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let col_idx = sheet.headers.iter()
+            .position(|h| h == old_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Column '{}' not found in sheet '{}'.", old_name, sheet_name
+            ))?;
+
+        if old_name != new_name && sheet.headers.iter().any(|h| h == new_name) {
+            anyhow::bail!("Column '{}' already exists in sheet '{}'.", new_name, sheet_name);
+        }
+
+        sheet.headers[col_idx] = new_name.to_string();
+        Ok(())
     }
 }

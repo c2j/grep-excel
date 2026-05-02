@@ -728,7 +728,8 @@ pub fn help_full_text() -> String {
                                       -t, --list-tables        列出已导入表及其别名和列名\n\
                                       -f, --format <FORMAT>    输出格式: markdown (默认) 或 pretty\n\
                                       -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
-                                          --mcp              启动 MCP Server 模式 (stdio)\n\
+                                          -E, --exec <JSON>        执行 MCP 工具命令 (JSON 格式)\n\
+                                           --mcp              启动 MCP Server 模式 (stdio)\n\
                                      -h, --help               显示帮助信息\n\
                                      -V, --version            显示版本号\n\n\
                 搜索模式:\n\n\
@@ -757,7 +758,8 @@ pub fn help_full_text() -> String {
                  • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
                  • 使用 --list-tables 查看文件到表名的映射关系\n\
                  • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
-                 • 不带 --query 运行将启动交互式 TUI 模式\n"
+                  • 不带 --query 运行将启动交互式 TUI 模式\n\
+                  • 使用 --exec 执行 MCP 工具命令: 单条 '{{\"tool\":\"search\",\"params\":{{\"query\":\"关键词\"}}}}' 或数组 '[{{...}},{{...}}]'\n"
             )
         }
         Lang::En => {
@@ -778,6 +780,7 @@ pub fn help_full_text() -> String {
                                       -t, --list-tables        List imported tables with aliases and columns\n\
                                       -f, --format <FORMAT>    Output format: markdown (default) or pretty\n\
                                       -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
+                                      -E, --exec <JSON>        Execute MCP tool command(s) as JSON\n\
                                           --mcp              Start MCP Server mode (stdio)\n\
                                      -h, --help               Show help information\n\
                                      -V, --version            Show version\n\n\
@@ -807,7 +810,8 @@ pub fn help_full_text() -> String {
                  • Use --aggregate <column> to count distinct values in matched rows\n\
                  • Use --list-tables to see file-to-table name mapping\n\
                  • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
-                 • Run without --query to launch interactive TUI mode\n"
+                  • Run without --query to launch interactive TUI mode\n\
+                  • Use --exec to run MCP tools: single '{{\"tool\":\"search\",\"params\":{{\"query\":\"term\"}}}}' or array '[{{...}},{{...}}]'\n"
             )
         }
     }

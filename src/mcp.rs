@@ -2,90 +2,17 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::schemars;
 use rmcp::tool;
 use rmcp::tool_router;
 use rmcp::ServiceExt;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::engine::{DefaultEngine, SearchEngine, SearchMode, SearchQuery};
-use crate::types::{FileInfo, FileMetadataInfo, SheetDataResult, SearchResult, SearchStats};
+use crate::types::*;
 
 pub(crate) struct SyncDb(pub(crate) DefaultEngine);
 unsafe impl Sync for SyncDb {}
 unsafe impl Send for SyncDb {}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct ImportFileParams {
-    #[schemars(description = "Absolute or relative path to the Excel/CSV file. Supports xlsx, xls, xlsm, xlsb, ods, csv.")]
-    pub file_path: String,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SearchParams {
-    #[schemars(description = "Search query string")]
-    pub query: String,
-    #[schemars(description = "Filter to a specific column name")]
-    pub column: Option<String>,
-    #[schemars(description = "Filter to a specific sheet name")]
-    pub sheet: Option<String>,
-    #[schemars(description = "Search mode: fulltext, exact, wildcard, regex")]
-    pub mode: Option<String>,
-    #[schemars(description = "Maximum results to return (default: 100)")]
-    pub limit: Option<usize>,
-    #[schemars(description = "Aggregate column: count distinct values in matched rows")]
-    pub aggregate: Option<String>,
-    #[schemars(description = "Invert match: return rows that do NOT match the query")]
-    pub invert: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SqlQueryParams {
-    #[schemars(description = "SQL SELECT query to execute against imported data")]
-    pub sql: String,
-    #[schemars(description = "Maximum results to return (default: 1000)")]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetMetadataParams {
-    #[schemars(description = "File name (as shown in list_files). If omitted, returns metadata for all imported files.")]
-    pub file_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetSheetSampleParams {
-    #[schemars(description = "File name (as shown in list_files)")]
-    pub file_name: String,
-    #[schemars(description = "Sheet name within the file")]
-    pub sheet_name: String,
-    #[schemars(description = "Number of rows to sample (default: 10)")]
-    pub sample_size: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetSheetDataParams {
-    #[schemars(description = "File name (as shown in list_files)")]
-    pub file_name: String,
-    #[schemars(description = "Sheet name within the file")]
-    pub sheet_name: String,
-    #[schemars(description = "Start row index (0-based, inclusive). Default: 0")]
-    pub start_row: Option<usize>,
-    #[schemars(description = "End row index (exclusive). Default: all rows from start_row")]
-    pub end_row: Option<usize>,
-    #[schemars(description = "Column names to include. Default: all columns")]
-    pub columns: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SaveAsParams {
-    #[schemars(description = "Source file name (as shown in list_files)")]
-    pub file_name: String,
-    #[schemars(description = "Output file path for the new xlsx file")]
-    pub output_path: String,
-    #[schemars(description = "Specific sheet to export. If omitted, exports all sheets.")]
-    pub sheet_name: Option<String>,
-}
 
 #[derive(Debug, Serialize)]
 pub struct McpSheetInfo {
@@ -274,6 +201,7 @@ fn parse_search_mode(mode: &str) -> SearchMode {
 #[derive(Clone)]
 pub struct GrepExcelServer {
     db: Arc<RwLock<SyncDb>>,
+    import_paths: Arc<RwLock<std::collections::HashMap<String, String>>>,
 }
 
 #[tool_router(server_handler)]
@@ -286,12 +214,17 @@ impl GrepExcelServer {
         let path = std::path::PathBuf::from(&params.file_path);
         let file_path = params.file_path.clone();
         let db = Arc::clone(&self.db);
+        let import_paths = Arc::clone(&self.import_paths);
+        let canonical = std::fs::canonicalize(&path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(file_path.clone());
         tokio::task::spawn_blocking(move || {
             let mut guard = db.write();
             guard
                 .0
                 .import_excel(&path, &|_, _| {})
                 .map(|info| {
+                    import_paths.write().insert(info.name.clone(), canonical);
                     let mcp_info: McpFileInfo = info.into();
                     serde_json::to_string_pretty(&mcp_info)
                         .unwrap_or_else(|_| "Import successful".to_string())
@@ -521,12 +454,147 @@ impl GrepExcelServer {
         .map_err(|e: tokio::task::JoinError| format!("Task error: {}", e))?;
         result
     }
+
+    #[tool(description = "Update a single cell value. Row index is 0-based. Column is identified by name.")]
+    pub async fn update_cell(
+        &self,
+        Parameters(params): Parameters<UpdateCellParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = db.write();
+            guard.0.update_cell(&params.file_name, &params.sheet_name, params.row, &params.column, &params.value)
+                .map(|_| format!("Updated cell at row {}, column '{}' to '{}'", params.row, params.column, params.value))
+                .map_err(|e| format!("Failed to update cell: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Batch update multiple cells. Each update specifies row (0-based index), column (name), and value.")]
+    pub async fn update_cells(
+        &self,
+        Parameters(params): Parameters<UpdateCellsParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let updates: Vec<(usize, String, String)> = params.updates.into_iter()
+                .map(|u| (u.row, u.column, u.value))
+                .collect();
+            let total = updates.len();
+            let mut guard = db.write();
+            guard.0.update_cells(&params.file_name, &params.sheet_name, &updates)
+                .map(|count| format!("Updated {}/{} cells", count, total))
+                .map_err(|e| format!("Failed to update cells: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Insert rows at a specified position. Existing rows at and after start_row are shifted down. Each row is an array of string values.")]
+    pub async fn insert_rows(
+        &self,
+        Parameters(params): Parameters<InsertRowsParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let count = params.rows.len();
+            let mut guard = db.write();
+            guard.0.insert_rows(&params.file_name, &params.sheet_name, params.start_row, params.rows)
+                .map(|_| format!("Inserted {} rows at position {}", count, params.start_row))
+                .map_err(|e| format!("Failed to insert rows: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Delete rows starting at start_row (0-based). Returns the actual number of rows deleted.")]
+    pub async fn delete_rows(
+        &self,
+        Parameters(params): Parameters<DeleteRowsParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = db.write();
+            guard.0.delete_rows(&params.file_name, &params.sheet_name, params.start_row, params.count)
+                .map(|actual| format!("Deleted {} rows starting at row {}", actual, params.start_row))
+                .map_err(|e| format!("Failed to delete rows: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Add a new column to a sheet. All existing rows are filled with the default value.")]
+    pub async fn add_column(
+        &self,
+        Parameters(params): Parameters<AddColumnParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let default = params.default_value.unwrap_or_default();
+            let mut guard = db.write();
+            guard.0.add_column(&params.file_name, &params.sheet_name, &params.column_name, &default)
+                .map(|_| format!("Added column '{}' with default value '{}'", params.column_name, default))
+                .map_err(|e| format!("Failed to add column: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Rename a column in a sheet.")]
+    pub async fn rename_column(
+        &self,
+        Parameters(params): Parameters<RenameColumnParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = db.write();
+            guard.0.rename_column(&params.file_name, &params.sheet_name, &params.old_name, &params.new_name)
+                .map(|_| format!("Renamed column '{}' to '{}'", params.old_name, params.new_name))
+                .map_err(|e| format!("Failed to rename column: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Save changes back to the original imported file (overwrite). Use save_as to save to a different file.")]
+    pub async fn save(
+        &self,
+        Parameters(params): Parameters<SaveParams>,
+    ) -> Result<String, String> {
+        let db = Arc::clone(&self.db);
+        let import_paths = Arc::clone(&self.import_paths);
+        let result: Result<String, String> = tokio::task::spawn_blocking(move || {
+            let original_path = import_paths.read().get(&params.file_name).cloned()
+                .ok_or_else(|| format!("Original path for '{}' not found. File may not have been imported via import_file, or path tracking lost.", params.file_name))?;
+
+            let guard = db.read();
+            if let Some(ref sheet_name) = params.sheet_name {
+                let data = guard.0.get_sheet_data(&params.file_name, sheet_name, None, None, None)
+                    .map_err(|e| format!("Failed to read sheet data: {}", e))?;
+                use crate::engine::write_xlsx;
+                let headers = &data.columns;
+                let rows = &data.rows;
+                write_xlsx(&[(sheet_name.as_str(), headers.as_slice(), rows.as_slice())], std::path::Path::new(&original_path))
+                    .map(|_| format!("Overwrote '{}' (sheet '{}')", original_path, sheet_name))
+                    .map_err(|e| format!("Failed to save: {}", e))
+            } else {
+                guard.0.save_as(&params.file_name, std::path::Path::new(&original_path))
+                    .map(|_| format!("Overwrote '{}'", original_path))
+                    .map_err(|e| format!("Failed to save: {}", e))
+            }
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| format!("Task error: {}", e))?;
+        result
+    }
 }
 
 pub async fn run_mcp_server() -> anyhow::Result<()> {
     let engine = DefaultEngine::new()?;
     let db = Arc::new(RwLock::new(SyncDb(engine)));
-    let server = GrepExcelServer { db };
+    let import_paths = Arc::new(RwLock::new(std::collections::HashMap::new()));
+    let server = GrepExcelServer { db, import_paths };
     let service = server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;
     Ok(())

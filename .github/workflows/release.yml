@@ -18,25 +18,57 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # engine-memory builds (lightweight, no external deps)
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact_name: grep_excel-x86_64-pc-windows-msvc
+            features: engine-memory
+            artifact_name: grep_excel-memory-x86_64-pc-windows-msvc
             archive: zip
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: grep_excel-x86_64-apple-darwin
+            features: engine-memory
+            artifact_name: grep_excel-memory-x86_64-apple-darwin
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: grep_excel-aarch64-apple-darwin
+            features: engine-memory
+            artifact_name: grep_excel-memory-aarch64-apple-darwin
             archive: tar.gz
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            artifact_name: grep_excel-x86_64-unknown-linux-gnu
+            features: engine-memory
+            artifact_name: grep_excel-memory-x86_64-unknown-linux-gnu
             archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
-            artifact_name: grep_excel-aarch64-unknown-linux-gnu
+            features: engine-memory
+            artifact_name: grep_excel-memory-aarch64-unknown-linux-gnu
+            archive: tar.gz
+          # engine-duckdb builds (full SQL power, bundled DuckDB)
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            features: engine-duckdb
+            artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
+            archive: zip
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            features: engine-duckdb
+            artifact_name: grep_excel-duckdb-x86_64-apple-darwin
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            features: engine-duckdb
+            artifact_name: grep_excel-duckdb-aarch64-apple-darwin
+            archive: tar.gz
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            features: engine-duckdb
+            artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+            features: engine-duckdb
+            artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             archive: tar.gz
 
     runs-on: ${{ matrix.os }}
@@ -59,13 +91,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ matrix.features }}
 
       - name: Build
         env:
           DUCKDB_DOWNLOAD_LIB: "1"
-          RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C link-arg=rstrtmgr.lib' || '' }}
-        run: cargo build --release --target ${{ matrix.target }} --no-default-features
+          RUSTFLAGS: ${{ startsWith(matrix.target, 'x86_64-pc-windows') && '-C link-arg=rstrtmgr.lib --cfg getrandom_backend="windows_legacy"' || '' }}
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
       - name: Archive (zip)
         if: matrix.archive == 'zip'
