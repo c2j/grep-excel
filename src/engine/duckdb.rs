@@ -538,6 +538,7 @@ impl SearchEngine for DuckDbEngine {
             );
 
             let rows = self.query_rows(&sql, &col_names)?;
+            let row_count = rows.len();
             let total_rows = meta.row_count;
 
             Ok(SheetDataResult {
@@ -545,7 +546,7 @@ impl SearchEngine for DuckDbEngine {
                 sheet_name: sheet_name.to_string(),
                 columns: col_names,
                 rows,
-                row_count: rows.len(),
+                row_count,
                 total_rows,
                 truncated: false,
             })
@@ -594,6 +595,162 @@ impl SearchEngine for DuckDbEngine {
                 .collect();
 
             write_xlsx(&refs, output_path)
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            let col_idx = meta.col_names.iter().position(|h| h == column)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    column, meta.col_names.join(", ")
+                ))?;
+            let quoted_col = quote_ident(&meta.col_names[col_idx]);
+            let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
+            let affected = self.conn.execute(&sql, params![value, (row + 1) as i64])?;
+            if affected == 0 {
+                anyhow::bail!("Row {} out of range (sheet has {} rows)", row, meta.row_count);
+            }
+            Ok(())
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            let mut count = 0usize;
+            for (row, column, value) in updates {
+                if let Some(col_idx) = meta.col_names.iter().position(|h| h == column) {
+                    let quoted_col = quote_ident(&meta.col_names[col_idx]);
+                    let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
+                    if self.conn.execute(&sql, params![value, (*row + 1) as i64])? > 0 {
+                        count += 1;
+                    }
+                }
+            }
+            Ok(count)
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            let total = meta.row_count;
+            let start = start_row.min(total);
+            let col_count = meta.col_names.len();
+            let col_list = meta.col_names.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+
+            let temp_table = format!("{}_edit_temp", meta.table_name);
+
+            let _ = self.conn.execute(&format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_table)), []);
+
+            let col_defs: Vec<String> = meta.col_names.iter().map(|c| format!("{} TEXT", quote_ident(c))).collect();
+            self.conn.execute(&format!("CREATE TABLE {} ({})", quote_ident(&temp_table), col_defs.join(", ")), [])?;
+
+            if start > 0 {
+                self.conn.execute(&format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid <= {}",
+                    quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
+                ), [])?;
+            }
+
+            let placeholders: Vec<&str> = (0..col_count).map(|_| "?").collect();
+            let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", quote_ident(&temp_table), col_list, placeholders.join(", "));
+            for row in &rows {
+                let mut padded = row.clone();
+                padded.resize(col_count, String::new());
+                let param_refs: Vec<&dyn ::duckdb::ToSql> = padded.iter().map(|s| s as &dyn ::duckdb::ToSql).collect();
+                self.conn.execute(&insert_sql, param_refs.as_slice())?;
+            }
+
+            if start < total {
+                self.conn.execute(&format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid > {}",
+                    quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
+                ), [])?;
+            }
+
+            self.conn.execute(&format!("DROP TABLE {}", quote_ident(&meta.table_name)), [])?;
+            self.conn.execute(&format!("ALTER TABLE {} RENAME TO {}", quote_ident(&temp_table), quote_ident(&meta.table_name)), [])?;
+
+            let new_count = total + rows.len();
+            self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
+
+            Ok(())
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            if start_row >= meta.row_count {
+                return Ok(0);
+            }
+            let end = (start_row + count).min(meta.row_count);
+            let actual_count = end - start_row;
+
+            // DuckDB rowid is 1-based; our start_row is 0-based
+            let sql = format!(
+                "DELETE FROM {} WHERE rowid > ? AND rowid <= ?",
+                quote_ident(&meta.table_name)
+            );
+            self.conn.execute(&sql, params![start_row as i64, end as i64])?;
+
+            let new_count = meta.row_count - actual_count;
+            self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
+
+            Ok(actual_count)
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            if meta.col_names.iter().any(|h| h == column_name) {
+                anyhow::bail!("Column '{}' already exists in sheet '{}'", column_name, sheet_name);
+            }
+
+            let quoted_col = quote_ident(column_name);
+            self.conn.execute(&format!(
+                "ALTER TABLE {} ADD COLUMN {} TEXT",
+                quote_ident(&meta.table_name), quoted_col
+            ), [])?;
+
+            if !default_value.is_empty() {
+                self.conn.execute(&format!(
+                    "UPDATE {} SET {} = ? WHERE {} IS NULL",
+                    quote_ident(&meta.table_name), quoted_col, quoted_col
+                ), params![default_value])?;
+            }
+
+            let mut new_col_names = meta.col_names.clone();
+            new_col_names.push(column_name.to_string());
+            let col_names_str = new_col_names.join("\x1f");
+            self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
+
+            Ok(())
+        }
+
+        #[cfg(feature = "mcp-server")]
+        fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            let col_idx = meta.col_names.iter().position(|h| h == old_name)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    old_name, meta.col_names.join(", ")
+                ))?;
+
+            if old_name != new_name && meta.col_names.iter().any(|h| h == new_name) {
+                anyhow::bail!("Column '{}' already exists in sheet '{}'", new_name, sheet_name);
+            }
+
+            self.conn.execute(&format!(
+                "ALTER TABLE {} RENAME COLUMN {} TO {}",
+                quote_ident(&meta.table_name), quote_ident(old_name), quote_ident(new_name)
+            ), [])?;
+
+            let mut new_col_names = meta.col_names.clone();
+            new_col_names[col_idx] = new_name.to_string();
+            let col_names_str = new_col_names.join("\x1f");
+            self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
+
+            Ok(())
         }
 }
 

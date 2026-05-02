@@ -17,11 +17,8 @@ pub trait SearchEngine: Send {
     fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult>;
     fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo>;
 
-    #[cfg(feature = "mcp-server")]
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo>;
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult>;
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_data(
         &self,
         file_name: &str,
@@ -30,8 +27,13 @@ pub trait SearchEngine: Send {
         end_row: Option<usize>,
         columns: Option<&[String]>,
     ) -> Result<SheetDataResult>;
-    #[cfg(feature = "mcp-server")]
     fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()>;
+    fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()>;
+    fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize>;
+    fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()>;
+    fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize>;
+    fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()>;
+    fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()>;
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
