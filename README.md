@@ -61,6 +61,7 @@ grep_excel [FILES...] [OPTIONS]
 | `--invert` | `-v` | Invert match: show rows that do NOT match |
 | `--sql` | `-x` | Execute a SQL `SELECT` query against imported data |
 | `--export` | `-e` | Export search results to a CSV file |
+| `--exec` | `-E` | Execute MCP tool command(s) as JSON |
 | `--mcp` | — | Start MCP server mode (stdio) |
 
 ### Examples
@@ -119,6 +120,34 @@ grep_excel employees.xlsx departments.xlsx --sql "SELECT e.Name, d.DeptName FROM
 
 **Table naming:** Imported sheets are stored as `sheet_{file_id}_{sheet_index}`. In TUI, press `o` to see loaded files and their sheet indices. In MCP, use `list_files` to discover tables.
 
+### CLI Exec Examples
+
+Execute MCP tools directly from the command line using `--exec` with JSON:
+
+**Single command** (files auto-imported via positional args):
+```bash
+# List files
+grep_excel data.xlsx --exec '{"tool":"list_files","params":{}}'
+
+# Search with parameters
+grep_excel data.xlsx --exec '{"tool":"search","params":{"query":"Engineering","mode":"exact"}}'
+
+# Get detailed metadata
+grep_excel data.xlsx --exec '{"tool":"get_metadata","params":{}}'
+```
+
+**Multi-step pipeline** (JSON array, state preserved across steps):
+```bash
+grep_excel --exec '[
+  {"tool":"import_file","params":{"file_path":"data.xlsx"}},
+  {"tool":"search","params":{"query":"张三","mode":"exact"}},
+  {"tool":"update_cell","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"Name","value":"fixed"}},
+  {"tool":"save","params":{"file_name":"data.xlsx"}}
+]'
+```
+
+Available tools for `--exec`: `import_file`, `list_files`, `get_metadata`, `get_sheet_sample`, `get_sheet_data`, `search`, `execute_sql`, `save_as`, `save`, `update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`. See [MCP Tool Details](#mcp-tool-details) for parameter descriptions.
+
 ## MCP Server Mode
 
 Start the MCP server for integration with AI assistants (e.g., Claude, Cursor):
@@ -139,6 +168,13 @@ Available MCP tools:
 | `search` | Search with fulltext/exact/wildcard/regex |
 | `execute_sql` | Execute a raw SQL `SELECT` query |
 | `save_as` | Save imported data to a new Excel file (Save As) |
+| `save` | Overwrite the original imported file with current data |
+| `update_cell` | Update a single cell value |
+| `update_cells` | Batch update multiple cells |
+| `insert_rows` | Insert rows at a specified position |
+| `delete_rows` | Delete rows from a specified position |
+| `add_column` | Add a new column with a default value |
+| `rename_column` | Rename an existing column |
 
 ### MCP Tool Details
 
@@ -195,6 +231,60 @@ Save imported data to a new Excel file. Does not modify the original file.
   - `output_path` (string) — Output file path for the new xlsx file
   - `sheet_name` (string, optional) — Specific sheet to export. If omitted, exports all sheets.
 
+#### `save`
+Overwrite the original imported file with current data (including edits).
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string, optional) — Specific sheet to save. If omitted, saves all sheets.
+
+#### `update_cell`
+Update a single cell value by row index and column name.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `row` (integer) — Row index (0-based)
+  - `column` (string) — Column name
+  - `value` (string) — New value for the cell
+
+#### `update_cells`
+Batch update multiple cells in a single call.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `updates` (array) — Array of `{row, column, value}` objects
+
+#### `insert_rows`
+Insert rows at a specified position. Existing rows are shifted down.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `start_row` (integer) — Insert position (0-based). Rows shorter than the column count are padded.
+  - `rows` (array of arrays) — Rows to insert, each row is an array of string values
+
+#### `delete_rows`
+Delete rows starting at a given position.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `start_row` (integer) — Start row index (0-based, inclusive)
+  - `count` (integer) — Number of rows to delete
+
+#### `add_column`
+Add a new column to a sheet with a default value for all existing rows.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `column_name` (string) — Name for the new column
+  - `default_value` (string, optional) — Default value (default: empty string)
+
+#### `rename_column`
+Rename an existing column in a sheet.
+- **Parameters:**
+  - `file_name` (string) — File name as shown in `list_files`
+  - `sheet_name` (string) — Sheet name within the file
+  - `old_name` (string) — Current column name
+  - `new_name` (string) — New column name
+
 ### MCP Example Workflows
 
 **Explore an unknown file:**
@@ -230,6 +320,17 @@ Assistant: [calls save_as with file_name="data.xlsx", sheet_name="Products",
 User: Import data.xlsx and show me the top 5 salaries
 Assistant: [calls import_file with file_path="data.xlsx"]
 Assistant: [calls execute_sql with sql="SELECT * FROM sheet_1_0 ORDER BY Salary DESC LIMIT 5"]
+```
+
+**Edit and export:**
+```
+User: Fix the department name for row 3 — change it from "Enginering" to "Engineering"
+Assistant: [calls update_cell with file_name="data.xlsx", sheet_name="Employees",
+            row=2, column="Department", value="Engineering"]
+           → "Updated cell at row 2, column 'Department' to 'Engineering'"
+
+User: Now save the corrected data to a new file
+Assistant: [calls save_as with file_name="data.xlsx", output_path="data_fixed.xlsx"]
 ```
 
 ## TUI Keybindings
