@@ -20,11 +20,11 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            features: engine-duckdb
+            features: duckdb-bundled
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: engine-duckdb
+            features: duckdb-bundled
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
@@ -42,8 +42,8 @@ jobs:
 
       - name: Build
         env:
-          DUCKDB_DOWNLOAD_LIB: "1"
-          RUSTFLAGS: ${{ startsWith(matrix.target, 'x86_64-pc-windows') && '-C link-arg=rstrtmgr.lib --cfg getrandom_backend="windows_legacy"' || '' }}
+          CARGO_BUILD_JOBS: "2"
+          NUM_JOBS: "2"
         run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
       - name: Archive (Windows)
@@ -77,16 +77,24 @@ jobs:
       - name: Add rust-src component
         run: rustup component add rust-src --toolchain nightly
 
+      - name: Download prebuilt DuckDB
+        shell: pwsh
+        run: |
+          $duckdb = "v1.5.1"
+          $url = "https://github.com/duckdb/duckdb/releases/download/$duckdb/libduckdb-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile duckdb.zip
+          Expand-Archive -Path duckdb.zip -DestinationPath duckdb-lib
+          "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
+
       - name: Build
-        env:
-          DUCKDB_DOWNLOAD_LIB: "1"
         run: cargo +nightly build --release --no-default-features --features engine-duckdb --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
         run: |
+          Copy-Item "duckdb-lib/duckdb.dll" "target/x86_64-win7-windows-msvc/release/"
           Compress-Archive `
-            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe" `
+            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
             -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc.zip"
 
       - name: Upload artifact
