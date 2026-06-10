@@ -430,7 +430,6 @@ impl SearchEngine for DuckDbEngine {
             }).collect()
         }
 
-        #[cfg(feature = "mcp-server")]
         fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
             let mut stmt = self.conn.prepare(
                 "SELECT s.sheet_name, s.row_count, s.col_names
@@ -466,7 +465,6 @@ impl SearchEngine for DuckDbEngine {
             })
         }
 
-        #[cfg(feature = "mcp-server")]
         fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
 
@@ -497,7 +495,6 @@ impl SearchEngine for DuckDbEngine {
             })
         }
 
-        #[cfg(feature = "mcp-server")]
         fn get_sheet_data(
             &self,
             file_name: &str,
@@ -552,52 +549,56 @@ impl SearchEngine for DuckDbEngine {
             })
         }
 
-        #[cfg(feature = "mcp-server")]
+        #[allow(unused_variables)]
         fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
-            use crate::engine::write_xlsx;
+            #[cfg(feature = "mcp-server")]
+            {
+                use crate::engine::write_xlsx;
 
-            let mut stmt = self.conn.prepare(
-                "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
-                 FROM sheets s JOIN files f ON s.file_id = f.file_id
-                 WHERE f.file_name = ?
-                 ORDER BY s.sheet_id"
-            )?;
+                let mut stmt = self.conn.prepare(
+                    "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
+                     FROM sheets s JOIN files f ON s.file_id = f.file_id
+                     WHERE f.file_name = ?
+                     ORDER BY s.sheet_id"
+                )?;
 
-            let sheet_rows: Vec<(String, String, Vec<String>)> = stmt.query_map(params![file_name], |row| {
-                let sheet_name: String = row.get(0)?;
-                let table_name: String = row.get(1)?;
-                let col_names_str: String = row.get(2)?;
-                let col_names: Vec<String> = if col_names_str.is_empty() {
-                    vec![]
-                } else {
-                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
-                };
-                Ok((sheet_name, table_name, col_names))
-            })?.collect::<Result<Vec<_>, _>>()?;
+                let sheet_rows: Vec<(String, String, Vec<String>)> = stmt.query_map(params![file_name], |row| {
+                    let sheet_name: String = row.get(0)?;
+                    let table_name: String = row.get(1)?;
+                    let col_names_str: String = row.get(2)?;
+                    let col_names: Vec<String> = if col_names_str.is_empty() {
+                        vec![]
+                    } else {
+                        col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                    };
+                    Ok((sheet_name, table_name, col_names))
+                })?.collect::<Result<Vec<_>, _>>()?;
 
-            if sheet_rows.is_empty() {
-                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+                if sheet_rows.is_empty() {
+                    anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+                }
+
+                let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
+                for (sheet_name, table_name, col_names) in &sheet_rows {
+                    let col_list: String = col_names.iter()
+                        .map(|c| quote_ident(c))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
+                    let rows = self.query_rows(&sql, col_names)?;
+                    sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
+                }
+
+                let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data.iter()
+                    .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
+                    .collect();
+
+                write_xlsx(&refs, output_path)
             }
-
-            let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
-            for (sheet_name, table_name, col_names) in &sheet_rows {
-                let col_list: String = col_names.iter()
-                    .map(|c| quote_ident(c))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
-                let rows = self.query_rows(&sql, col_names)?;
-                sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
-            }
-
-            let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data.iter()
-                .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
-                .collect();
-
-            write_xlsx(&refs, output_path)
+            #[cfg(not(feature = "mcp-server"))]
+            anyhow::bail!("save_as requires the mcp-server feature")
         }
 
-        #[cfg(feature = "mcp-server")]
         fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let col_idx = meta.col_names.iter().position(|h| h == column)
@@ -614,7 +615,6 @@ impl SearchEngine for DuckDbEngine {
             Ok(())
         }
 
-        #[cfg(feature = "mcp-server")]
         fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let mut count = 0usize;
@@ -630,7 +630,6 @@ impl SearchEngine for DuckDbEngine {
             Ok(count)
         }
 
-        #[cfg(feature = "mcp-server")]
         fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let total = meta.row_count;
@@ -677,7 +676,6 @@ impl SearchEngine for DuckDbEngine {
             Ok(())
         }
 
-        #[cfg(feature = "mcp-server")]
         fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             if start_row >= meta.row_count {
@@ -699,7 +697,6 @@ impl SearchEngine for DuckDbEngine {
             Ok(actual_count)
         }
 
-        #[cfg(feature = "mcp-server")]
         fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             if meta.col_names.iter().any(|h| h == column_name) {
@@ -727,7 +724,6 @@ impl SearchEngine for DuckDbEngine {
             Ok(())
         }
 
-        #[cfg(feature = "mcp-server")]
         fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let col_idx = meta.col_names.iter().position(|h| h == old_name)

@@ -716,7 +716,6 @@ impl SearchEngine for SqliteEngine {
         }).collect()
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
         let mut stmt = self.conn.prepare(
             "SELECT s.sheet_name, s.row_count, s.col_names
@@ -752,7 +751,6 @@ impl SearchEngine for SqliteEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
 
@@ -783,7 +781,6 @@ impl SearchEngine for SqliteEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
     fn get_sheet_data(
         &self,
         file_name: &str,
@@ -837,9 +834,11 @@ impl SearchEngine for SqliteEngine {
         })
     }
 
-    #[cfg(feature = "mcp-server")]
+    #[allow(unused_variables)]
     fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
-        use crate::engine::write_xlsx;
+        #[cfg(feature = "mcp-server")]
+        {
+            use crate::engine::write_xlsx;
 
         let mut stmt = self.conn.prepare(
             "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
@@ -880,9 +879,11 @@ impl SearchEngine for SqliteEngine {
             .collect();
 
         write_xlsx(&refs, output_path)
+        }
+        #[cfg(not(feature = "mcp-server"))]
+        anyhow::bail!("save_as requires the mcp-server feature")
     }
 
-    #[cfg(feature = "mcp-server")]
     fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let col_idx = meta.col_names.iter().position(|h| h == column)
@@ -899,7 +900,6 @@ impl SearchEngine for SqliteEngine {
         Ok(())
     }
 
-    #[cfg(feature = "mcp-server")]
     fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let mut count = 0usize;
@@ -915,7 +915,6 @@ impl SearchEngine for SqliteEngine {
         Ok(count)
     }
 
-    #[cfg(feature = "mcp-server")]
     fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let total = meta.row_count;
@@ -964,7 +963,6 @@ impl SearchEngine for SqliteEngine {
         Ok(())
     }
 
-    #[cfg(feature = "mcp-server")]
     fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         if start_row >= meta.row_count {
@@ -986,7 +984,6 @@ impl SearchEngine for SqliteEngine {
         Ok(actual_count)
     }
 
-    #[cfg(feature = "mcp-server")]
     fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         if meta.col_names.iter().any(|h| h == column_name) {
@@ -1014,7 +1011,6 @@ impl SearchEngine for SqliteEngine {
         Ok(())
     }
 
-    #[cfg(feature = "mcp-server")]
     fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let col_idx = meta.col_names.iter().position(|h| h == old_name)
