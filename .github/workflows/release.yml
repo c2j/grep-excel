@@ -65,8 +65,38 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.zip
 
+  build-win7:
+    name: Build windows-x86_64 (Win7 compatible)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Add rust-src component
+        run: rustup component add rust-src --toolchain nightly
+
+      - name: Build
+        env:
+          DUCKDB_DOWNLOAD_LIB: "1"
+        run: cargo +nightly build --release --no-default-features --features engine-duckdb --target x86_64-win7-windows-msvc -Zbuild-std
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe" `
+            -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grep_excel-duckdb-x86_64-win7-windows-msvc
+          path: grep_excel-duckdb-x86_64-win7-windows-msvc.zip
+
   release:
-    needs: build
+    needs: [build, build-win7]
     runs-on: ubuntu-latest
 
     steps:
