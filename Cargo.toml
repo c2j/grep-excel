@@ -36,7 +36,7 @@ rust_xlsxwriter = { version = "0.82", optional = true }
 [features]
 default = ["engine-memory", "file-dialog"]
 engine-duckdb = ["dep:duckdb"]
-duckdb-bundled = ["dep:duckdb", "duckdb/bundled"]
+duckdb-bundled = ["engine-duckdb", "duckdb/bundled"]
 engine-sqlite = ["dep:rusqlite"]
 engine-memory = []
 file-dialog = ["dep:rfd"]
