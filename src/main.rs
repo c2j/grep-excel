@@ -8,11 +8,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "grep_excel",
-    about = "",
-    long_about = ""
-)]
+#[command(name = "grep_excel", about = "", long_about = "")]
 struct Args {
     #[arg(name = "FILES")]
     files: Vec<PathBuf>,
@@ -42,16 +38,32 @@ struct Args {
     #[arg(short = 'e', long, help = "Export search results to a CSV file")]
     export: Option<PathBuf>,
 
-    #[arg(short = 'x', long, help = "Execute a SQL SELECT query against imported data")]
+    #[arg(
+        short = 'x',
+        long,
+        help = "Execute a SQL SELECT query against imported data"
+    )]
     sql: Option<String>,
 
-    #[arg(short = 'g', long, help = "Aggregate column: count distinct values in matched rows")]
+    #[arg(
+        short = 'g',
+        long,
+        help = "Aggregate column: count distinct values in matched rows"
+    )]
     aggregate: Option<String>,
 
-    #[arg(short = 'v', long, help = "Invert match: show rows that do NOT match the query")]
+    #[arg(
+        short = 'v',
+        long,
+        help = "Invert match: show rows that do NOT match the query"
+    )]
     invert: bool,
 
-    #[arg(short = 't', long, help = "List imported tables with friendly names and columns")]
+    #[arg(
+        short = 't',
+        long,
+        help = "List imported tables with friendly names and columns"
+    )]
     list_tables: bool,
 
     #[arg(
@@ -73,6 +85,20 @@ struct Args {
     exec: Option<String>,
 }
 
+fn print_logo() {
+    let version = env!("CARGO_PKG_VERSION");
+    println!();
+    println!(" ██████╗  ██████╗  ███████╗ ██████╗           ███████╗ ██╗  ██╗  ██████╗ ███████╗ ██║     ");
+    println!("██╔════╝  ██╔══██╗ ██╔════╝ ██╔══██╗          ██╔════╝ ╚██╗██╔╝ ██╔════╝ ██╔════╝ ██║     ");
+    println!("██║  ███╗ ██████╔╝ ███████╗ ██████╔╝ ███████╗ ███████╗  ╚███╔╝  ██║      ███████╗ ██║     ");
+    println!("██║   ██║ ██╔══██╗ ██╔═══╝  ██╔═══╝  ╚══════╝ ██╔═══╝   ██╔██╗  ██║      ██╔═══╝  ██║     ");
+    println!("╚██████╔╝ ██║  ██║ ███████╗ ██║               ███████╗ ██╔╝ ██╗ ╚██████╗ ███████╗ ███████╗");
+    println!(" ╚═════╝  ╚═╝  ╚═╝ ╚══════╝ ╚═╝               ╚══════╝ ╚═╝  ╚═╝  ╚═════╝ ╚══════╝ ╚══════╝\x1b[0m");
+    println!();
+    println!("  \x1b[1mv{}\x1b[0m", version);
+    println!();
+}
+
 fn main() -> Result<()> {
     grep_excel::i18n::init();
 
@@ -91,6 +117,7 @@ fn main() -> Result<()> {
     }
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_logo();
         print!("{}", grep_excel::i18n::help_full_text());
         return Ok(());
     }
@@ -124,6 +151,8 @@ fn main() -> Result<()> {
         return run_cli(&args);
     }
 
+    print_logo();
+
     run_tui(&args)
 }
 
@@ -146,7 +175,10 @@ fn run_cli(args: &Args) -> Result<()> {
 
     for file in &args.files {
         if !file.exists() {
-            eprintln!("{}", grep_excel::i18n::cli_file_not_found(&file.display().to_string()));
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
             continue;
         }
         match db.import_excel(file, &|_, _| {}) {
@@ -156,7 +188,10 @@ fn run_cli(args: &Args) -> Result<()> {
                     grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                 )
             }
-            Err(e) => eprintln!("{}", grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())),
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+            ),
         }
     }
 
@@ -192,7 +227,10 @@ fn run_cli(args: &Args) -> Result<()> {
 
     if let Some(ref export_path) = args.export {
         match grep_excel::engine::export_results_csv(&results, export_path) {
-            Ok(()) => eprintln!("{}", grep_excel::i18n::cli_export_done(&export_path.display().to_string())),
+            Ok(()) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_export_done(&export_path.display().to_string())
+            ),
             Err(e) => eprintln!("{}", grep_excel::i18n::cli_export_failed()),
         }
     }
@@ -220,8 +258,8 @@ fn run_cli(args: &Args) -> Result<()> {
                     &result.matched_columns,
                     &widths,
                     query.mode,
-                     &query.text,
-                 );
+                    &query.text,
+                );
             }
         } else {
             let mut first = true;
@@ -235,7 +273,8 @@ fn run_cli(args: &Args) -> Result<()> {
                     last_file = result.file_name.clone();
                     last_sheet = result.sheet_name.clone();
 
-                    let sep: Vec<String> = result.col_names.iter().map(|_| "---".to_string()).collect();
+                    let sep: Vec<String> =
+                        result.col_names.iter().map(|_| "---".to_string()).collect();
                     println!("| {} |", result.col_names.join(" | "));
                     println!("| {} |", sep.join(" | "));
                 }
@@ -289,10 +328,7 @@ fn run_cli(args: &Args) -> Result<()> {
                 agg_parts.join(", ")
             );
         } else {
-            println!(
-                "  {}",
-                grep_excel::i18n::cli_aggregate_no_data(agg_col)
-            );
+            println!("  {}", grep_excel::i18n::cli_aggregate_no_data(agg_col));
         }
     }
 
@@ -304,7 +340,10 @@ fn run_sql_cli(args: &Args) -> Result<()> {
 
     for file in &args.files {
         if !file.exists() {
-            eprintln!("{}", grep_excel::i18n::cli_file_not_found(&file.display().to_string()));
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
             continue;
         }
         match db.import_excel(file, &|_, _| {}) {
@@ -422,19 +461,12 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
             Ok(info) => {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(
-                        &info.name,
-                        info.sheets.len(),
-                        info.total_rows
-                    )
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                 );
             }
             Err(e) => eprintln!(
                 "{}",
-                grep_excel::i18n::cli_import_failed(
-                    &file.display().to_string(),
-                    &e.to_string()
-                )
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
             ),
         }
     }
@@ -499,11 +531,15 @@ fn run_exec(args: &Args) -> Result<()> {
     };
 
     let mut db = DefaultEngine::new()?;
-    let mut import_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut import_paths: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for file in &args.files {
         if !file.exists() {
-            eprintln!("{}", grep_excel::i18n::cli_file_not_found(&file.display().to_string()));
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
             continue;
         }
         let canonical = std::fs::canonicalize(file)
@@ -511,10 +547,16 @@ fn run_exec(args: &Args) -> Result<()> {
             .unwrap_or_else(|_| file.display().to_string());
         match db.import_excel(file, &|_, _| {}) {
             Ok(info) => {
-                eprintln!("{}", grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows));
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                );
                 import_paths.insert(info.name.clone(), canonical);
             }
-            Err(e) => eprintln!("{}", grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())),
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+            ),
         }
     }
 
@@ -556,15 +598,21 @@ fn print_exec_help() {
             println!(r#"  grep_excel data.xlsx --exec '{{"tool":"list_files","params":{{}}}}'"#);
             println!();
             println!("  # 搜索 + 聚合统计");
-            println!(r#"  grep_excel data.xlsx --exec '{{"tool":"search","params":{{"query":"张三","mode":"exact","aggregate":"City"}}}}'"#);
+            println!(
+                r#"  grep_excel data.xlsx --exec '{{"tool":"search","params":{{"query":"张三","mode":"exact","aggregate":"City"}}}}'"#
+            );
             println!();
             println!("  # 多步串行: 导入 → 查询元数据 → 采样 → 修改 → 保存");
             println!("  grep_excel --exec '\\");
             println!("    [\\");
             println!(r#"      {{"tool":"import_file","params":{{"file_path":"data.xlsx"}}}},"#);
             println!(r#"      {{"tool":"get_metadata","params":{{}}}},"#);
-            println!(r#"      {{"tool":"get_sheet_sample","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","sample_size":3}}}},"#);
-            println!(r#"      {{"tool":"update_cell","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"Name","value":"李四"}}}},"#);
+            println!(
+                r#"      {{"tool":"get_sheet_sample","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","sample_size":3}}}},"#
+            );
+            println!(
+                r#"      {{"tool":"update_cell","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"Name","value":"李四"}}}},"#
+            );
             println!(r#"      {{"tool":"save","params":{{"file_name":"data.xlsx"}}}}"#);
             println!("    ]");
             println!();
@@ -592,19 +640,25 @@ fn print_exec_help() {
             println!("                       参数: sql, limit? (默认 1000)");
             println!();
             println!("  \x1b[1mupdate_cell\x1b[0m          更新单个单元格");
-            println!("                       参数: file_name, sheet_name, row (0-based), column, value");
+            println!(
+                "                       参数: file_name, sheet_name, row (0-based), column, value"
+            );
             println!();
             println!("  \x1b[1mupdate_cells\x1b[0m         批量更新多个单元格");
             println!("                       参数: file_name, sheet_name, updates: [{{row, column, value}}]");
             println!();
             println!("  \x1b[1minsert_rows\x1b[0m          在指定位置插入行");
-            println!("                       参数: file_name, sheet_name, start_row, rows: [[...]]");
+            println!(
+                "                       参数: file_name, sheet_name, start_row, rows: [[...]]"
+            );
             println!();
             println!("  \x1b[1mdelete_rows\x1b[0m          删除指定位置的行");
             println!("                       参数: file_name, sheet_name, start_row, count");
             println!();
             println!("  \x1b[1madd_column\x1b[0m           添加新列");
-            println!("                       参数: file_name, sheet_name, column_name, default_value?");
+            println!(
+                "                       参数: file_name, sheet_name, column_name, default_value?"
+            );
             println!();
             println!("  \x1b[1mrename_column\x1b[0m        重命名列");
             println!("                       参数: file_name, sheet_name, old_name, new_name");
@@ -623,25 +677,35 @@ fn print_exec_help() {
             println!();
             println!("  JSON can be a single command or an array:");
             println!(r#"    Single: '{{"tool":"search","params":{{"query":"keyword"}}}}'"#);
-            println!(r#"    Array:  '[{{"tool":"import_file","params":...}}, {{"tool":"search","params":...}}]'"#);
+            println!(
+                r#"    Array:  '[{{"tool":"import_file","params":...}}, {{"tool":"search","params":...}}]'"#
+            );
             println!();
             println!("  Files passed as positional args are auto-imported before commands run.");
-            println!("  Array commands execute sequentially, sharing state (imports/edits accumulate).");
+            println!(
+                "  Array commands execute sequentially, sharing state (imports/edits accumulate)."
+            );
             println!();
             println!("Examples:");
             println!(r#"  # List imported files"#);
             println!(r#"  grep_excel data.xlsx --exec '{{"tool":"list_files","params":{{}}}}'"#);
             println!();
             println!("  # Search with aggregation");
-            println!(r#"  grep_excel data.xlsx --exec '{{"tool":"search","params":{{"query":"Engineering","aggregate":"City"}}}}'"#);
+            println!(
+                r#"  grep_excel data.xlsx --exec '{{"tool":"search","params":{{"query":"Engineering","aggregate":"City"}}}}'"#
+            );
             println!();
             println!("  # Multi-step pipeline: import → metadata → sample → edit → save");
             println!("  grep_excel --exec '\\");
             println!("    [\\");
             println!(r#"      {{"tool":"import_file","params":{{"file_path":"data.xlsx"}}}},"#);
             println!(r#"      {{"tool":"get_metadata","params":{{}}}},"#);
-            println!(r#"      {{"tool":"get_sheet_sample","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","sample_size":3}}}},"#);
-            println!(r#"      {{"tool":"update_cell","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"Name","value":"fixed"}}}},"#);
+            println!(
+                r#"      {{"tool":"get_sheet_sample","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","sample_size":3}}}},"#
+            );
+            println!(
+                r#"      {{"tool":"update_cell","params":{{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"Name","value":"fixed"}}}},"#
+            );
             println!(r#"      {{"tool":"save","params":{{"file_name":"data.xlsx"}}}}"#);
             println!("    ]");
             println!();
@@ -650,19 +714,27 @@ fn print_exec_help() {
             println!("  \x1b[1mimport_file\x1b[0m          Import an Excel/CSV file");
             println!("                       Params: file_path");
             println!();
-            println!("  \x1b[1mlist_files\x1b[0m           List all imported files and their sheets");
+            println!(
+                "  \x1b[1mlist_files\x1b[0m           List all imported files and their sheets"
+            );
             println!("                       Params: (none)");
             println!();
             println!("  \x1b[1mget_metadata\x1b[0m         Get detailed metadata (sheet names, column names)");
             println!("                       Params: file_name? (omit for all files)");
             println!();
-            println!("  \x1b[1mget_sheet_sample\x1b[0m     Get evenly-spaced sample rows from a sheet");
-            println!("                       Params: file_name, sheet_name, sample_size? (default: 10)");
+            println!(
+                "  \x1b[1mget_sheet_sample\x1b[0m     Get evenly-spaced sample rows from a sheet"
+            );
+            println!(
+                "                       Params: file_name, sheet_name, sample_size? (default: 10)"
+            );
             println!();
             println!("  \x1b[1mget_sheet_data\x1b[0m       Get paginated rows from a sheet");
             println!("                       Params: file_name, sheet_name, start_row?, end_row?, columns?");
             println!();
-            println!("  \x1b[1msearch\x1b[0m               Search with fulltext/exact/wildcard/regex");
+            println!(
+                "  \x1b[1msearch\x1b[0m               Search with fulltext/exact/wildcard/regex"
+            );
             println!("                       Params: query, column?, sheet?, mode?, limit?, aggregate?, invert?");
             println!();
             println!("  \x1b[1mexecute_sql\x1b[0m          Execute a SQL SELECT query");
@@ -675,13 +747,17 @@ fn print_exec_help() {
             println!("                       Params: file_name, sheet_name, updates: [{{row, column, value}}]");
             println!();
             println!("  \x1b[1minsert_rows\x1b[0m          Insert rows at a specified position");
-            println!("                       Params: file_name, sheet_name, start_row, rows: [[...]]");
+            println!(
+                "                       Params: file_name, sheet_name, start_row, rows: [[...]]"
+            );
             println!();
             println!("  \x1b[1mdelete_rows\x1b[0m          Delete rows from a specified position");
             println!("                       Params: file_name, sheet_name, start_row, count");
             println!();
             println!("  \x1b[1madd_column\x1b[0m           Add a new column");
-            println!("                       Params: file_name, sheet_name, column_name, default_value?");
+            println!(
+                "                       Params: file_name, sheet_name, column_name, default_value?"
+            );
             println!();
             println!("  \x1b[1mrename_column\x1b[0m        Rename an existing column");
             println!("                       Params: file_name, sheet_name, old_name, new_name");
@@ -689,20 +765,46 @@ fn print_exec_help() {
             println!("  \x1b[1msave_as\x1b[0m              Save to a new file (does not modify original)");
             println!("                       Params: file_name, output_path, sheet_name?");
             println!();
-            println!("  \x1b[1msave\x1b[0m                 Save back to the original file (overwrite)");
+            println!(
+                "  \x1b[1msave\x1b[0m                 Save back to the original file (overwrite)"
+            );
             println!("                       Params: file_name, sheet_name?");
         }
     }
 }
 
 fn format_table_output(val: &serde_json::Value, fmt: &str, stats_suffix: Option<&str>) -> String {
-    let columns = val.get("columns").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
+    let columns = val
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
-    let rows = val.get("rows").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_array().map(|arr| {
-            arr.iter().filter_map(|v| v.as_str().map(String::from).or_else(|| if v.is_null() { Some("".to_string()) } else { Some(v.to_string()) })).collect::<Vec<_>>()
-        })).collect::<Vec<_>>())
+    let rows = val
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| {
+                    v.as_array().map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| {
+                                v.as_str().map(String::from).or_else(|| {
+                                    if v.is_null() {
+                                        Some("".to_string())
+                                    } else {
+                                        Some(v.to_string())
+                                    }
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
     if columns.is_empty() {
@@ -754,13 +856,25 @@ fn format_search_output(val: &serde_json::Value, fmt: &str) -> String {
         };
         return if let Some(s) = stats {
             match fmt {
-                "simple" => format!("# {} rows searched, 0 matches, {}ms",
-                    s.get("total_rows_searched").and_then(|v| v.as_u64()).unwrap_or(0),
-                    s.get("search_duration_ms").and_then(|v| v.as_u64()).unwrap_or(0)),
-                _ => format!("{}\n{} rows searched, 0 matches, {}ms",
+                "simple" => format!(
+                    "# {} rows searched, 0 matches, {}ms",
+                    s.get("total_rows_searched")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0),
+                    s.get("search_duration_ms")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                ),
+                _ => format!(
+                    "{}\n{} rows searched, 0 matches, {}ms",
                     msg,
-                    s.get("total_rows_searched").and_then(|v| v.as_u64()).unwrap_or(0),
-                    s.get("search_duration_ms").and_then(|v| v.as_u64()).unwrap_or(0)),
+                    s.get("total_rows_searched")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0),
+                    s.get("search_duration_ms")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                ),
             }
         } else {
             msg
@@ -777,8 +891,18 @@ fn format_search_output(val: &serde_json::Value, fmt: &str) -> String {
     let mut rows = Vec::new();
     for r in results_arr {
         let mut row = Vec::new();
-        row.push(r.get("file_name").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        row.push(r.get("sheet_name").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        row.push(
+            r.get("file_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        row.push(
+            r.get("sheet_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
         if let Some(data) = r.get("row").and_then(|v| v.as_array()) {
             for cell in data {
                 row.push(cell.as_str().unwrap_or("").to_string());
@@ -789,8 +913,14 @@ fn format_search_output(val: &serde_json::Value, fmt: &str) -> String {
 
     let stats_suffix = stats.map(|s| {
         let matches = s.get("total_matches").and_then(|v| v.as_u64()).unwrap_or(0);
-        let searched = s.get("total_rows_searched").and_then(|v| v.as_u64()).unwrap_or(0);
-        let ms = s.get("search_duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        let searched = s
+            .get("total_rows_searched")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let ms = s
+            .get("search_duration_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         format!("{} matches ({} rows searched, {}ms)", matches, searched, ms)
     });
 
@@ -811,11 +941,14 @@ fn format_search_output(val: &serde_json::Value, fmt: &str) -> String {
                         }
                     }
                     _ => {
-                        let agg_parts: Vec<String> = counts.iter().map(|c| {
-                            let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                            let count = c.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
-                            format!("{} ({})", value, count)
-                        }).collect();
+                        let agg_parts: Vec<String> = counts
+                            .iter()
+                            .map(|c| {
+                                let value = c.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                                let count = c.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                                format!("{} ({})", value, count)
+                            })
+                            .collect();
                         out.push_str(&format!("\nAggregate: {}", agg_parts.join(", ")));
                     }
                 }
@@ -846,7 +979,11 @@ fn format_list_files_output(val: &serde_json::Value, fmt: &str) -> String {
             for f in files {
                 let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let total_rows = f.get("total_rows").and_then(|v| v.as_u64()).unwrap_or(0);
-                let sheet_count = f.get("sheets").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                let sheet_count = f
+                    .get("sheets")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
                 out.push_str(&format!("\n{}\t{}\t{}", name, sheet_count, total_rows));
             }
             out
@@ -859,8 +996,15 @@ fn format_list_files_output(val: &serde_json::Value, fmt: &str) -> String {
             for f in files {
                 let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let total_rows = f.get("total_rows").and_then(|v| v.as_u64()).unwrap_or(0);
-                let sheet_count = f.get("sheets").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                out.push_str(&format!("\n| {} | {} | {} |", name, sheet_count, total_rows));
+                let sheet_count = f
+                    .get("sheets")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                out.push_str(&format!(
+                    "\n| {} | {} | {} |",
+                    name, sheet_count, total_rows
+                ));
             }
             out
         }
@@ -884,10 +1028,20 @@ fn format_metadata_output(val: &serde_json::Value, fmt: &str) -> String {
                     for s in sheets {
                         let sheet_name = s.get("sheet_name").and_then(|v| v.as_str()).unwrap_or("");
                         let row_count = s.get("row_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cols = s.get("columns").and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(","))
+                        let cols = s
+                            .get("columns")
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            })
                             .unwrap_or_default();
-                        out.push_str(&format!("\n{}\t{}\t{}\t{}", file_name, sheet_name, row_count, cols));
+                        out.push_str(&format!(
+                            "\n{}\t{}\t{}\t{}",
+                            file_name, sheet_name, row_count, cols
+                        ));
                     }
                 }
             }
@@ -903,10 +1057,20 @@ fn format_metadata_output(val: &serde_json::Value, fmt: &str) -> String {
                     for s in sheets {
                         let sheet_name = s.get("sheet_name").and_then(|v| v.as_str()).unwrap_or("");
                         let row_count = s.get("row_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let cols = s.get("columns").and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                        let cols = s
+                            .get("columns")
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
                             .unwrap_or_default();
-                        out.push_str(&format!("  - {} ({} rows): {}\n", sheet_name, row_count, cols));
+                        out.push_str(&format!(
+                            "  - {} ({} rows): {}\n",
+                            sheet_name, row_count, cols
+                        ));
                     }
                 }
                 out.push('\n');
@@ -922,7 +1086,11 @@ fn format_import_output(val: &serde_json::Value, fmt: &str) -> String {
         "simple" => {
             let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let total_rows = val.get("total_rows").and_then(|v| v.as_u64()).unwrap_or(0);
-            let sheets = val.get("sheets").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+            let sheets = val
+                .get("sheets")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
             format!("{}\t{}\t{}", name, sheets, total_rows)
         }
         _ => serde_json::to_string_pretty(val).unwrap_or_default(),
@@ -1271,12 +1439,7 @@ fn print_row(
     println!("  {}", parts.join(" │ "));
 }
 
-fn highlight_ansi(
-    padded: &str,
-    original: &str,
-    spans: &[(usize, usize)],
-    _width: usize,
-) -> String {
+fn highlight_ansi(padded: &str, original: &str, spans: &[(usize, usize)], _width: usize) -> String {
     let green = "\x1b[1;32m";
     let reset = "\x1b[0m";
     let mut result = String::new();
