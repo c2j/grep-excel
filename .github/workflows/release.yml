@@ -47,9 +47,10 @@ jobs:
 
       - name: Archive (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          cp ../../duckdb-download/x86_64-pc-windows-msvc/*/duckdb.dll . 2>/dev/null || true
+          find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
           7z a ${{ matrix.artifact_name }}.zip grep_excel.exe duckdb.dll
 
       - name: Archive (Linux)
