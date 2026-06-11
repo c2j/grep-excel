@@ -3,7 +3,7 @@ use clap::Parser;
 use grep_excel::app::App;
 use grep_excel::engine::{DefaultEngine, SearchEngine};
 use grep_excel::event::create_event_channel;
-use grep_excel::types::{SearchMode, SearchQuery};
+use grep_excel::types::{FileInfo, SearchMode, SearchQuery};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -58,6 +58,9 @@ struct Args {
         help = "Invert match: show rows that do NOT match the query"
     )]
     invert: bool,
+
+    #[arg(short = 'r', long, help = "尝试修复损坏的xlsx文件后再导入（ZIP/XML级别修复）")]
+    repair: bool,
 
     #[arg(
         short = 't',
@@ -170,6 +173,24 @@ fn run_tui(args: &Args) -> Result<()> {
     app.run()
 }
 
+fn import_file_with_repair(
+    db: &mut DefaultEngine,
+    file: &PathBuf,
+    repair: bool,
+) -> Result<FileInfo> {
+    match db.import_excel(file, &|_, _| {}) {
+        Ok(info) => Ok(info),
+        Err(e) if repair => {
+            eprintln!(
+                "  常规导入失败: {}. 尝试修复模式...",
+                e.to_string().lines().next().unwrap_or(&e.to_string())
+            );
+            db.import_excel_repair(file, &|_, _| {})
+        }
+        Err(e) => Err(e),
+    }
+}
+
 fn run_cli(args: &Args) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
@@ -181,7 +202,7 @@ fn run_cli(args: &Args) -> Result<()> {
             );
             continue;
         }
-        match db.import_excel(file, &|_, _| {}) {
+        match import_file_with_repair(&mut db, file, args.repair) {
             Ok(info) => {
                 eprintln!(
                     "{}",
@@ -346,7 +367,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
             );
             continue;
         }
-        match db.import_excel(file, &|_, _| {}) {
+        match import_file_with_repair(&mut db, file, args.repair) {
             Ok(info) => {
                 eprintln!(
                     "{}",
@@ -457,7 +478,7 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
             );
             continue;
         }
-        match db.import_excel(file, &|_, _| {}) {
+        match import_file_with_repair(&mut db, file, args.repair) {
             Ok(info) => {
                 eprintln!(
                     "{}",
@@ -545,7 +566,7 @@ fn run_exec(args: &Args) -> Result<()> {
         let canonical = std::fs::canonicalize(file)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| file.display().to_string());
-        match db.import_excel(file, &|_, _| {}) {
+        match import_file_with_repair(&mut db, file, args.repair) {
             Ok(info) => {
                 eprintln!(
                     "{}",

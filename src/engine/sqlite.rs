@@ -1,5 +1,6 @@
 use super::*;
 use crate::excel::parse_file;
+use crate::excel::parse_file_repair;
 use anyhow::Result;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{params, Connection};
@@ -280,6 +281,121 @@ impl SqliteEngine {
         })
     }
 
+    fn import_excel_file_repair(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let sheets = parse_file_repair(path)?;
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
+        let sample = sheets.first().map(|s| FileSample {
+            sheet_name: s.name.clone(),
+            headers: s.headers.clone(),
+            rows: s.rows.iter().take(3).cloned().collect(),
+        });
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![&file_name],
+        )?;
+        let file_id: i64 = self
+            .conn
+            .query_row("SELECT last_insert_rowid()", [], |row| row.get(0))?;
+
+        let mut sheet_info = Vec::new();
+        let mut processed_rows = 0;
+
+        for (sheet_idx, sheet) in sheets.into_iter().enumerate() {
+            let row_count = sheet.rows.len() as i32;
+            let col_names = sanitize_col_names(&sheet.headers);
+            let table_name = format!("sheet_{}_{}", file_id, sheet_idx);
+
+            let col_defs: Vec<String> = col_names
+                .iter()
+                .map(|c| format!("{} TEXT", quote_ident(c)))
+                .collect();
+            self.conn.execute(
+                &format!(
+                    "CREATE TABLE {} ({})",
+                    quote_ident(&table_name),
+                    col_defs.join(", ")
+                ),
+                [],
+            )?;
+
+            let placeholders: Vec<&str> = (0..col_names.len()).map(|_| "?").collect();
+            let insert_sql = format!(
+                "INSERT INTO {} ({}) VALUES ({})",
+                quote_ident(&table_name),
+                col_names
+                    .iter()
+                    .map(|c| quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                placeholders.join(", ")
+            );
+
+            let tx = self.conn.transaction()?;
+            {
+                let mut stmt = tx.prepare(&insert_sql)?;
+                for row in &sheet.rows {
+                    let mut padded = row.clone();
+                    padded.resize(col_names.len(), String::new());
+                    let values: Vec<Box<dyn rusqlite::types::ToSql>> = padded
+                        .into_iter()
+                        .map(|s| Box::new(s) as Box<dyn rusqlite::types::ToSql>)
+                        .collect();
+                    stmt.execute(rusqlite::params_from_iter(values))?;
+                    processed_rows += 1;
+                    progress(processed_rows, total_rows);
+                }
+            }
+            tx.commit()?;
+
+            let col_names_str = col_names.join("\x1f");
+            let col_widths_str = sheet
+                .col_widths
+                .iter()
+                .map(|w| format!("{}", w))
+                .collect::<Vec<_>>()
+                .join("\x1f");
+            self.conn.execute(
+                "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
+                params![file_id, &sheet.name, &table_name, row_count, &col_names_str, &col_widths_str],
+            )?;
+
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let dotted_alias = format!("{}.{}", file_stem, sheet.name);
+            let _ = self.conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+
+            sheet_info.push((sheet.name, row_count as usize));
+        }
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
     fn get_sheet_metadata_query(&self, file_name: &str, sheet_name: &str) -> Result<SheetQueryMeta> {
         let result = self.conn.query_row(
             "SELECT s.table_name, s.col_names, s.row_count
@@ -399,6 +515,24 @@ impl SearchEngine for SqliteEngine {
         }
 
         self.import_excel_file(path, progress)
+    }
+
+    fn import_excel_repair(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if ext == "csv" {
+            return self.import_csv(path, progress);
+        }
+
+        self.import_excel_file_repair(path, progress)
     }
 
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)> {
