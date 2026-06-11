@@ -5,6 +5,7 @@ use crate::excel::for_each_sheet;
 use crate::excel::for_each_sheet_repair;
 use anyhow::Result;
 use ::duckdb::{params, Connection};
+use ::duckdb::types::ValueRef;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
@@ -385,7 +386,8 @@ impl SearchEngine for DuckDbEngine {
             while let Some(row) = rows.next()? {
                 let mut values = Vec::with_capacity(col_count);
                 for i in 0..col_count {
-                    values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
+                    let val = Self::value_ref_to_string(row.get_ref(i)?);
+                    values.push(val);
                 }
                 result_rows.push(values);
             }
@@ -1298,4 +1300,41 @@ impl DuckDbEngine {
         (where_sql, values)
     }
 
+    /// Convert any DuckDB ValueRef to a String representation.
+    /// This handles all types, not just TEXT — essential for execute_sql
+    /// where users can run queries returning non-TEXT columns (e.g. aggregates).
+    fn value_ref_to_string(v: ValueRef<'_>) -> String {
+        match v {
+            ValueRef::Null => String::new(),
+            ValueRef::Boolean(b) => b.to_string(),
+            ValueRef::TinyInt(n) => n.to_string(),
+            ValueRef::SmallInt(n) => n.to_string(),
+            ValueRef::Int(n) => n.to_string(),
+            ValueRef::BigInt(n) => n.to_string(),
+            ValueRef::HugeInt(n) => n.to_string(),
+            ValueRef::UTinyInt(n) => n.to_string(),
+            ValueRef::USmallInt(n) => n.to_string(),
+            ValueRef::UInt(n) => n.to_string(),
+            ValueRef::UBigInt(n) => n.to_string(),
+            ValueRef::Float(n) => n.to_string(),
+            ValueRef::Double(n) => n.to_string(),
+            ValueRef::Decimal(d) => d.to_string(),
+            ValueRef::Timestamp(_, ts) => ts.to_string(),
+            ValueRef::Date32(d) => d.to_string(),
+            ValueRef::Time64(_, t) => t.to_string(),
+            ValueRef::Interval { months, days, nanos } => {
+                format!("{} months, {} days, {} nanos", months, days, nanos)
+            }
+            ValueRef::Text(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+            ValueRef::Blob(_) => "[BLOB]".to_string(),
+            ValueRef::List(_, _) => "[LIST]".to_string(),
+            ValueRef::Struct(_, _) => "[STRUCT]".to_string(),
+            ValueRef::Array(_, _) => "[ARRAY]".to_string(),
+            ValueRef::Map(_, _) => "[MAP]".to_string(),
+            ValueRef::Union(_, _) => "[UNION]".to_string(),
+            ValueRef::Enum(_, _) => {
+                v.as_str().map(|s| s.to_string()).unwrap_or_else(|_| "[ENUM]".to_string())
+            }
+        }
+    }
 }
