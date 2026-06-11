@@ -194,7 +194,9 @@ pub(crate) fn sanitize_schema_name(name: &str) -> String {
     }
 }
 
-/// Validate that SQL is a read-only SELECT statement.
+/// Validate that SQL is a read-only query.
+/// Allows SELECT, WITH (CTEs), and DuckDB-specific read-only constructs
+/// (PIVOT, FROM-first, DESCRIBE, SHOW, SUMMARIZE, EXPLAIN).
 /// Returns an error for DDL/DML or empty input.
 pub fn validate_sql(sql: &str) -> Result<()> {
     let trimmed = sql.trim();
@@ -202,11 +204,36 @@ pub fn validate_sql(sql: &str) -> Result<()> {
         anyhow::bail!("SQL query is empty");
     }
     let upper = trimmed.to_uppercase();
-    // Allow WITH ... SELECT (CTE) and plain SELECT
-    if !upper.starts_with("SELECT") && !upper.starts_with("WITH") {
+
+    // Allowed read-only statement prefixes:
+    //   SELECT / WITH          — standard SQL
+    //   PIVOT / UNPIVOT         — DuckDB data transformation
+    //   FROM                    — DuckDB FROM-first syntax
+    //   DESCRIBE / SHOW         — schema inspection
+    //   SUMMARIZE               — statistical summary
+    //   EXPLAIN                 — query plan (including EXPLAIN ANALYZE)
+    let first_word = trimmed.split_whitespace().next().unwrap_or("");
+    let allowed_prefixes = [
+        "SELECT", "WITH",
+        "PIVOT", "UNPIVOT",
+        "FROM",
+        "DESCRIBE", "SHOW",
+        "SUMMARIZE",
+        "EXPLAIN",
+    ];
+    let is_allowed = allowed_prefixes.iter().any(|prefix| {
+        upper.starts_with(prefix) && {
+            // Ensure we matched a full keyword, not a prefix of another word
+            // e.g. "FROM" matches "FROM table", not "FROMATABLE"
+            let rest = &trimmed[prefix.len()..];
+            rest.is_empty() || rest.starts_with(|c: char| c.is_whitespace() || c == '(')
+        }
+    });
+
+    if !is_allowed {
         anyhow::bail!(
-            "Only SELECT statements are allowed. Your query starts with: {}",
-            trimmed.split_whitespace().next().unwrap_or("")
+            "Only read-only queries are allowed. Your query starts with: {}",
+            first_word
         );
     }
     // Reject multi-statement attempts (semicolon could chain commands)
@@ -217,13 +244,13 @@ pub fn validate_sql(sql: &str) -> Result<()> {
     let upper_with_space = format!(" {} ", upper);
     for forbidden in &[
         " INSERT ", " UPDATE ", " DELETE ", " DROP ", " CREATE ", " ALTER ",
-        " ATTACH ", " DETACH ", " COPY ", " EXPORT ", " PRAGMA ",
+        " ATTACH ", " DETACH ", " COPY ", " EXPORT ",
         " TRUNCATE ", " GRANT ", " REVOKE ", " VACUUM ", " REINDEX ",
-        " CALL ", " LOAD ", " INSTALL ", " ANALYZE ",
+        " CALL ", " LOAD ", " INSTALL ",
     ] {
         if upper_with_space.contains(forbidden) {
             anyhow::bail!(
-                "Forbidden keyword found: {}. Only SELECT queries are allowed.",
+                "Forbidden keyword found: {}. Only read-only queries are allowed.",
                 forbidden.trim()
             );
         }

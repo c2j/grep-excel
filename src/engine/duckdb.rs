@@ -376,7 +376,13 @@ impl SearchEngine for DuckDbEngine {
             super::validate_sql(sql)?;
             let start = std::time::Instant::now();
 
-            let limited_sql = format!("SELECT * FROM ({}) LIMIT {}", sql, limit);
+            // Append LIMIT if none present (avoid double-wrapping with SELECT *)
+            let has_limit = sql.to_uppercase().contains(" LIMIT ");
+            let limited_sql = if has_limit {
+                sql.to_string()
+            } else {
+                format!("{} LIMIT {}", sql, limit)
+            };
             let mut stmt = self.conn.prepare(&limited_sql)?;
             let mut rows = stmt.query([])?;
             let columns = rows.as_ref().unwrap().column_names();

@@ -775,7 +775,12 @@ impl SearchEngine for SqliteEngine {
         super::validate_sql(sql)?;
         let start = std::time::Instant::now();
 
-        let limited_sql = format!("SELECT * FROM ({}) LIMIT {}", sql, limit);
+        let has_limit = sql.to_uppercase().contains(" LIMIT ");
+        let limited_sql = if has_limit {
+            sql.to_string()
+        } else {
+            format!("{} LIMIT {}", sql, limit)
+        };
         let mut stmt = self.conn.prepare(&limited_sql)?;
         let col_count = stmt.column_count();
 
