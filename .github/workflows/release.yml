@@ -22,6 +22,7 @@ jobs:
             os: windows-latest
             features: engine-duckdb
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
+            prebuilt_duckdb: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
             features: duckdb-bundled
@@ -53,9 +54,15 @@ jobs:
         with:
           key: ${{ matrix.target }}-${{ matrix.features }}
 
+      - name: Download prebuilt DuckDB (Windows)
+        if: matrix.prebuilt_duckdb
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/duckdb/duckdb/releases/download/v1.5.1/libduckdb-windows-amd64.zip" -OutFile duckdb.zip
+          Expand-Archive -Path duckdb.zip -DestinationPath duckdb-lib
+          "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
+
       - name: Build
-        env:
-          DUCKDB_DOWNLOAD_LIB: ${{ runner.os == 'Windows' && '1' || '' }}
         run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
       - name: Archive (Windows)
@@ -64,6 +71,7 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
+          cp ../../../duckdb-lib/duckdb.dll . 2>/dev/null || true
           7z a ${{ matrix.artifact_name }}.zip grep_excel.exe duckdb.dll
 
       - name: Archive (Linux)
