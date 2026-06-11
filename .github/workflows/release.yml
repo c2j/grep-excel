@@ -39,6 +39,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -90,20 +95,20 @@ jobs:
           cd target/${{ matrix.target }}/release
           find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
           cp ../../../duckdb-lib/duckdb.dll . 2>/dev/null || true
-          7z a ${{ matrix.artifact_name }}.zip grep_excel.exe duckdb.dll
+          7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe duckdb.dll
 
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
           chmod +x grep_excel
-          zip ${{ matrix.artifact_name }}.zip grep_excel
+          zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.zip
+          name: ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip
 
   build-win7:
     name: Build windows-x86_64 (Win7 compatible)
@@ -111,6 +116,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@nightly
 
@@ -133,15 +143,16 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "duckdb-lib/duckdb.dll" "target/x86_64-win7-windows-msvc/release/"
+          $version = "${{ steps.version.outputs.version }}"
           Compress-Archive `
             -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
-            -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc.zip"
+            -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc-v${version}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: grep_excel-duckdb-x86_64-win7-windows-msvc
-          path: grep_excel-duckdb-x86_64-win7-windows-msvc.zip
+          name: grep_excel-duckdb-x86_64-win7-windows-msvc-v${{ steps.version.outputs.version }}
+          path: grep_excel-duckdb-x86_64-win7-windows-msvc-v${{ steps.version.outputs.version }}.zip
 
   release:
     needs: [build, build-win7]
