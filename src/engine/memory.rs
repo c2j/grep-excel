@@ -1,5 +1,6 @@
 use super::*;
 use crate::excel::parse_file;
+use crate::excel::parse_file_repair;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
@@ -24,6 +25,47 @@ impl SearchEngine for MemEngine {
 
     fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
         let sheets = parse_file(path)?;
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
+        let sample = sheets.first().map(|s| FileSample {
+            sheet_name: s.name.clone(),
+            headers: s.headers.clone(),
+            rows: s.rows.iter().take(3).cloned().collect(),
+        });
+
+        let mut sheet_info = Vec::new();
+        for sheet in sheets {
+            sheet_info.push((sheet.name.clone(), sheet.rows.len()));
+            self.sheets.push(MemSheet {
+                file_name: file_name.clone(),
+                sheet_name: sheet.name,
+                headers: sheet.headers,
+                rows: sheet.rows,
+                col_widths: sheet.col_widths,
+            });
+        }
+
+        progress(total_rows, total_rows);
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
+    fn import_excel_repair(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let sheets = parse_file_repair(path)?;
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())

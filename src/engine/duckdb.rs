@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::excel::for_each_sheet;
+use crate::excel::for_each_sheet_repair;
 use anyhow::Result;
 use ::duckdb::{params, Connection};
 use std::collections::HashMap;
@@ -59,6 +60,24 @@ impl SearchEngine for DuckDbEngine {
         }
 
         self.import_excel_sheets(path, progress)
+    }
+
+    fn import_excel_repair(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if ext == "csv" {
+            return self.import_csv_direct(path, progress);
+        }
+
+        self.import_excel_sheets_repair(path, progress)
     }
 
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)> {
@@ -932,6 +951,156 @@ impl DuckDbEngine {
         let progress_callback_capture = progress_callback;
 
         for_each_sheet(path, |sheet_data, sheet_idx| {
+            let row_count = sheet_data.rows.len();
+            let col_names = sanitize_col_names(&sheet_data.headers);
+            let table_name = format!("sheet_{}_{}", file_id_capture, sheet_idx);
+
+            let col_defs: Vec<String> = col_names
+                .iter()
+                .map(|c| format!("{} TEXT", quote_ident(c)))
+                .collect();
+            let create_sql = format!(
+                "CREATE TABLE {} ({})",
+                quote_ident(&table_name),
+                col_defs.join(", ")
+            );
+            conn.execute(&create_sql, [])?;
+
+            *total_rows_capture += row_count;
+
+            let tx = conn.transaction()?;
+            {
+                let mut appender = tx.appender(&table_name)?;
+                for row in &sheet_data.rows {
+                    let mut padded_row = row.clone();
+                    padded_row.resize(col_names.len(), String::new());
+                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                        .iter()
+                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .collect();
+                    appender.append_row(param_refs.as_slice())?;
+                    *processed_rows_capture += 1;
+                    progress_callback_capture(*processed_rows_capture, *total_rows_capture);
+                }
+            }
+            tx.commit()?;
+
+            let col_names_str = col_names.join("\x1f");
+            let col_widths_str = sheet_data
+                .col_widths
+                .iter()
+                .map(|w| format!("{}", w))
+                .collect::<Vec<_>>()
+                .join("\x1f");
+            conn.execute(
+                "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
+                params![file_id_capture, &sheet_data.name, &table_name, row_count as i32, &col_names_str, &col_widths_str],
+            )?;
+
+            for col_name in &col_names {
+                let safe_name = col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                let index_name = format!("idx_{}_{}", table_name, safe_name);
+                let _ = conn.execute(
+                    &format!(
+                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
+                        index_name,
+                        quote_ident(&table_name),
+                        quote_ident(col_name)
+                    ),
+                    [],
+                );
+            }
+
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let safe_schema = sanitize_schema_name(&file_stem);
+            let _ = conn.execute(
+                &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+                [],
+            );
+            let _ = conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                    quote_ident(&safe_schema),
+                    quote_ident(&sheet_data.name),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+            let dotted_alias = format!("{}.{}", file_stem, sheet_data.name);
+            let _ = conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+
+            if sample_capture.is_none() {
+                *sample_capture = Some(FileSample {
+                    sheet_name: sheet_data.name.clone(),
+                    headers: sheet_data.headers.clone(),
+                    rows: sheet_data.rows.iter().take(3).cloned().collect(),
+                });
+            }
+
+            sheet_info_capture.push((sheet_data.name, row_count));
+
+            Ok(())
+        })?;
+
+        if total_rows > 0 {
+            progress_callback(processed_rows, total_rows);
+        }
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
+    fn import_excel_sheets_repair(
+        &mut self,
+        path: &Path,
+        progress_callback: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![&file_name],
+        )?;
+
+        let file_id: i64 = self.conn.query_row(
+            "SELECT currval('file_id_seq')",
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let mut sheet_info: Vec<(String, usize)> = Vec::new();
+        let mut sample: Option<FileSample> = None;
+        let mut processed_rows: usize = 0;
+        let mut total_rows: usize = 0;
+
+        let file_id_capture = file_id;
+        let conn = &mut self.conn;
+        let sample_capture = &mut sample;
+        let sheet_info_capture = &mut sheet_info;
+        let processed_rows_capture = &mut processed_rows;
+        let total_rows_capture = &mut total_rows;
+        let progress_callback_capture = progress_callback;
+
+        for_each_sheet_repair(path, |sheet_data, sheet_idx| {
             let row_count = sheet_data.rows.len();
             let col_names = sanitize_col_names(&sheet_data.headers);
             let table_name = format!("sheet_{}_{}", file_id_capture, sheet_idx);

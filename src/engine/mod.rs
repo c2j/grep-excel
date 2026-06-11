@@ -11,6 +11,16 @@ pub trait SearchEngine: Send {
         path: &Path,
         progress: &dyn Fn(usize, usize),
     ) -> Result<FileInfo>;
+    fn import_excel_repair(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let _ = (path, progress);
+        Err(anyhow::anyhow!(
+            "Repair mode is not supported with the current engine"
+        ))
+    }
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)>;
     fn list_files(&self) -> Vec<FileInfo>;
     fn clear(&mut self) -> Result<()>;
@@ -143,7 +153,7 @@ pub fn export_results_csv(results: &[SearchResult], path: &Path) -> Result<()> {
 }
 
 pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
-    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
     headers
         .iter()
         .map(|h| {
@@ -152,14 +162,16 @@ pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
             } else {
                 h.clone()
             };
-            let count = seen
-                .entry(base.clone())
-                .and_modify(|c| *c += 1)
-                .or_insert(1);
-            if *count == 1 {
-                base
-            } else {
-                format!("{}_{}", base, count)
+            if used.insert(base.clone()) {
+                return base;
+            }
+            let mut counter = 2;
+            loop {
+                let candidate = format!("{}_{}", base, counter);
+                if used.insert(candidate.clone()) {
+                    return candidate;
+                }
+                counter += 1;
             }
         })
         .collect()
