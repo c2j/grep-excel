@@ -1,6 +1,6 @@
 [package]
 name = "grep_excel"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "TUI tool for searching Excel/CSV files with full-text and wildcard search"
 license = "MIT"
