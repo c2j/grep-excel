@@ -627,7 +627,7 @@ impl SearchEngine for SqliteEngine {
                 where_sql
             };
             let sql = format!(
-                "SELECT {} FROM {} WHERE {}{}",
+                "SELECT rowid, {} FROM {} WHERE {}{}",
                 col_list,
                 quote_ident(&meta.table_name),
                 effective_where,
@@ -640,13 +640,14 @@ impl SearchEngine for SqliteEngine {
                 .map(|v| Box::new(v.clone()) as Box<dyn rusqlite::types::ToSql>)
                 .collect();
 
-            let matched_rows: Vec<Vec<Option<String>>> = search_stmt
+            let matched_rows: Vec<(i64, Vec<Option<String>>)> = search_stmt
                 .query_map(rusqlite::params_from_iter(param_refs), |row| {
+                    let row_id: i64 = row.get(0)?;
                     let mut values = Vec::new();
                     for i in 0..meta.col_names.len() {
-                        values.push(row.get::<_, Option<String>>(i)?);
+                        values.push(row.get::<_, Option<String>>(i + 1)?);
                     }
-                    Ok(values)
+                    Ok((row_id, values))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -656,7 +657,7 @@ impl SearchEngine for SqliteEngine {
 
             matches_per_sheet.insert(meta.sheet_name.clone(), matched_rows.len());
 
-            for values in matched_rows {
+            for (row_id, values) in matched_rows {
                 if results.len() >= query.limit {
                     truncated = true;
                     break;
@@ -675,6 +676,7 @@ impl SearchEngine for SqliteEngine {
                     col_names,
                     matched_columns,
                     col_widths: meta.col_widths.clone(),
+                    row_index: (row_id - 1) as usize,
                 });
             }
         }
@@ -961,13 +963,14 @@ impl SearchEngine for SqliteEngine {
 
         let rows = self.query_rows(&sql, &col_names)?;
         let total_rows = meta.row_count;
+        let row_count = rows.len();
 
         Ok(SheetDataResult {
             file_name: file_name.to_string(),
             sheet_name: sheet_name.to_string(),
             columns: col_names,
             rows,
-            row_count: rows.len(),
+            row_count,
             total_rows,
             truncated: false,
         })

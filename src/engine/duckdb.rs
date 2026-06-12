@@ -182,7 +182,7 @@ impl SearchEngine for DuckDbEngine {
                 where_sql
             };
             let sql = format!(
-                "SELECT {} FROM {} WHERE {}{}",
+                "SELECT rowid, {} FROM {} WHERE {}{}",
                 col_list,
                 quote_ident(&meta.table_name),
                 effective_where,
@@ -195,14 +195,15 @@ impl SearchEngine for DuckDbEngine {
                 .map(|v| v as &dyn::duckdb::ToSql)
                 .collect();
 
-            let matched_rows: Vec<Vec<Option<String>>> = {
+            let matched_rows: Vec<(i64, Vec<Option<String>>)> = {
                 let mapped =
                     search_stmt.query_map(param_refs.as_slice(), |row: &::duckdb::Row| {
+                        let row_id: i64 = row.get(0)?;
                         let mut values = Vec::new();
                         for i in 0..meta.col_names.len() {
-                            values.push(row.get::<_, Option<String>>(i)?);
+                            values.push(row.get::<_, Option<String>>(i + 1)?);
                         }
-                        Ok(values)
+                        Ok((row_id, values))
                     })?;
                 mapped.collect::<Result<Vec<_>, _>>()?
             };
@@ -213,7 +214,7 @@ impl SearchEngine for DuckDbEngine {
 
             matches_per_sheet.insert(meta.sheet_name.clone(), matched_rows.len());
 
-            for values in matched_rows {
+            for (row_id, values) in matched_rows {
                 if results.len() >= query.limit {
                     truncated = true;
                     break;
@@ -233,6 +234,7 @@ impl SearchEngine for DuckDbEngine {
                     col_names,
                     matched_columns,
                     col_widths: meta.col_widths.clone(),
+                    row_index: row_id as usize,
                 });
             }
         }
@@ -635,7 +637,7 @@ impl SearchEngine for DuckDbEngine {
                 ))?;
             let quoted_col = quote_ident(&meta.col_names[col_idx]);
             let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
-            let affected = self.conn.execute(&sql, params![value, (row + 1) as i64])?;
+            let affected = self.conn.execute(&sql, params![value, row as i64])?;
             if affected == 0 {
                 anyhow::bail!("Row {} out of range (sheet has {} rows)", row, meta.row_count);
             }
@@ -649,7 +651,7 @@ impl SearchEngine for DuckDbEngine {
                 if let Some(col_idx) = meta.col_names.iter().position(|h| h == column) {
                     let quoted_col = quote_ident(&meta.col_names[col_idx]);
                     let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
-                    if self.conn.execute(&sql, params![value, (*row + 1) as i64])? > 0 {
+                    if self.conn.execute(&sql, params![value, *row as i64])? > 0 {
                         count += 1;
                     }
                 }

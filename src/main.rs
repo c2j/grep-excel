@@ -3,7 +3,7 @@ use clap::Parser;
 use grep_excel::app::App;
 use grep_excel::engine::{DefaultEngine, SearchEngine};
 use grep_excel::event::create_event_channel;
-use grep_excel::types::{FileInfo, SearchMode, SearchQuery};
+use grep_excel::types::{FileInfo, SearchMode, SearchQuery, SearchResult};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -83,9 +83,22 @@ struct Args {
         long,
         num_args = 0..=1,
         default_missing_value = "help",
-        help = "Execute tool command(s) as JSON. Use --exec alone or --exec help to list all tools."
+        help = "Execute MCP tool command(s) as JSON. Use --exec alone or --exec help to list all tools."
     )]
     exec: Option<String>,
+
+    #[arg(
+        short = 'X',
+        long = "run",
+        help = "Execute a shell command for each matching row. Use ${col_name} to reference cell values. Requires --query or --sql."
+    )]
+    run: Option<String>,
+
+    #[arg(
+        long = "run-output-column",
+        help = "When using --run, write command stdout to this column (creates column if it doesn't exist)"
+    )]
+    run_output_column: Option<String>,
 }
 
 fn print_logo() {
@@ -110,9 +123,10 @@ fn main() -> Result<()> {
     // Intercept --exec --help / --mcp --help BEFORE general --help
     let show_exec_help = {
         let has_exec = args.iter().any(|a| a == "--exec" || a == "-E");
+        let has_run = args.iter().any(|a| a == "--run" || a == "-X");
         let has_mcp = args.iter().any(|a| a == "--mcp");
         let has_help = args.iter().any(|a| a == "--help" || a == "-h");
-        (has_exec || has_mcp) && has_help
+        (has_exec || has_run || has_mcp) && has_help
     };
     if show_exec_help {
         print_exec_help();
@@ -133,6 +147,10 @@ fn main() -> Result<()> {
 
     if args.exec.is_some() {
         return run_exec(&args);
+    }
+
+    if args.run.is_some() {
+        return run_exec_shell(&args);
     }
 
     #[cfg(feature = "mcp-server")]
@@ -521,6 +539,256 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
     Ok(())
 }
 
+fn run_exec_shell(args: &Args) -> Result<()> {
+    let mut db = DefaultEngine::new()?;
+    let exec_template = args.run.as_ref().unwrap();
+
+    for file in &args.files {
+        if !file.exists() {
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
+            continue;
+        }
+        match import_file_with_repair(&mut db, file, args.repair) {
+            Ok(info) => {
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                );
+            }
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+            ),
+        }
+    }
+
+    let results: Vec<SearchResult> = if let Some(ref sql) = args.sql {
+        let sql_result = match db.execute_sql(sql, usize::MAX) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("{}", grep_excel::i18n::cli_sql_failed(&e.to_string()));
+                return Ok(());
+            }
+        };
+        // --sql mode doesn't carry file/sheet metadata; use empty placeholders.
+        // row_index maps to result position for write-back.
+        sql_result.rows.iter().enumerate().map(|(row_idx, row)| {
+            SearchResult {
+                sheet_name: String::new(),
+                file_name: String::new(),
+                row: row.clone(),
+                col_names: sql_result.columns.clone(),
+                matched_columns: vec![],
+                col_widths: vec![],
+                row_index: row_idx,
+            }
+        }).collect()
+    } else if args.query.is_some() {
+        let query = SearchQuery {
+            text: args.query.clone().unwrap_or_default(),
+            column: args.column.clone(),
+            mode: match args.mode.as_str() {
+                "exact" => SearchMode::ExactMatch,
+                "wildcard" => SearchMode::Wildcard,
+                "regex" => SearchMode::Regex,
+                _ => SearchMode::FullText,
+            },
+            limit: usize::MAX,
+            sheet: args.sheet.clone(),
+            invert: args.invert,
+        };
+        match db.search(&query) {
+            Ok((r, _stats)) => r,
+            Err(e) => {
+                eprintln!("{}", grep_excel::i18n::cli_search_failed(&e.to_string()));
+                return Ok(());
+            }
+        }
+    } else {
+        anyhow::bail!("--run requires either --query (-q) or --sql (-x) to select rows");
+    };
+
+    if results.is_empty() {
+        eprintln!("No matching rows found for --run.");
+        return Ok(());
+    }
+
+    if let Some(ref output_col) = args.run_output_column {
+        let mut seen_sheets: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        for result in &results {
+            let key = (result.file_name.clone(), result.sheet_name.clone());
+            if seen_sheets.insert(key.clone()) {
+                let _ = db.add_column(&key.0, &key.1, output_col, "");
+            }
+        }
+    }
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for result in &results {
+        let expanded_cmd = expand_exec_template(exec_template, &result.col_names, &result.row);
+        if expanded_cmd.is_err() {
+            eprintln!(
+                "Warning: failed to expand template for row {} in {}/{}: {}",
+                result.row_index, result.file_name, result.sheet_name,
+                expanded_cmd.unwrap_err()
+            );
+            fail_count += 1;
+            continue;
+        }
+        let expanded_cmd = expanded_cmd.unwrap();
+
+        let output = std::process::Command::new("sh")
+            .args(["-c", &expanded_cmd])
+            .output();
+
+        match output {
+            Ok(out) => {
+                if !out.status.success() {
+                    let stderr_msg = String::from_utf8_lossy(&out.stderr);
+                    eprintln!(
+                        "Warning: command failed for row {} in {}/{} (exit {:?}): {}",
+                        result.row_index,
+                        result.file_name,
+                        result.sheet_name,
+                        out.status.code(),
+                        stderr_msg.trim()
+                    );
+                    fail_count += 1;
+                    continue;
+                }
+
+                let stdout_str = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+
+                if !stdout_str.is_empty() {
+                    println!("{}", stdout_str);
+                }
+
+                if let Some(ref output_col) = args.run_output_column {
+                    if let Err(e) = db.update_cell(
+                        &result.file_name,
+                        &result.sheet_name,
+                        result.row_index,
+                        output_col,
+                        &stdout_str,
+                    ) {
+                        eprintln!(
+                            "Warning: failed to write result for row {} in {}/{}: {}",
+                            result.row_index, result.file_name, result.sheet_name, e
+                        );
+                        fail_count += 1;
+                        continue;
+                    }
+                }
+
+                success_count += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to execute command for row {} in {}/{}: {}",
+                    result.row_index, result.file_name, result.sheet_name, e
+                );
+                fail_count += 1;
+            }
+        }
+    }
+
+    if let Some(ref export_path) = args.export {
+        let files = db.list_files();
+        for file_info in &files {
+            if let Err(e) = db.save_as(&file_info.name, export_path) {
+                eprintln!("Warning: failed to export '{}': {}", file_info.name, e);
+            } else {
+                eprintln!(
+                    "Exported '{}' to '{}'",
+                    file_info.name,
+                    export_path.display()
+                );
+            }
+        }
+    }
+
+    eprintln!(
+        "Done: {} succeeded, {} failed, {} total rows processed.",
+        success_count, fail_count, results.len()
+    );
+
+    if fail_count > 0 && success_count == 0 {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+/// Expand `${column_name}` placeholders in a command template.
+/// `$$` is escaped to a literal `$`.
+/// Unknown column names are replaced with `''` and produce a warning.
+fn expand_exec_template(
+    template: &str,
+    col_names: &[String],
+    row: &[String],
+) -> Result<String, String> {
+    let mut result = String::with_capacity(template.len());
+    let mut chars = template.chars().peekable();
+    let mut warnings = Vec::new();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' {
+            match chars.peek() {
+                Some(&'{') => {
+                    chars.next();
+                    let mut col_name = String::new();
+                    while let Some(&c) = chars.peek() {
+                        if c == '}' {
+                            chars.next();
+                            break;
+                        }
+                        col_name.push(c);
+                        chars.next();
+                    }
+
+                    if let Some(col_idx) = col_names.iter().position(|c| c == &col_name) {
+                        let value = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                        result.push_str(&shell_escape(value));
+                    } else {
+                        warnings.push(format!("column '{}' not found", col_name));
+                        result.push_str("''");
+                    }
+                }
+                Some(&'$') => {
+                    chars.next();
+                    result.push('$');
+                }
+                _ => {
+                    result.push('$');
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    if warnings.is_empty() {
+        Ok(result)
+    } else {
+        Err(warnings.join("; "))
+    }
+}
+
+/// Escape a string for safe use inside single quotes in a shell command.
+/// Replaces `'` with `'\''` and wraps the result in single quotes.
+fn shell_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    let escaped = s.replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
+
 fn run_exec(args: &Args) -> Result<()> {
     let exec_json = args.exec.as_ref().unwrap();
 
@@ -602,6 +870,35 @@ fn print_exec_help() {
     let lang = grep_excel::i18n::current();
     match lang {
         grep_excel::i18n::Lang::Zh => {
+            println!("grep_excel --exec / --run 帮助");
+            println!();
+            println!("\x1b[1m═══ --run: Shell 命令模式 ═══\x1b[0m");
+            println!("  对每个匹配行执行外部命令。命令中使用 ${{列名}} 引用单元格值。");
+            println!();
+            println!("  用法:");
+            println!("    grep_excel <文件> -q <查询> -c <列> --run '<命令>' [--run-output-column <新列>] [--export <文件>]");
+            println!();
+            println!("  占位符:");
+            println!("    ${{列名}}  该行对应列的值 (自动单引号转义)");
+            println!("    $$      字面 $ 符号");
+            println!();
+            println!("  示例:");
+            println!("    # 对匹配行执行外部工具，打印 stdout");
+            println!("    grep_excel data.xlsx -q \"类型A\" -c \"类型\" --run './sql-rewriter \"${{SQL}}\"'");
+            println!();
+            println!("    # 将命令输出写入新列，导出为新文件");
+            println!("    grep_excel data.xlsx -q \"错误\" -c \"级别\" --run './analyze \"${{内容}}\"' --run-output-column \"分析结果\" --export output.xlsx");
+            println!();
+            println!("    # 配合 SQL 查询使用");
+            println!("    grep_excel data.xlsx --sql \"SELECT 类型, SQL FROM sheet WHERE 类型='A'\" --run './formatter \"${{SQL}}\"'");
+            println!();
+            println!("  相关选项:");
+            println!("    --run-output-column <列>  命令 stdout 写入该列 (不存在则自动创建)");
+            println!("    --export <路径>     处理完成后导出完整 Excel 文件 (需要 mcp-server feature)");
+            println!();
+            println!("\x1b[1m═══ --exec: JSON MCP 工具模式 ═══\x1b[0m");
+            println!("  以 JSON 格式执行内置 MCP 工具。");
+            println!();
             println!("grep_excel --exec 可用工具");
             println!();
             println!("用法:");
@@ -691,6 +988,35 @@ fn print_exec_help() {
             println!("                       参数: file_name, sheet_name?");
         }
         grep_excel::i18n::Lang::En => {
+            println!("grep_excel --exec / --run help");
+            println!();
+            println!("\x1b[1m═══ --run: Shell Command Mode ═══\x1b[0m");
+            println!("  Execute an external command for each matching row. Use ${{col_name}} to reference cell values.");
+            println!();
+            println!("  Usage:");
+            println!("    grep_excel <files> -q <query> -c <col> --run '<command>' [--run-output-column <col>] [--export <file>]");
+            println!();
+            println!("  Placeholders:");
+            println!("    ${{col_name}}  Value of the named column (auto-quoted for shell safety)");
+            println!("    $$           Literal $ character");
+            println!();
+            println!("  Examples:");
+            println!("    # Execute external tool for each matching row, print stdout");
+            println!("    grep_excel data.xlsx -q \"TypeA\" -c \"Type\" --run './sql-rewriter \"${{SQL}}\"'");
+            println!();
+            println!("    # Write command output to a new column, export as new file");
+            println!("    grep_excel data.xlsx -q \"Error\" -c \"Level\" --run './analyze \"${{Message}}\"' --run-output-column \"Result\" --export output.xlsx");
+            println!();
+            println!("    # Use with SQL queries");
+            println!("    grep_excel data.xlsx --sql \"SELECT Type, SQL FROM sheet WHERE Type='A'\" --run './formatter \"${{SQL}}\"'");
+            println!();
+            println!("  Related options:");
+            println!("    --run-output-column <col>  Write command stdout to this column (auto-created if not exists)");
+            println!("    --export <path>      Export full Excel file after processing (requires mcp-server feature)");
+            println!();
+            println!("\x1b[1m═══ --exec: JSON MCP Tool Mode ═══\x1b[0m");
+            println!("  Execute built-in MCP tools as JSON commands.");
+            println!();
             println!("grep_excel --exec available tools");
             println!();
             println!("Usage:");

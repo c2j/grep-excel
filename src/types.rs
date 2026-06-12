@@ -37,6 +37,7 @@ pub struct SearchResult {
     pub col_names: Vec<String>,
     pub matched_columns: Vec<usize>,
     pub col_widths: Vec<f64>,
+    pub row_index: usize,
 }
 
 #[derive(Debug, Clone)]
