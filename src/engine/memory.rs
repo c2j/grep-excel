@@ -126,7 +126,7 @@ impl SearchEngine for MemEngine {
             total_rows_searched += sheet.rows.len();
             let mut sheet_matches = 0;
 
-            for row in &sheet.rows {
+            for (row_idx, row) in sheet.rows.iter().enumerate() {
                 if results.len() >= query.limit {
                     truncated = true;
                     break;
@@ -147,6 +147,7 @@ impl SearchEngine for MemEngine {
                     col_names: sheet.headers.clone(),
                     matched_columns: if query.invert { vec![] } else { matched_columns },
                     col_widths: sheet.col_widths.clone(),
+                    row_index: row_idx,
                 });
                 sheet_matches += 1;
             }

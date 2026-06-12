@@ -729,37 +729,42 @@ pub fn help_full_text() -> String {
                                       -f, --format <FORMAT>    输出格式: markdown (默认) 或 pretty\n\
                                       -g, --aggregate <COL>    聚合列: 统计匹配行在该列的值分布\n\
                                           -E, --exec <JSON>        执行 MCP 工具命令 (JSON 格式)\n\
-                                           --mcp              启动 MCP Server 模式 (stdio)\n\
-                                     -h, --help               显示帮助信息\n\
-                                     -V, --version            显示版本号\n\n\
-                搜索模式:\n\n\
-                \x1b[1mfulltext\x1b[0m (默认)\n\
-                \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
-                忽略大小写。适用于一般性搜索。\n\
-                \x1b[2m示例: --query \"john\" 匹配 \"John Smith\"、\"Johnson\"、\"JOHN\"\x1b[0m\n\n\
-                \x1b[1mexact\x1b[0m\n\
-                \x1b[3m区分大小写的精确匹配。\x1b[0m 整个单元格内容必须完全等于查询文本。\n\
-                适用于精确查找 ID 或确切名称。\n\
-                \x1b[2m示例: --query \"Engineering\" 仅匹配内容恰好为 \"Engineering\" 的单元格\x1b[0m\n\n\
-                \x1b[1mwildcard\x1b[0m\n\
-                \x1b[3mSQL LIKE 风格的模式匹配。\x1b[0m 不区分大小写。两种通配符:\n\
-                \x1b[1m%\x1b[0m = 任意字符序列（包括空）\n\
-                \x1b[1m_\x1b[0m = 恰好一个字符\n\
-                \x1b[2m示例: --query \"San%\" --mode wildcard  → \"San Francisco\"、\"San Jose\"\x1b[0m\n\
-                \x1b[2m示例: --query \"A__\" --mode wildcard  → \"ABC\"、\"Amy\"\x1b[0m\n\n\
-                \x1b[1mregex\x1b[0m\n\
-                \x1b[3m正则表达式匹配。\x1b[0m 不区分大小写。使用 | 进行多关键词 OR 搜索。\n\
-                支持完整的 Rust 正则语法。\n\
-                \x1b[2m示例: --query \"张三|李四\" --mode regex  → 匹配包含任一关键词的单元格\x1b[0m\n\
-                \x1b[2m示例: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → 匹配日期格式\x1b[0m\n\n\
-                 \x1b[1m提示:\x1b[0m\n\
-                 • 使用 --column 限定搜索范围到指定列名\n\
-                 • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
-                 • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
-                 • 使用 --list-tables 查看文件到表名的映射关系\n\
-                 • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
-                  • 不带 --query 运行将启动交互式 TUI 模式\n\
-                  • 使用 --exec 执行 MCP 工具命令: 单条 '{{\"tool\":\"search\",\"params\":{{\"query\":\"关键词\"}}}}' 或数组 '[{{...}},{{...}}]'\n"
+                                      -X, --run <CMD>          对每个匹配行执行 Shell 命令 (${{列名}} 占位符)\n\
+                                            --run-output-column <COL>    --run 模式: 命令 stdout 写入该列\n\
+                                            --mcp              启动 MCP Server 模式 (stdio)\n\
+                                      -r, --repair             导入前尝试修复损坏的 xlsx 文件\n\
+                                      -h, --help               显示帮助信息\n\
+                                      -V, --version            显示版本号\n\n\
+                 搜索模式:\n\n\
+                 \x1b[1mfulltext\x1b[0m (默认)\n\
+                 \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
+                 忽略大小写。适用于一般性搜索。\n\
+                 \x1b[2m示例: --query \"john\" 匹配 \"John Smith\"、\"Johnson\"、\"JOHN\"\x1b[0m\n\n\
+                 \x1b[1mexact\x1b[0m\n\
+                 \x1b[3m区分大小写的精确匹配。\x1b[0m 整个单元格内容必须完全等于查询文本。\n\
+                 适用于精确查找 ID 或确切名称。\n\
+                 \x1b[2m示例: --query \"Engineering\" 仅匹配内容恰好为 \"Engineering\" 的单元格\x1b[0m\n\n\
+                 \x1b[1mwildcard\x1b[0m\n\
+                 \x1b[3mSQL LIKE 风格的模式匹配。\x1b[0m 不区分大小写。两种通配符:\n\
+                 \x1b[1m%\x1b[0m = 任意字符序列（包括空）\n\
+                 \x1b[1m_\x1b[0m = 恰好一个字符\n\
+                 \x1b[2m示例: --query \"San%\" --mode wildcard  → \"San Francisco\"、\"San Jose\"\x1b[0m\n\
+                 \x1b[2m示例: --query \"A__\" --mode wildcard  → \"ABC\"、\"Amy\"\x1b[0m\n\n\
+                 \x1b[1mregex\x1b[0m\n\
+                 \x1b[3m正则表达式匹配。\x1b[0m 不区分大小写。使用 | 进行多关键词 OR 搜索。\n\
+                 支持完整的 Rust 正则语法。\n\
+                 \x1b[2m示例: --query \"张三|李四\" --mode regex  → 匹配包含任一关键词的单元格\x1b[0m\n\
+                 \x1b[2m示例: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → 匹配日期格式\x1b[0m\n\n\
+                  \x1b[1m提示:\x1b[0m\n\
+                  • 使用 --column 限定搜索范围到指定列名\n\
+                  • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
+                  • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
+                  • 使用 --list-tables 查看文件到表名的映射关系\n\
+                  • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
+                   • 不带 --query 运行将启动交互式 TUI 模式\n\
+                   • 使用 --run <命令> 对每个匹配行执行 Shell 命令 (用 ${{列名}} 引用单元格)\n\
+                   • 使用 --exec 执行 MCP 工具命令: 单条 '{{\"tool\":\"search\",\"params\":{{\"query\":\"关键词\"}}}}' 或数组 '[{{...}},{{...}}]'\n\
+                   • 使用 --run --help 或 --exec --help 查看详细用法\n"
             )
         }
         Lang::En => {
@@ -780,38 +785,43 @@ pub fn help_full_text() -> String {
                                       -t, --list-tables        List imported tables with aliases and columns\n\
                                       -f, --format <FORMAT>    Output format: markdown (default) or pretty\n\
                                       -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
-                                      -E, --exec <JSON>        Execute MCP tool command(s) as JSON\n\
-                                          --mcp              Start MCP Server mode (stdio)\n\
-                                     -h, --help               Show help information\n\
-                                     -V, --version            Show version\n\n\
-                Search Modes:\n\n\
-                \x1b[1mfulltext\x1b[0m (default)\n\
-                \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\
-                text, regardless of case. Best for general-purpose searching.\n\
-                \x1b[2mExample: --query \"john\" matches \"John Smith\", \"Johnson\", \"JOHN\"\x1b[0m\n\n\
-                \x1b[1mexact\x1b[0m\n\
-                \x1b[3mCase-sensitive exact match.\x1b[0m The entire cell content must exactly equal\n\
-                the query text. Use for precise lookups like IDs or exact names.\n\
-                \x1b[2mExample: --query \"Engineering\" matches only cells that are exactly \"Engineering\"\x1b[0m\n\n\
-                \x1b[1mwildcard\x1b[0m\n\
-                \x1b[3mSQL LIKE-style pattern matching.\x1b[0m Case-insensitive. Two wildcards:\n\
-                \x1b[1m%\x1b[0m = any sequence of characters (including empty)\n\
-                \x1b[1m_\x1b[0m = exactly one character\n\
-                \x1b[2mExample: --query \"San%\" --mode wildcard  → \"San Francisco\", \"San Jose\"\x1b[0m\n\
-                \x1b[2mExample: --query \"A__\" --mode wildcard  → \"ABC\", \"Amy\"\x1b[0m\n\n\
-                \x1b[1mregex\x1b[0m\n\
-                \x1b[3mRegular expression match.\x1b[0m Case-insensitive. Use | for OR across multiple\n\
-                keywords. Supports full Rust regex syntax.\n\
-                \x1b[2mExample: --query \"foo|bar\" --mode regex  → matches cells containing either keyword\x1b[0m\n\
-                \x1b[2mExample: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → matches date patterns\x1b[0m\n\n\
-                 \x1b[1mTips:\x1b[0m\n\
-                 • Use --column to restrict search to a specific column name\n\
-                 • Combine --query and --mode for CLI one-shot search\n\
-                 • Use --aggregate <column> to count distinct values in matched rows\n\
-                 • Use --list-tables to see file-to-table name mapping\n\
-                 • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
-                  • Run without --query to launch interactive TUI mode\n\
-                  • Use --exec to run MCP tools: single '{{\"tool\":\"search\",\"params\":{{\"query\":\"term\"}}}}' or array '[{{...}},{{...}}]'\n"
+                                       -E, --exec <JSON>        Execute MCP tool command(s) as JSON\n\
+                                      -X, --run <CMD>          Run a shell command for each matching row (${{col}} placeholders)\n\
+                                           --run-output-column <COL>   --run mode: write command stdout to this column\n\
+                                           --mcp              Start MCP Server mode (stdio)\n\
+                                      -r, --repair             Try to repair damaged xlsx files before importing\n\
+                                      -h, --help               Show help information\n\
+                                      -V, --version            Show version\n\n\
+                 Search Modes:\n\n\
+                 \x1b[1mfulltext\x1b[0m (default)\n\
+                 \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\
+                 text, regardless of case. Best for general-purpose searching.\n\
+                 \x1b[2mExample: --query \"john\" matches \"John Smith\", \"Johnson\", \"JOHN\"\x1b[0m\n\n\
+                 \x1b[1mexact\x1b[0m\n\
+                 \x1b[3mCase-sensitive exact match.\x1b[0m The entire cell content must exactly equal\n\
+                 the query text. Use for precise lookups like IDs or exact names.\n\
+                 \x1b[2mExample: --query \"Engineering\" matches only cells that are exactly \"Engineering\"\x1b[0m\n\n\
+                 \x1b[1mwildcard\x1b[0m\n\
+                 \x1b[3mSQL LIKE-style pattern matching.\x1b[0m Case-insensitive. Two wildcards:\n\
+                 \x1b[1m%\x1b[0m = any sequence of characters (including empty)\n\
+                 \x1b[1m_\x1b[0m = exactly one character\n\
+                 \x1b[2mExample: --query \"San%\" --mode wildcard  → \"San Francisco\", \"San Jose\"\x1b[0m\n\
+                 \x1b[2mExample: --query \"A__\" --mode wildcard  → \"ABC\", \"Amy\"\x1b[0m\n\n\
+                 \x1b[1mregex\x1b[0m\n\
+                 \x1b[3mRegular expression match.\x1b[0m Case-insensitive. Use | for OR across multiple\n\
+                 keywords. Supports full Rust regex syntax.\n\
+                 \x1b[2mExample: --query \"foo|bar\" --mode regex  → matches cells containing either keyword\x1b[0m\n\
+                 \x1b[2mExample: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → matches date patterns\x1b[0m\n\n\
+                  \x1b[1mTips:\x1b[0m\n\
+                  • Use --column to restrict search to a specific column name\n\
+                  • Combine --query and --mode for CLI one-shot search\n\
+                  • Use --aggregate <column> to count distinct values in matched rows\n\
+                  • Use --list-tables to see file-to-table name mapping\n\
+                  • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
+                   • Run without --query to launch interactive TUI mode\n\
+                   • Use --run <cmd> to run a shell command per matching row (use ${{col}} for cell values)\n\
+                   • Use --exec to run MCP tools: single '{{\"tool\":\"search\",\"params\":{{\"query\":\"term\"}}}}' or array '[{{...}},{{...}}]'\n\
+                   • Use --run --help or --exec --help for detailed usage\n"
             )
         }
     }
