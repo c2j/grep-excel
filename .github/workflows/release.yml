@@ -20,17 +20,17 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            features: engine-duckdb
+            features: engine-duckdb,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
             prebuilt_duckdb: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: duckdb-bundled
+            features: duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
             zigbuild: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: duckdb-bundled
+            features: duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             zigbuild: true
 
@@ -137,7 +137,7 @@ jobs:
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
       - name: Build
-        run: cargo +nightly build --release --no-default-features --features engine-duckdb --target x86_64-win7-windows-msvc -Zbuild-std
+        run: cargo +nightly build --release --no-default-features --features engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
