@@ -2,7 +2,6 @@ use crate::app::theme::theme;
 use crate::types::{FileSample, SearchMode, SearchResult};
 use anyhow::Result;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -39,14 +38,14 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 pub fn init_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
 
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
         original_hook(panic);
     }));
 
@@ -55,7 +54,7 @@ pub fn init_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
 
 pub fn restore_terminal() -> Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
     Ok(())
 }
 
