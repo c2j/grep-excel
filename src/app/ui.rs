@@ -1164,21 +1164,23 @@ impl App {
 
             let mut is_first_line = true;
             for segment in segments {
+                // Convert match_spans from value-relative to segment-relative
+                let seg_start = segment.as_ptr() as usize - value.as_ptr() as usize;
+                let seg_end = seg_start + segment.len();
+                let seg_spans: Vec<(usize, usize)> = match_spans
+                    .iter()
+                    .filter_map(|&(s, e)| {
+                        if s >= seg_end || e <= seg_start {
+                            None
+                        } else {
+                            Some((s.max(seg_start) - seg_start, e.min(seg_end) - seg_start))
+                        }
+                    })
+                    .collect();
+
                 if value_width == 0 || UnicodeWidthStr::width(segment) <= value_width {
-                    let value_spans = if is_matched && !match_spans.is_empty() {
-                        let seg_start = segment.as_ptr() as usize - value.as_ptr() as usize;
-                        let seg_end = seg_start + segment.len();
-                        let local_spans: Vec<(usize, usize)> = match_spans
-                            .iter()
-                            .filter_map(|&(s, e)| {
-                                if s >= seg_end || e <= seg_start {
-                                    None
-                                } else {
-                                    Some((s.max(seg_start) - seg_start, e.min(seg_end) - seg_start))
-                                }
-                            })
-                            .collect();
-                        make_highlighted_spans(segment, &local_spans, match_style, normal_style)
+                    let value_spans = if is_matched && !seg_spans.is_empty() {
+                        make_highlighted_spans(segment, &seg_spans, match_style, normal_style)
                     } else if is_matched {
                         vec![Span::styled(segment.to_string(), match_style)]
                     } else {
@@ -1206,10 +1208,10 @@ impl App {
                     let mut byte_offset = 0;
                     for (wi, chunk) in wrapped.iter().enumerate() {
                         let chunk_byte_len = chunk.len();
-                        let chunk_spans = if is_matched && !match_spans.is_empty() {
+                        let chunk_spans = if is_matched && !seg_spans.is_empty() {
                             let chunk_start = byte_offset;
                             let chunk_end = byte_offset + chunk_byte_len;
-                            let local_spans: Vec<(usize, usize)> = match_spans
+                            let local_spans: Vec<(usize, usize)> = seg_spans
                                 .iter()
                                 .filter_map(|&(s, e)| {
                                     if s >= chunk_end || e <= chunk_start {
