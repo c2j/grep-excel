@@ -8,7 +8,7 @@
     "bundle": {
       "active": true,
       "targets": "all",
-      "identifier": "com.example.tauri-react-app",
+      "identifier": "com.grep-excel.desktop",
       "publisher": "Your Name",
       "copyright": "Copyright © 2025 Your Name. All rights reserved.",
       "category": "DeveloperTool",

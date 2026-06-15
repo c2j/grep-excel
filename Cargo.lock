@@ -3052,6 +3052,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "grep-excel-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "grep-excel-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "gtk"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7059,19 +7072,6 @@ dependencies = [
  "syn 1.0.109",
  "tauri-codegen",
  "tauri-utils",
-]
-
-[[package]]
-name = "tauri-react-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "grep-excel-core",
- "parking_lot",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
 ]
 
 [[package]]
