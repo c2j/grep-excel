@@ -6,8 +6,6 @@ authors = ["you"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "tauri_react_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -16,16 +14,18 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-# Tauri
-tauri = { version = "1.0.0", features = ["shell-open"] }
-#wry = "0.35"
+grep-excel-core = { path = "../../crates/core" }
 
-# Serialization
+tauri = { version = "1.0.0", features = ["shell-open"] }
+
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Error handling
 anyhow = "1.0"
+parking_lot = "0.12"
 
 [features]
+default = ["engine-memory"]
 custom-protocol = ["tauri/custom-protocol"]
+engine-memory = ["grep-excel-core/engine-memory"]
+engine-duckdb = ["grep-excel-core/engine-duckdb"]
+duckdb-bundled = ["grep-excel-core/duckdb-bundled"]

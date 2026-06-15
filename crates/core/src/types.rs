@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
@@ -11,7 +11,7 @@ pub struct SqlResult {
     pub duration: Duration,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum SearchMode {
     FullText,
     ExactMatch,
@@ -19,7 +19,7 @@ pub enum SearchMode {
     Regex,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
     pub text: String,
     pub column: Option<String>,
@@ -29,7 +29,7 @@ pub struct SearchQuery {
     pub invert: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub sheet_name: String,
     pub file_name: String,
@@ -40,7 +40,7 @@ pub struct SearchResult {
     pub row_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchStats {
     pub total_rows_searched: usize,
     pub total_matches: usize,
@@ -49,20 +49,20 @@ pub struct SearchStats {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregateStats {
     pub column: String,
     pub counts: HashMap<String, usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSample {
     pub sheet_name: String,
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
     pub name: String,
     pub sheets: Vec<(String, usize)>,
@@ -70,21 +70,21 @@ pub struct FileInfo {
     pub sample: Option<FileSample>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SheetMetadataInfo {
     pub sheet_name: String,
     pub row_count: usize,
     pub columns: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadataInfo {
     pub file_name: String,
     pub sheet_count: usize,
     pub sheets: Vec<SheetMetadataInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SheetDataResult {
     pub file_name: String,
     pub sheet_name: String,
@@ -95,7 +95,7 @@ pub struct SheetDataResult {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableAliasInfo {
     pub table_name: String,
     pub alias: String,
