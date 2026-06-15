@@ -1,6 +1,6 @@
 [package]
 name = "grep-excel-desktop"
-version = "0.1.0"
+version = "0.3.0"
 description = "Desktop GUI for grep-excel"
 authors = ["you"]
 edition = "2021"
