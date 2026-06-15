@@ -1,0 +1,55 @@
+{
+  "app": {
+    "title": "Excel Search"
+  },
+  "import": {
+    "button": "Import File",
+    "dragDrop": "Drag Excel/CSV files here, or click to select",
+    "success": "Imported {{name}} ({{sheets}} sheets, {{rows}} rows)",
+    "failed": "Import failed: {{error}}"
+  },
+  "search": {
+    "placeholder": "Enter search query...",
+    "button": "Search",
+    "clear": "Clear",
+    "mode": {
+      "fulltext": "Full Text",
+      "exact": "Exact",
+      "wildcard": "Wildcard",
+      "regex": "Regex"
+    },
+    "column": "Column Filter",
+    "columnAll": "All Columns",
+    "sheet": "Sheet",
+    "sheetAll": "All Sheets",
+    "invert": "Invert Match",
+    "results": "{{count}} matches found",
+    "noResults": "No matches found",
+    "duration": "in {{ms}}ms",
+    "rowsSearched": "{{count}} rows searched"
+  },
+  "sql": {
+    "title": "SQL Query",
+    "placeholder": "SELECT * FROM ...",
+    "execute": "Execute",
+    "noResults": "Query returned no results",
+    "error": "SQL error: {{error}}"
+  },
+  "files": {
+    "title": "Imported Files",
+    "clear": "Clear All",
+    "empty": "No files imported",
+    "sheets": "{{count}} sheets",
+    "rows": "{{count}} rows"
+  },
+  "tabs": {
+    "search": "Search",
+    "sql": "SQL"
+  },
+  "common": {
+    "language": "Language",
+    "error": "Error",
+    "loading": "Loading...",
+    "close": "Close"
+  }
+}
