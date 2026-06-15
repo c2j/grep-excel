@@ -1,0 +1,42 @@
+[package]
+name = "grep-excel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core engine for grep-excel: Excel/CSV search and manipulation"
+
+[lib]
+name = "grep_excel_core"
+path = "src/lib.rs"
+
+[dependencies]
+calamine.workspace = true
+zip.workspace = true
+roxmltree.workspace = true
+csv.workspace = true
+regex.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+unicode-width = "0.2"
+
+# Optional engines
+duckdb = { version = "1.10501", optional = true }
+rusqlite = { version = "0.32", features = ["bundled", "functions"], optional = true }
+
+# Optional xlsx writer
+rust_xlsxwriter = { version = "0.82", optional = true }
+schemars = { version = "1", optional = true }
+
+[features]
+default = ["engine-memory"]
+engine-memory = []
+engine-duckdb = ["dep:duckdb"]
+engine-sqlite = ["dep:rusqlite"]
+duckdb-bundled = ["engine-duckdb", "duckdb/bundled"]
+rust_xlsxwriter = ["dep:rust_xlsxwriter"]
+mcp-server = ["dep:schemars"]

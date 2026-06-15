@@ -1,0 +1,35 @@
+[package]
+name = "grep-excel-desktop"
+version = "0.1.0"
+description = "Desktop GUI for grep-excel"
+authors = ["you"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "grep_excel_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "grep-excel-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+grep-excel-core = { path = "../../crates/core" }
+
+tauri = { version = "1.0.0", features = ["shell-open", "dialog-open"] }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+parking_lot = "0.12"
+
+[features]
+default = ["engine-memory"]
+custom-protocol = ["tauri/custom-protocol"]
+engine-memory = ["grep-excel-core/engine-memory"]
+engine-duckdb = ["grep-excel-core/engine-duckdb"]
+duckdb-bundled = ["grep-excel-core/duckdb-bundled"]

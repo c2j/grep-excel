@@ -1,0 +1,55 @@
+{
+  "app": {
+    "title": "Excel 搜索"
+  },
+  "import": {
+    "button": "导入文件",
+    "dragDrop": "拖放 Excel/CSV 文件到此处，或点击选择",
+    "success": "已导入 {{name}}（{{sheets}} 个工作表，{{rows}} 行）",
+    "failed": "导入失败：{{error}}"
+  },
+  "search": {
+    "placeholder": "输入搜索关键词...",
+    "button": "搜索",
+    "clear": "清除",
+    "mode": {
+      "fulltext": "全文",
+      "exact": "精确",
+      "wildcard": "通配符",
+      "regex": "正则"
+    },
+    "column": "列筛选",
+    "columnAll": "所有列",
+    "sheet": "工作表",
+    "sheetAll": "所有工作表",
+    "invert": "反向匹配",
+    "results": "找到 {{count}} 个匹配结果",
+    "noResults": "未找到匹配结果",
+    "duration": "用时 {{ms}}ms",
+    "rowsSearched": "搜索了 {{count}} 行"
+  },
+  "sql": {
+    "title": "SQL 查询",
+    "placeholder": "SELECT * FROM ...",
+    "execute": "执行",
+    "noResults": "查询无结果",
+    "error": "SQL 执行错误：{{error}}"
+  },
+  "files": {
+    "title": "已导入文件",
+    "clear": "清空全部",
+    "empty": "尚未导入文件",
+    "sheets": "{{count}} 个工作表",
+    "rows": "{{count}} 行"
+  },
+  "tabs": {
+    "search": "搜索",
+    "sql": "SQL"
+  },
+  "common": {
+    "language": "语言",
+    "error": "错误",
+    "loading": "加载中...",
+    "close": "关闭"
+  }
+}

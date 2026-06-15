@@ -1,0 +1,56 @@
+[package]
+name = "grep-excel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TUI tool for searching Excel/CSV files with full-text and wildcard search"
+keywords = ["excel", "search", "tui", "duckdb"]
+categories = ["command-line-utilities", "text-processing"]
+
+[lib]
+name = "grep_excel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "grep_excel"
+path = "src/main.rs"
+
+[[bin]]
+name = "spike"
+path = "src/bin/spike.rs"
+required-features = ["gui"]
+
+[dependencies]
+grep-excel-core = { path = "../core" }
+
+ratatui = "0.30"
+crossterm = "0.28"
+tui-input = "0.11"
+clap = { version = "4", features = ["derive"] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+unicode-width = "0.2"
+chrono.workspace = true
+parking_lot.workspace = true
+csv.workspace = true
+
+rfd = { version = "0.15", optional = true }
+rmcp = { version = "1.5", features = ["server", "transport-io"], optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"], optional = true }
+eframe = { version = "0.31", optional = true }
+egui = { version = "0.31", optional = true }
+egui_extras = { version = "0.31", optional = true }
+
+[features]
+default = ["engine-memory", "file-dialog"]
+engine-memory = ["grep-excel-core/engine-memory"]
+engine-duckdb = ["grep-excel-core/engine-duckdb"]
+duckdb-bundled = ["grep-excel-core/duckdb-bundled"]
+engine-sqlite = ["grep-excel-core/engine-sqlite"]
+file-dialog = ["dep:rfd"]
+mcp-server = ["dep:rmcp", "dep:tokio", "grep-excel-core/rust_xlsxwriter", "grep-excel-core/mcp-server"]
+gui = ["dep:eframe", "dep:egui", "dep:egui_extras", "file-dialog"]
+full = ["engine-memory", "file-dialog", "mcp-server"]

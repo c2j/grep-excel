@@ -23,16 +23,19 @@ jobs:
             features: gui,engine-duckdb,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
             prebuilt_duckdb: true
+            build_desktop: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
             features: gui,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
             zigbuild: true
+            build_desktop: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
             features: gui,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             zigbuild: true
+            build_desktop: false
 
     runs-on: ${{ matrix.os }}
 
@@ -67,6 +70,13 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-x11-dev
 
+      - name: Install Linux Tauri system dependencies (x86_64 only)
+        if: matrix.build_desktop && runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq \
+            libwebkit2gtk-4.0-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
       - name: Install Linux GUI dev libraries (aarch64 cross-compile)
         if: matrix.zigbuild && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -87,6 +97,19 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Setup Node.js (for Tauri frontend)
+        if: matrix.build_desktop
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Tauri frontend
+        if: matrix.build_desktop
+        working-directory: Desktop
+        run: |
+          npm ci
+          npm run build
+
       - name: Download prebuilt DuckDB (Windows)
         if: matrix.prebuilt_duckdb
         shell: pwsh
@@ -95,19 +118,28 @@ jobs:
           Expand-Archive -Path duckdb.zip -DestinationPath duckdb-lib
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
-      - name: Build (Linux)
+      - name: Build CLI (Linux)
         if: matrix.zigbuild
         run: cargo zigbuild --release --no-default-features --features ${{ matrix.features }} --target ${{ matrix.target }}.2.31
 
-      - name: Build (Windows)
+      - name: Build CLI (Windows)
         if: ${{ !matrix.zigbuild }}
         run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+
+      - name: Build desktop app (Linux x86_64)
+        if: matrix.build_desktop && runner.os == 'Linux'
+        run: cargo build --release --target ${{ matrix.target }} -p grep-excel-desktop --features duckdb-bundled,custom-protocol
+
+      - name: Build desktop app (Windows)
+        if: matrix.build_desktop && runner.os == 'Windows'
+        run: cargo build --release --target ${{ matrix.target }} -p grep-excel-desktop --features custom-protocol
 
       - name: Strip (Linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
           strip --strip-unneeded target/${{ matrix.target }}/release/spike
+          strip --strip-unneeded target/${{ matrix.target }}/release/grep-excel-desktop || true
 
       - name: Strip (Linux aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -123,14 +155,23 @@ jobs:
           cd target/${{ matrix.target }}/release
           find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
           cp ../../../duckdb-lib/duckdb.dll . 2>/dev/null || true
-          7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll
+          if [ -f "grep-excel-desktop.exe" ]; then
+            7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll grep-excel-desktop.exe
+          else
+            7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll
+          fi
 
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
           chmod +x grep_excel spike
-          zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike
+          if [ -f "grep-excel-desktop" ]; then
+            chmod +x grep-excel-desktop
+            zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike grep-excel-desktop
+          else
+            zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
