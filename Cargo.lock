@@ -2378,24 +2378,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "grep_excel"
+name = "grep-excel"
 version = "0.2.10"
 dependencies = [
  "anyhow",
- "calamine",
  "chrono",
  "clap",
  "crossterm 0.28.1",
  "csv",
- "duckdb",
  "eframe",
  "egui",
  "egui_extras",
+ "grep-excel-core",
  "parking_lot",
  "ratatui 0.30.1",
  "regex",
  "rfd",
  "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tui-input",
+ "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "grep-excel-core"
+version = "0.2.10"
+dependencies = [
+ "anyhow",
+ "calamine",
+ "chrono",
+ "csv",
+ "duckdb",
+ "parking_lot",
+ "regex",
  "roxmltree",
  "rusqlite",
  "rust_xlsxwriter",
@@ -2403,8 +2420,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tokio",
- "tui-input",
  "unicode-width 0.2.0",
  "zip 2.4.2",
 ]
