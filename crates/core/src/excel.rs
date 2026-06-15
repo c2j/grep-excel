@@ -1,5 +1,6 @@
 use anyhow::Result;
 use calamine::{open_workbook_auto, Data, Reader};
+use chrono::{Datelike, Duration};
 use std::path::Path;
 
 pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
@@ -74,6 +75,138 @@ fn data_to_string(data: &Data) -> String {
     }
 }
 
+// ── Date column detection helpers ────────────────────────────────────────────
+
+/// Keywords that suggest a column contains date values.
+const DATE_COLUMN_KEYWORDS: &[&str] = &[
+    "date", "time", "datetime", "timestamp",
+    "日期", "时间", "生日", "日付",
+    "fecha", "data", "datum", "dob", "birth",
+    "created", "updated", "modified",
+    "begin", "start", "end", "deadline",
+];
+
+fn is_date_column_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    DATE_COLUMN_KEYWORDS.iter().any(|kw| lower.contains(kw))
+}
+
+/// Convert an Excel serial date number to a "YYYYMMDD" formatted string.
+/// Uses the same algorithm as calamine's `ExcelDateTime::as_datetime()`:
+/// epoch = 1899-12-30, with the Lotus 1-2-3 leap year bug (day 60 = Feb 29, 1900).
+fn excel_serial_to_date_string(serial: f64) -> Option<String> {
+    if serial < 1.0 || serial > 100_000.0 {
+        return None;
+    }
+    // Skip values with significant fractional parts (likely non-date numbers)
+    let frac = serial - serial.trunc();
+    if frac >= 0.001 {
+        return None;
+    }
+    let ms_multiplier: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
+    // Excel incorrectly treats 1900 as a leap year.
+    // For values >= 60, offset by 1 to compensate.
+    let adjusted = if serial >= 60.0 { serial } else { serial + 1.0 };
+    let ms = (adjusted * ms_multiplier).round() as i64;
+    let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30)?;
+    let date = epoch + Duration::milliseconds(ms);
+    Some(format!("{:04}{:02}{:02}", date.year(), date.month(), date.day()))
+}
+
+/// Like `data_to_string`, but for `Data::DateTime` uses calamine's
+/// `as_datetime()` to produce a human-readable date string, and for
+/// `Data::Float` tries date conversion.
+fn date_aware_to_string(data: &Data) -> String {
+    match data {
+        Data::DateTime(dt) => {
+            dt.as_datetime()
+                .map(|ndt| format!("{:04}{:02}{:02}", ndt.year(), ndt.month(), ndt.day()))
+                .unwrap_or_else(|| dt.to_string())
+        }
+        Data::Float(f) => {
+            excel_serial_to_date_string(*f).unwrap_or_else(|| f.to_string())
+        }
+        other => data_to_string(other),
+    }
+}
+
+/// Detect which columns contain date values by analyzing raw `Data` rows.
+/// Uses two signals:
+///   1. Primary: at least one cell in the column is `Data::DateTime`
+///      (calamine recognized a date format). Very high confidence.
+///   2. Fallback: column name matches date keywords AND the majority of
+///      `Data::Float` values in the column look like Excel serial dates.
+fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> Vec<bool> {
+    let col_count = raw_rows.first().map(|r| r.len()).unwrap_or(0).min(headers.len());
+    let mut result = vec![false; col_count];
+
+    for col_idx in 0..col_count {
+        // Signal 1: calamine already found a DateTime in this column
+        let has_calamine_date = raw_rows.iter().any(|row| {
+            row.get(col_idx).map_or(false, |d| matches!(d, Data::DateTime(_)))
+        });
+        if has_calamine_date {
+            result[col_idx] = true;
+            continue;
+        }
+
+        // Signal 2: column name + value heuristic
+        let header = headers.get(col_idx).map(|h| h.as_str()).unwrap_or("");
+        if !is_date_column_name(header) {
+            continue;
+        }
+
+        // Count how many Float values in this column look like dates
+        let (date_like, total_floats) = raw_rows.iter().fold((0usize, 0usize), |(dl, tf), row| {
+            match row.get(col_idx) {
+                Some(Data::Float(f)) => {
+                    let is_date = excel_serial_to_date_string(*f).is_some();
+                    (dl + is_date as usize, tf + 1)
+                }
+                _ => (dl, tf),
+            }
+        });
+
+        // Require at least 2 match candidates and >50% of floats are date-like
+        if date_like >= 2 && total_floats > 0 && date_like * 2 > total_floats {
+            result[col_idx] = true;
+        }
+    }
+
+    result
+}
+
+/// Post-process rows to convert Excel serial numbers to date strings in
+/// columns whose headers match date keywords. Used by the repair path
+/// which reads raw XML values (no type information).
+fn convert_date_columns_in_place(headers: &[String], rows: &mut [Vec<String>]) {
+    for (col_idx, header) in headers.iter().enumerate() {
+        if !is_date_column_name(header) {
+            continue;
+        }
+        let date_count = rows.iter().filter(|row| {
+            row.get(col_idx)
+                .and_then(|v| v.parse::<f64>().ok())
+                .and_then(|f| excel_serial_to_date_string(f))
+                .is_some()
+        }).count();
+        if date_count < 2 || date_count * 2 <= rows.len() {
+            continue;
+        }
+        for row in rows.iter_mut() {
+            if let Some(value) = row.get_mut(col_idx) {
+                if let Ok(serial) = value.parse::<f64>() {
+                    if let Some(date_str) = excel_serial_to_date_string(serial) {
+                        *value = date_str;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Excel parsing (calamine) ─────────────────────────────────────────────────
+
 pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
     let mut workbook = open_workbook_auto(path)?;
     let sheet_names = workbook.sheet_names().to_vec();
@@ -89,14 +222,33 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
             Err(_) => continue,
         };
 
-        let mut rows: Vec<Vec<String>> = range
+        let raw_rows: Vec<Vec<Data>> = range
             .rows()
-            .map(|row| row.iter().map(data_to_string).collect())
+            .map(|row| row.iter().cloned().collect())
             .collect();
 
-        if rows.is_empty() {
+        if raw_rows.len() < 2 {
             continue;
         }
+
+        let headers_for_detection: Vec<String> = raw_rows[0].iter().map(data_to_string).collect();
+        let date_cols = detect_date_columns_from_data(&raw_rows, &headers_for_detection);
+
+        let mut rows: Vec<Vec<String>> = raw_rows
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .enumerate()
+                    .map(|(col_idx, data)| {
+                        if date_cols.get(col_idx).copied().unwrap_or(false) {
+                            date_aware_to_string(&data)
+                        } else {
+                            data_to_string(&data)
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
 
         // Extract header row in-place; remaining rows are moved (no full-data clone).
         let headers = rows.remove(0);
@@ -142,14 +294,33 @@ where
             Err(_) => continue,
         };
 
-        let mut rows: Vec<Vec<String>> = range
+        let raw_rows: Vec<Vec<Data>> = range
             .rows()
-            .map(|row| row.iter().map(data_to_string).collect())
+            .map(|row| row.iter().cloned().collect())
             .collect();
 
-        if rows.len() < 2 {
+        if raw_rows.len() < 2 {
             continue;
         }
+
+        let headers_for_detection: Vec<String> = raw_rows[0].iter().map(data_to_string).collect();
+        let date_cols = detect_date_columns_from_data(&raw_rows, &headers_for_detection);
+
+        let mut rows: Vec<Vec<String>> = raw_rows
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .enumerate()
+                    .map(|(col_idx, data)| {
+                        if date_cols.get(col_idx).copied().unwrap_or(false) {
+                            date_aware_to_string(&data)
+                        } else {
+                            data_to_string(&data)
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
 
         // Extract header row in-place; remaining rows are moved (no full-data clone).
         let headers = rows.remove(0);
@@ -624,8 +795,8 @@ fn read_sheet_xml(
         });
     }
 
-    // Extract header row in-place; remaining rows are moved (no full-data clone).
     let headers = all_rows.remove(0);
+    convert_date_columns_in_place(&headers, &mut all_rows);
 
     Ok(SheetData {
         name: sheet_name.to_string(),
