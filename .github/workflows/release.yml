@@ -80,8 +80,11 @@ jobs:
       - name: Install Linux GUI dev libraries (aarch64 cross-compile)
         if: matrix.zigbuild && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          # Restrict existing sources to amd64; amd64 repos do not serve arm64
-          sudo sed -i 's/^deb h/deb [arch=amd64] h/g' /etc/apt/sources.list
+          # Restrict existing amd64 sources (handle both legacy and DEB822 formats)
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          sudo sed -i 's/^deb h/deb [arch=amd64] h/g' /etc/apt/sources.list 2>/dev/null || true
           # Add ports.ubuntu.com for arm64 packages
           echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
           echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse' | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
@@ -120,7 +123,7 @@ jobs:
 
       - name: Build CLI (Linux)
         if: matrix.zigbuild
-        run: cargo zigbuild --release --no-default-features --features ${{ matrix.features }} --target ${{ matrix.target }}.2.31
+        run: cargo zigbuild --release -p grep-excel --no-default-features --features ${{ matrix.features }} --target ${{ matrix.target }}.2.31
 
       - name: Build CLI (Windows)
         if: ${{ !matrix.zigbuild }}
@@ -206,7 +209,7 @@ jobs:
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
       - name: Build
-        run: cargo +nightly build --release --no-default-features --features gui,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
+        run: cargo +nightly build --release -p grep-excel --no-default-features --features gui,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
