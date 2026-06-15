@@ -20,17 +20,17 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            features: engine-duckdb,mcp-server
+            features: gui,engine-duckdb,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
             prebuilt_duckdb: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: duckdb-bundled,mcp-server
+            features: gui,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
             zigbuild: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: duckdb-bundled,mcp-server
+            features: gui,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             zigbuild: true
 
@@ -58,6 +58,25 @@ jobs:
         if: matrix.zigbuild
         run: cargo install cargo-zigbuild
 
+      - name: Install Linux GUI dev libraries (for egui)
+        if: matrix.zigbuild
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libx11-dev libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-x11-dev
+
+      - name: Install Linux GUI dev libraries (aarch64 cross-compile)
+        if: matrix.zigbuild && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libx11-dev:arm64 libxkbcommon-dev:arm64 libwayland-dev:arm64 \
+            libxcb-render0-dev:arm64 libxcb-shape0-dev:arm64 libxcb-xfixes0-dev:arm64 \
+            libxkbcommon-x11-dev:arm64
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}-${{ matrix.features }}
@@ -80,13 +99,16 @@ jobs:
 
       - name: Strip (Linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
+        run: |
+          strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
+          strip --strip-unneeded target/${{ matrix.target }}/release/spike
 
       - name: Strip (Linux aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get install -y binutils-aarch64-linux-gnu
           aarch64-linux-gnu-strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
+          aarch64-linux-gnu-strip --strip-unneeded target/${{ matrix.target }}/release/spike
 
       - name: Archive (Windows)
         if: runner.os == 'Windows'
@@ -95,14 +117,14 @@ jobs:
           cd target/${{ matrix.target }}/release
           find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
           cp ../../../duckdb-lib/duckdb.dll . 2>/dev/null || true
-          7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe duckdb.dll
+          7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll
 
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
-          chmod +x grep_excel
-          zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel
+          chmod +x grep_excel spike
+          zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -137,7 +159,7 @@ jobs:
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
       - name: Build
-        run: cargo +nightly build --release --no-default-features --features engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
+        run: cargo +nightly build --release --no-default-features --features gui,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
@@ -145,7 +167,7 @@ jobs:
           Copy-Item "duckdb-lib/duckdb.dll" "target/x86_64-win7-windows-msvc/release/"
           $version = "${{ steps.version.outputs.version }}"
           Compress-Archive `
-            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
+            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/spike.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
             -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc-v${version}.zip"
 
       - name: Upload artifact
