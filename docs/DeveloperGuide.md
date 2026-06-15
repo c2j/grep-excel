@@ -24,7 +24,7 @@ grep-excel 采用分层架构，核心抽象是 `SearchEngine` trait：
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        入口层 (main.rs)                      │
-│  CLI 解析 → 模式路由（CLI / TUI / MCP / Exec / SQL）         │
+│  CLI 解析 → 模式路由（CLI / TUI / MCP / Exec / SQL / Run）         │
 └───────┬──────────────┬──────────────┬───────────────────────┘
         │              │              │
         ▼              ▼              ▼
@@ -33,6 +33,7 @@ grep-excel 采用分层架构，核心抽象是 `SearchEngine` trait：
 │ run_cli() │  │ app/mod.rs│  │ mcp.rs + rmcp │
 │ run_sql() │  │ ratatui   │  │               │
 │ run_exec()│  │           │  │               │
+│ run_exec_shell()│        │  │               │
 └─────┬─────┘  └─────┬─────┘  └──────┬────────┘
       │              │              │
       ▼              ▼              ▼
@@ -641,6 +642,25 @@ CLI --exec JSON → serde_json 解析 → exec_dispatch() → SearchEngine
                        │
                   格式化为 markdown/pretty/json/simple → stdout
 ```
+
+### Run Shell 数据流
+
+```
+CLI --run SHELL_CMD + (--query | --sql)
+       │
+       ├── 导入文件 → 执行搜索/SQL → 获取结果行
+       │
+       ├── 遍历每行:
+       │   ├── expand_exec_template(): ${列名} → shell-escaped cell value
+       │   │   └── shell_escape(): 单引号包裹 + 转义
+       │   ├── sh -c <expanded_command>
+       │   ├── stdout → print / --run-output-column → update_cell()
+       │   └── stderr → eprintln (warning)
+       │
+       └── --export: save_as() 导出完整文件
+```
+
+`expand_exec_template` 在 `main.rs` 中实现，支持 `${column_name}` 占位符和 `$$` 转义。
 
 ---
 
