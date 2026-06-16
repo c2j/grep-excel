@@ -29,6 +29,7 @@ export function SearchBar({ columns, sheets, onSearch, loading }: Props) {
   const [column, setColumn] = useState<string>("");
   const [sheet, setSheet] = useState<string>("");
   const [invert, setInvert] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
 
   const handleSearch = () => {
     if (!text.trim()) return;
@@ -42,7 +43,7 @@ export function SearchBar({ columns, sheets, onSearch, loading }: Props) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+    if (e.key === "Enter" && !isComposing) handleSearch();
   };
 
   return (
@@ -51,7 +52,14 @@ export function SearchBar({ columns, sheets, onSearch, loading }: Props) {
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            if (!isComposing) setText(e.target.value);
+          }}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={(e) => {
+            setIsComposing(false);
+            setText((e.target as HTMLInputElement).value);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={t("search.placeholder")}
           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"

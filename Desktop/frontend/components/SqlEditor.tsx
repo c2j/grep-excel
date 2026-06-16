@@ -12,6 +12,7 @@ export function SqlEditor({ onExecute }: Props) {
   const [result, setResult] = useState<SqlResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
 
   const handleExecute = async () => {
     if (!sql.trim()) return;
@@ -29,7 +30,7 @@ export function SqlEditor({ onExecute }: Props) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !isComposing) {
       handleExecute();
     }
   };
@@ -49,7 +50,14 @@ export function SqlEditor({ onExecute }: Props) {
 
       <textarea
         value={sql}
-        onChange={(e) => setSql(e.target.value)}
+        onChange={(e) => {
+          if (!isComposing) setSql(e.target.value);
+        }}
+        onCompositionStart={() => setIsComposing(true)}
+        onCompositionEnd={(e) => {
+          setIsComposing(false);
+          setSql((e.target as HTMLTextAreaElement).value);
+        }}
         onKeyDown={handleKeyDown}
         placeholder={t("sql.placeholder")}
         rows={4}
