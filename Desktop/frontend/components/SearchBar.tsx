@@ -51,6 +51,7 @@ export function SearchBar({ columns, sheets, onSearch, loading }: Props) {
       <div className="flex gap-2">
         <input
           type="text"
+          lang="zh"
           value={text}
           onChange={(e) => {
             if (!isComposing) setText(e.target.value);

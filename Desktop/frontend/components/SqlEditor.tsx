@@ -49,6 +49,7 @@ export function SqlEditor({ onExecute }: Props) {
       </div>
 
       <textarea
+        lang="zh"
         value={sql}
         onChange={(e) => {
           if (!isComposing) setSql(e.target.value);
