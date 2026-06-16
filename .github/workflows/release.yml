@@ -110,9 +110,9 @@ jobs:
         if: ${{ !matrix.zigbuild }}
         run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
-      - name: Build desktop app (Linux x86_64)
+      - name: Build desktop app (Linux)
         if: matrix.build_desktop && runner.os == 'Linux'
-        run: cargo build --release --target ${{ matrix.target }} -p grep-excel-desktop --features duckdb-bundled,custom-protocol
+        run: cargo zigbuild --release --target ${{ matrix.target }}.2.31 -p grep-excel-desktop --features duckdb-bundled,custom-protocol
 
       - name: Build desktop app (Windows)
         if: matrix.build_desktop && runner.os == 'Windows'
