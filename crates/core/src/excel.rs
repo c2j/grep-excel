@@ -37,17 +37,17 @@ fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
         return Ok(Vec::new());
     }
 
-    let headers = all_rows[0].clone();
-    let rows = all_rows[1..].to_vec();
+    // Extract header row in-place; remaining rows are moved (no full-data clone).
+    let headers = all_rows.remove(0);
 
-    if rows.is_empty() {
+    if all_rows.is_empty() {
         return Ok(Vec::new());
     }
 
     Ok(vec![SheetData {
         name,
         headers,
-        rows,
+        rows: all_rows,
         col_widths: Vec::new(),
     }])
 }
@@ -89,7 +89,7 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
             Err(_) => continue,
         };
 
-        let rows: Vec<Vec<String>> = range
+        let mut rows: Vec<Vec<String>> = range
             .rows()
             .map(|row| row.iter().map(data_to_string).collect())
             .collect();
@@ -98,10 +98,10 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
             continue;
         }
 
-        let headers = rows[0].clone();
-        let data_rows: Vec<Vec<String>> = rows[1..].to_vec();
+        // Extract header row in-place; remaining rows are moved (no full-data clone).
+        let headers = rows.remove(0);
 
-        if data_rows.is_empty() {
+        if rows.is_empty() {
             continue;
         }
 
@@ -114,7 +114,7 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
         sheets_data.push(SheetData {
             name: sheet_name.clone(),
             headers,
-            rows: data_rows,
+            rows,
             col_widths,
         });
     }
@@ -142,7 +142,7 @@ where
             Err(_) => continue,
         };
 
-        let rows: Vec<Vec<String>> = range
+        let mut rows: Vec<Vec<String>> = range
             .rows()
             .map(|row| row.iter().map(data_to_string).collect())
             .collect();
@@ -151,19 +151,19 @@ where
             continue;
         }
 
-        let headers = rows[0].clone();
-        let data_rows: Vec<Vec<String>> = rows[1..].to_vec();
+        // Extract header row in-place; remaining rows are moved (no full-data clone).
+        let headers = rows.remove(0);
         let col_widths = if has_xlsx_widths {
             xlsx_widths.get(sheet_idx).cloned().unwrap_or_default()
         } else {
             Vec::new()
         };
 
-        let row_count = data_rows.len();
+        let row_count = rows.len();
         let sheet_data = SheetData {
             name: sheet_name.clone(),
             headers,
-            rows: data_rows,
+            rows,
             col_widths,
         };
 
@@ -624,13 +624,13 @@ fn read_sheet_xml(
         });
     }
 
-    let headers = all_rows[0].clone();
-    let data_rows = all_rows[1..].to_vec();
+    // Extract header row in-place; remaining rows are moved (no full-data clone).
+    let headers = all_rows.remove(0);
 
     Ok(SheetData {
         name: sheet_name.to_string(),
         headers,
-        rows: data_rows,
+        rows: all_rows,
         col_widths: Vec::new(),
     })
 }
