@@ -100,6 +100,8 @@ grep_excel [FILES...] [OPTIONS]
 | `--list-tables` | `-t` | List imported tables with friendly names and columns |
 | `--format` | `-f` | Output format: `markdown` (default), `pretty`, `json`, `simple` (TSV) |
 | `--repair` | `-r` | Repair corrupted xlsx files before importing (ZIP/XML level) |
+| `--run` | `-X` | Execute a shell command for each matching row. Use `${col_name}` for cell values |
+| `--run-output-column` | — | Write `--run` command stdout to a column (creates if not exists) |
 | `--help` | `-h` | Show help (auto-detects language: Chinese or English) |
 
 ### Examples
@@ -158,6 +160,20 @@ Launch in TUI mode (no CLI arguments):
 ```bash
 grep_excel
 ```
+
+Execute a shell command for each matching row (`--run` / `-X`):
+```bash
+# Run an external tool for each match, substitute ${column_name}
+grep_excel data.xlsx -q "ERROR" -c "Level" --run './analyzer "${Message}"'
+
+# Write command output to a new column, then export
+grep_excel data.xlsx -q "TODO" -c "Type" --run './classifier "${Title}"' --run-output-column "Category" -e output.xlsx
+
+# Combine --run with --sql
+grep_excel data.xlsx --sql "SELECT Name, SQL FROM sheet_1_0 WHERE Type='legacy'" --run './formatter "${SQL}"'
+```
+
+> `--run` executes `sh -c` for each matching row. Use `${column_name}` to reference cell values (values are automatically shell-escaped). `$$` produces a literal `$`.
 
 ### SQL Query Examples
 
@@ -408,6 +424,8 @@ grep_excel [文件...] [选项]
 | `--list-tables` | `-t` | 列出已导入表及其友好名称和列名 |
 | `--format` | `-f` | 输出格式：`markdown`（默认）、`pretty`、`json`、`simple`（TSV） |
 | `--repair` | `-r` | 导入前尝试修复损坏的 xlsx 文件（ZIP/XML 层面） |
+| `--run` | `-X` | 对每个匹配行执行 Shell 命令，`${列名}` 引用单元格值 |
+| `--run-output-column` | — | 将 `--run` 命令 stdout 写入指定列（列不存在则自动创建） |
 | `--help` | `-h` | 显示帮助信息（自动检测中/英文） |
 
 ### 示例
@@ -466,6 +484,20 @@ grep_excel data.xlsx -q "关键词" -e results.csv -f json
 ```bash
 grep_excel
 ```
+
+对每个匹配行执行 Shell 命令（`--run` / `-X`）：
+```bash
+# 对每个匹配行执行外部工具，使用 ${列名} 替代
+grep_excel data.xlsx -q "ERROR" -c "等级" --run './analyzer "${消息}"'
+
+# 将命令输出写入新列，再导出
+grep_excel data.xlsx -q "TODO" -c "类型" --run './classifier "${标题}"' --run-output-column "分类" -e output.xlsx
+
+# 配合 --sql 使用
+grep_excel data.xlsx --sql "SELECT 姓名, SQL FROM sheet_1_0 WHERE 类型='旧版'" --run './formatter "${SQL}"'
+```
+
+> `--run` 对每个匹配行执行 `sh -c`，`${列名}` 引用单元格值（自动 shell 转义），`$$` 表示字面 `$`。
 
 ### MCP 配置
 
