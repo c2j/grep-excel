@@ -15,6 +15,7 @@ import type {
   SearchResult,
   SearchStats,
   SearchMode,
+  SheetColumnMeta,
   SqlResult,
 } from "./types/search";
 import { FileImporter, LanguageToggle } from "./components/FileImporter";
@@ -32,6 +33,7 @@ function App() {
   const [metadata, setMetadata] = useState<FileMetadataInfo | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [stats, setStats] = useState<SearchStats | null>(null);
+  const [columnsBySheet, setColumnsBySheet] = useState<Record<string, SheetColumnMeta>>({});
   const [importing, setImporting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,7 @@ function App() {
         await refreshFiles();
         setResults([]);
         setStats(null);
+        setColumnsBySheet({});
       }
     } catch (e) {
       setError(t("import.failed", { error: String(e) }));
@@ -89,10 +92,12 @@ function App() {
         });
         setResults(resp.results);
         setStats(resp.stats);
+        setColumnsBySheet(resp.columns_by_sheet);
       } catch (e) {
         setError(String(e));
         setResults([]);
         setStats(null);
+        setColumnsBySheet({});
       } finally {
         setSearching(false);
       }
@@ -111,6 +116,7 @@ function App() {
       setMetadata(null);
       setResults([]);
       setStats(null);
+      setColumnsBySheet({});
     } catch (e) {
       setError(String(e));
     }
@@ -173,7 +179,7 @@ function App() {
                   onSearch={handleSearch}
                   loading={searching}
                 />
-                <ResultsTable results={results} stats={stats} />
+                <ResultsTable results={results} stats={stats} columnsBySheet={columnsBySheet} />
               </div>
             )}
             {tab === "sql" && <SqlEditor onExecute={handleSql} />}

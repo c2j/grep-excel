@@ -13,10 +13,13 @@ export interface SearchResult {
   sheet_name: string;
   file_name: string;
   row: string[];
-  col_names: string[];
   matched_columns: number[];
-  col_widths: number[];
   row_index: number;
+}
+
+export interface SheetColumnMeta {
+  col_names: string[];
+  col_widths: number[];
 }
 
 export interface SearchStats {
@@ -30,6 +33,7 @@ export interface SearchStats {
 export interface SearchResponse {
   results: SearchResult[];
   stats: SearchStats;
+  columns_by_sheet: Record<string, SheetColumnMeta>;
 }
 
 export interface FileSample {
