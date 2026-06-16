@@ -1,6 +1,7 @@
 use grep_excel_core::engine::{DefaultEngine, SearchEngine};
 use grep_excel_core::types::*;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::path::Path;
 use tauri::State;
 
@@ -28,13 +29,53 @@ pub fn import_file(path: String, state: State<'_, AppState>) -> Result<FileInfo,
 pub fn search(query: SearchQuery, state: State<'_, AppState>) -> Result<SearchResponse, String> {
     let engine = state.engine.lock();
     let (results, stats) = engine.search(&query).map_err(|e| e.to_string())?;
-    Ok(SearchResponse { results, stats })
+
+    let mut columns_by_sheet: HashMap<String, SheetColumnMeta> = HashMap::new();
+    let mut slim_results = Vec::with_capacity(results.len());
+
+    for r in results {
+        columns_by_sheet
+            .entry(r.sheet_name.clone())
+            .or_insert(SheetColumnMeta {
+                col_names: r.col_names,
+                col_widths: r.col_widths,
+            });
+        slim_results.push(SearchResultSlim {
+            sheet_name: r.sheet_name,
+            file_name: r.file_name,
+            row: r.row,
+            matched_columns: r.matched_columns,
+            row_index: r.row_index,
+        });
+    }
+
+    Ok(SearchResponse {
+        results: slim_results,
+        stats,
+        columns_by_sheet,
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct SearchResultSlim {
+    sheet_name: String,
+    file_name: String,
+    row: Vec<String>,
+    matched_columns: Vec<usize>,
+    row_index: usize,
+}
+
+#[derive(serde::Serialize)]
+pub struct SheetColumnMeta {
+    col_names: Vec<String>,
+    col_widths: Vec<f64>,
 }
 
 #[derive(serde::Serialize)]
 pub struct SearchResponse {
-    results: Vec<SearchResult>,
+    results: Vec<SearchResultSlim>,
     stats: SearchStats,
+    columns_by_sheet: HashMap<String, SheetColumnMeta>,
 }
 
 #[tauri::command]
