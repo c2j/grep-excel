@@ -717,6 +717,7 @@ pub fn help_full_text() -> String {
                  基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
                   用法: grep_excel [FILES...] [OPTIONS]\n\n\
                    选项:\n\
+                                     -i, --interactive        进入交互式 SQL REPL ($ 提示符, 历史浏览, 多行)\n\
                                      -q, --query <QUERY>      搜索查询字符串\n\
                                      -c, --column <COLUMN>    筛选指定列名\n\
                                      -s, --sheet <SHEET>      筛选指定 Sheet 名称\n\
@@ -774,6 +775,7 @@ pub fn help_full_text() -> String {
                  TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
                   Usage: grep_excel [FILES...] [OPTIONS]\n\n\
                    Options:\n\
+                                     -i, --interactive        Enter interactive SQL REPL ($ prompt, history, multi-line)\n\
                                      -q, --query <QUERY>      Search query string\n\
                                      -c, --column <COLUMN>    Filter to a specific column name\n\
                                      -s, --sheet <SHEET>      Filter to a specific sheet name\n\
@@ -975,5 +977,139 @@ pub fn status_no_tables() -> &'static str {
     match current() {
         Lang::Zh => "未导入任何文件，请先按 o 导入文件",
         Lang::En => "No files imported. Press o to import files first",
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Interactive REPL (-i / --interactive)
+// ─────────────────────────────────────────────────────────────
+
+pub fn repl_welcome(version: &str) -> String {
+    match current() {
+        Lang::Zh => format!("grep_excel {} — 交互式 SQL REPL", version),
+        Lang::En => format!("grep_excel {} — Interactive SQL REPL", version),
+    }
+}
+
+pub fn repl_hint() -> &'static str {
+    match current() {
+        Lang::Zh => "输入 SQL (以 ; 结束) 执行，或输入 .help 查看命令列表，.exit 退出",
+        Lang::En => "Type SQL ending with ';' to execute. Type .help for commands, .exit to quit",
+    }
+}
+
+pub fn repl_goodbye() -> &'static str {
+    match current() { Lang::Zh => "再见", Lang::En => "Goodbye" }
+}
+
+pub fn repl_no_files() -> &'static str {
+    match current() {
+        Lang::Zh => "未导入任何文件。",
+        Lang::En => "No files imported.",
+    }
+}
+
+pub fn repl_history_empty() -> &'static str {
+    match current() {
+        Lang::Zh => "(历史为空)",
+        Lang::En => "(history empty)",
+    }
+}
+
+pub fn repl_unknown_dot(cmd: &str) -> String {
+    match current() {
+        Lang::Zh => format!(
+            "未知命令: {}。输入 .help 查看可用命令。",
+            cmd
+        ),
+        Lang::En => format!(
+            "Unknown command: {}. Type .help for available commands.",
+            cmd
+        ),
+    }
+}
+
+pub fn repl_sql_error(msg: &str) -> String {
+    match current() {
+        Lang::Zh => format!("错误: {}", msg),
+        Lang::En => format!("Error: {}", msg),
+    }
+}
+
+pub fn repl_sql_summary(shown: usize, total: usize, truncated: bool, duration_ms: u128) -> String {
+    match current() {
+        Lang::Zh => {
+            if truncated {
+                format!(
+                    "显示 {} / {}+ 行 (已截断)，用时 {} ms",
+                    shown, total, duration_ms
+                )
+            } else {
+                format!("{} 行，用时 {} ms", shown, duration_ms)
+            }
+        }
+        Lang::En => {
+            if truncated {
+                format!(
+                    "Showing {} of {}+ rows (truncated), took {} ms",
+                    shown, total, duration_ms
+                )
+            } else {
+                format!("{} row(s), took {} ms", shown, duration_ms)
+            }
+        }
+    }
+}
+
+pub fn repl_help() -> String {
+    match current() {
+        Lang::Zh => {
+            "REPL 命令:\n\
+             \x1b[1m.help\x1b[0m              显示此帮助\n\
+             \x1b[1m.exit\x1b[0m / \x1b[1m.quit\x1b[0m      退出 REPL (也可 Ctrl-D)\n\
+             \x1b[1m.tables\x1b[0m / \x1b[1m.schema\x1b[0m  列出可用表别名和列名\n\
+             \x1b[1m.files\x1b[0m             列出已导入文件\n\
+             \x1b[1m.history\x1b[0m           显示 SQL 历史\n\
+             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      清屏\n\n\
+             SQL 执行:\n\
+             • 输入以 \x1b[1m;\x1b[0m 结尾即执行；未结束时显示 \x1b[1m> \x1b[0m 续行提示\n\
+             • \x1b[2mSELECT 1;\x1b[0m  →  立即执行\n\
+             • \x1b[2mSELECT\\n  *\\nFROM t;  →  跨多行直到 ;\x1b[0m\n\n\
+             行编辑 (readline 风格):\n\
+             • \x1b[1m↑ / ↓\x1b[0m            浏览历史 (可编辑后重新执行)\n\
+             • \x1b[1m← / →\x1b[0m            移动光标\n\
+             • \x1b[1mHome / End\x1b[0m       跳到行首/行尾\n\
+             • \x1b[1mCtrl-A / Ctrl-E\x1b[0m   同 Home / End\n\
+             • \x1b[1mCtrl-U\x1b[0m            删除至行首\n\
+             • \x1b[1mCtrl-K\x1b[0m            删除至行尾\n\
+             • \x1b[1mCtrl-L\x1b[0m            清屏\n\
+             • \x1b[1mCtrl-C\x1b[0m            取消当前输入 (清空多行 SQL 缓冲)\n\
+             • \x1b[1mCtrl-D\x1b[0m            空行时退出；非空时删除光标处字符"
+                .to_string()
+        }
+        Lang::En => {
+            "REPL commands:\n\
+             \x1b[1m.help\x1b[0m              Show this help\n\
+             \x1b[1m.exit\x1b[0m / \x1b[1m.quit\x1b[0m      Exit the REPL (also Ctrl-D)\n\
+             \x1b[1m.tables\x1b[0m / \x1b[1m.schema\x1b[0m  List available table aliases and columns\n\
+             \x1b[1m.files\x1b[0m             List imported files\n\
+             \x1b[1m.history\x1b[0m           Show SQL history\n\
+             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      Clear screen\n\n\
+             SQL execution:\n\
+             • Input executes when it ends with \x1b[1m;\x1b[0m; mid-statement shows \x1b[1m> \x1b[0m continuation prompt\n\
+             • \x1b[2mSELECT 1;\x1b[0m  →  executes immediately\n\
+             • \x1b[2mSELECT\\n  *\\nFROM t;  →  spans lines until ;\x1b[0m\n\n\
+             Line editing (readline-style):\n\
+             • \x1b[1mUp / Down\x1b[0m        Browse history (edit then re-run)\n\
+             • \x1b[1mLeft / Right\x1b[0m     Move cursor\n\
+             • \x1b[1mHome / End\x1b[0m       Jump to start/end of line\n\
+             • \x1b[1mCtrl-A / Ctrl-E\x1b[0m   Same as Home / End\n\
+             • \x1b[1mCtrl-U\x1b[0m            Delete to start of line\n\
+             • \x1b[1mCtrl-K\x1b[0m            Delete to end of line\n\
+             • \x1b[1mCtrl-L\x1b[0m            Clear screen\n\
+             • \x1b[1mCtrl-C\x1b[0m            Abort current input (clears multi-line SQL buffer)\n\
+             • \x1b[1mCtrl-D\x1b[0m            Exit on empty line; delete char at cursor otherwise"
+                .to_string()
+        }
     }
 }
