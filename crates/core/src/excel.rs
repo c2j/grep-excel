@@ -274,6 +274,102 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
     Ok(sheets_data)
 }
 
+/// Lightweight sheet metadata (no row data loaded).
+#[derive(Debug, Clone)]
+pub struct SheetMetadata {
+    pub name: String,
+    pub headers: Vec<String>,
+    pub row_count: usize,
+}
+
+/// Read sheet metadata (names, headers, row counts) without materializing row data.
+/// Used by `--list-tables` for large files where full import is wasteful.
+pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "csv" {
+        parse_csv_metadata(path)
+    } else {
+        parse_excel_metadata(path)
+    }
+}
+
+fn parse_csv_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("csv")
+        .to_string();
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_path(path)?;
+
+    let mut headers: Vec<String> = Vec::new();
+    let mut row_count: usize = 0;
+
+    for result in rdr.records() {
+        let record = result?;
+        if headers.is_empty() {
+            headers = record.iter().map(|s| s.to_string()).collect();
+        } else {
+            row_count += 1;
+        }
+    }
+
+    if headers.is_empty() || row_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    Ok(vec![SheetMetadata {
+        name,
+        headers,
+        row_count,
+    }])
+}
+
+fn parse_excel_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let mut workbook = open_workbook_auto(path)?;
+    let sheet_names = workbook.sheet_names().to_vec();
+
+    let mut result = Vec::new();
+
+    for sheet_name in &sheet_names {
+        let range = match workbook.worksheet_range(sheet_name) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        let (total_rows_u32, _) = range.get_size();
+        let total_rows = total_rows_u32 as usize;
+
+        if total_rows < 2 {
+            continue;
+        }
+
+        let headers: Vec<String> = match range.rows().next() {
+            Some(row) => row.iter().map(data_to_string).collect(),
+            None => continue,
+        };
+
+        if headers.is_empty() {
+            continue;
+        }
+
+        result.push(SheetMetadata {
+            name: sheet_name.clone(),
+            headers,
+            row_count: total_rows - 1,
+        });
+    }
+
+    Ok(result)
+}
+
 /// Process Excel sheets one at a time via callback, reducing peak memory.
 /// The callback receives each SheetData and its index. The SheetData is dropped
 /// after the callback returns, before the next sheet is loaded.

@@ -486,7 +486,18 @@ fn run_sql_cli(args: &Args) -> Result<()> {
 }
 
 fn run_list_tables_cli(args: &Args) -> Result<()> {
-    let mut db = DefaultEngine::new()?;
+    use grep_excel::excel::parse_file_metadata;
+
+    struct TableInfo {
+        alias: String,
+        table_name: String,
+        row_count: usize,
+        columns: Vec<String>,
+    }
+
+    let mut tables: Vec<TableInfo> = Vec::new();
+    let mut file_idx_counter: usize = 1;
+    let mut repair_engine: Option<DefaultEngine> = None;
 
     for file in &args.files {
         if !file.exists() {
@@ -496,35 +507,106 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
             );
             continue;
         }
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+
+        let file_stem = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let file_name = file
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        match parse_file_metadata(file) {
+            Ok(sheets) if !sheets.is_empty() => {
+                let sheet_count = sheets.len();
+                let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows)
                 );
+                for (sheet_idx, meta) in sheets.into_iter().enumerate() {
+                    tables.push(TableInfo {
+                        alias: format!("{}.{}", file_stem, meta.name),
+                        table_name: format!("sheet_{}_{}", file_idx_counter, sheet_idx),
+                        row_count: meta.row_count,
+                        columns: meta.headers,
+                    });
+                }
+                file_idx_counter += 1;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            Ok(_) => {}
+            Err(e) => {
+                if !args.repair {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_import_failed(
+                            &file.display().to_string(),
+                            &e.to_string()
+                        )
+                    );
+                    continue;
+                }
+                eprintln!(
+                    "  常规读取失败: {}. 尝试修复模式...",
+                    e.to_string().lines().next().unwrap_or(&e.to_string())
+                );
+                let engine = match repair_engine.as_mut() {
+                    Some(e) => e,
+                    None => {
+                        let e = DefaultEngine::new()?;
+                        repair_engine.insert(e)
+                    }
+                };
+                match engine.import_excel_repair(file, &|_, _| {}) {
+                    Ok(info) => {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_imported(
+                                &info.name,
+                                info.sheets.len(),
+                                info.total_rows
+                            )
+                        );
+                        for alias in engine.list_table_aliases() {
+                            if alias.file_name == file_name {
+                                tables.push(TableInfo {
+                                    alias: alias.alias,
+                                    table_name: alias.table_name,
+                                    row_count: alias.row_count,
+                                    columns: alias.columns,
+                                });
+                            }
+                        }
+                    }
+                    Err(repair_err) => eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_import_failed(
+                            &file.display().to_string(),
+                            &repair_err.to_string()
+                        )
+                    ),
+                }
+            }
         }
     }
 
-    let aliases = db.list_table_aliases();
-    if aliases.is_empty() {
+    if tables.is_empty() {
         println!("{}", grep_excel::i18n::cli_list_tables_empty());
         return Ok(());
     }
 
     println!("{}", grep_excel::i18n::cli_list_tables_header());
-    for alias in &aliases {
-        let cols_str = alias.columns.join(", ");
+    for t in &tables {
+        let cols_str = t.columns.join(", ");
         println!(
             "  {}",
             grep_excel::i18n::cli_list_tables_entry(
-                &alias.alias,
-                &alias.table_name,
-                alias.row_count,
+                &t.alias,
+                &t.table_name,
+                t.row_count,
                 &cols_str,
             )
         );
@@ -533,7 +615,7 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
     println!();
     println!(
         "{}",
-        grep_excel::i18n::cli_list_tables_footer(aliases.len())
+        grep_excel::i18n::cli_list_tables_footer(tables.len())
     );
 
     Ok(())

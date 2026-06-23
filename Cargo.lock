@@ -3006,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "grep-excel"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3031,7 +3031,7 @@ dependencies = [
 
 [[package]]
 name = "grep-excel-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "calamine",
@@ -3053,7 +3053,7 @@ dependencies = [
 
 [[package]]
 name = "grep-excel-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "grep-excel-core",
