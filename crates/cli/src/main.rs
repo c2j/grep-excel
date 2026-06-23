@@ -13,6 +13,13 @@ struct Args {
     #[arg(name = "FILES")]
     files: Vec<PathBuf>,
 
+    #[arg(
+        short = 'i',
+        long,
+        help = "Interactive SQL REPL mode: $ prompt, multi-line input with ';' terminator, up/down arrow history"
+    )]
+    interactive: bool,
+
     #[arg(short, long, help = "Search query string")]
     query: Option<String>,
 
@@ -162,6 +169,10 @@ fn main() -> Result<()> {
 
     if args.list_tables {
         return run_list_tables_cli(&args);
+    }
+
+    if args.interactive {
+        return run_interactive_cli(&args);
     }
 
     if args.sql.is_some() {
@@ -619,6 +630,34 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn run_interactive_cli(args: &Args) -> Result<()> {
+    let mut db = DefaultEngine::new()?;
+
+    for file in &args.files {
+        if !file.exists() {
+            eprintln!(
+                "{}",
+                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+            );
+            continue;
+        }
+        match import_file_with_repair(&mut db, file, args.repair) {
+            Ok(info) => {
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                );
+            }
+            Err(e) => eprintln!(
+                "{}",
+                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+            ),
+        }
+    }
+
+    grep_excel::interactive::run(&mut db)
 }
 
 fn run_exec_shell(args: &Args) -> Result<()> {
