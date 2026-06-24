@@ -520,7 +520,7 @@ if args.my_new_option.is_some() {
 }
 ```
 
-> **交互式 SQL REPL**：`-i` / `--interactive` 路由到 `run_interactive_cli()`，调用 `interactive::run()`（基于 rustyline），循环读取多行 SQL 并通过 `execute_sql` 执行。详见 `crates/cli/src/interactive.rs`。
+> **交互式 SQL REPL**：`-i` / `--interactive` 路由到 `run_interactive_cli()`，调用 `interactive::run(db, no_history)`（基于 rustyline），循环读取多行 SQL 并通过 `execute_sql` 执行。命令历史跨会话持久化到 `dirs::state_dir()/grep-excel/history.txt`（`--no-history` 关闭），每次 `add_history_entry` 后增量 `save_history` 以抵御执行期崩溃。详见 `crates/cli/src/interactive.rs`。
 
 **步骤 3**：实现处理函数：
 

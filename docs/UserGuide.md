@@ -211,7 +211,7 @@ REPL 支持以下以 `.` 开头的元命令：
   共 2 行 (用时 3ms)
 ```
 
-> **提示**：REPL 单次查询最多返回 1000 行。命令历史自动保存（最多 500 条），可用上下方向键浏览。
+> **提示**：REPL 单次查询最多返回 1000 行。命令历史跨会话持久保存到 `~/.local/state/grep-excel/history.txt`（macOS：`~/Library/Application Support/grep-excel/history.txt`），最多 500 条，可用上下方向键浏览过往会话的输入。传入 `--no-history` 可关闭本次会话的持久化。
 
 ---
 

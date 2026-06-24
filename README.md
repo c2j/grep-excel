@@ -90,6 +90,7 @@ grep_excel [FILES...] [OPTIONS]
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--interactive` | `-i` | Launch interactive SQL REPL: `$` prompt, multi-line input (`;` to run), up/down history, dot-commands |
+| `--no-history` | — | Disable persistent SQL history across sessions (history is saved by default) |
 | `--query` | `-q` | Search query string |
 | `--column` | `-c` | Filter to specific column name |
 | `--sheet` | `-s` | Filter to specific sheet name |
@@ -176,6 +177,12 @@ grep_excel data.xlsx employees.xlsx -i
 #   $ .help            # show dot-commands
 #   $ .exit            # quit (Ctrl+D also works)
 ```
+
+SQL and dot-commands entered in the REPL are saved to a history file
+(`~/.local/state/grep-excel/history.txt` on Linux,
+`~/Library/Application Support/grep-excel/history.txt` on macOS) and recalled
+with up/down arrows across sessions. Pass `--no-history` to opt out for a
+session.
 
 Execute a shell command for each matching row (`--run` / `-X`):
 ```bash
@@ -473,6 +480,7 @@ grep_excel [文件...] [选项]
 | 选项 | 缩写 | 说明 |
 |------|------|------|
 | `--interactive` | `-i` | 启动交互式 SQL REPL：`$` 提示符，多行输入（`;` 执行），上下方向键历史，点命令 |
+| `--no-history` | — | 禁用跨会话 SQL 历史持久化（默认保存） |
 | `--query` | `-q` | 搜索查询字符串 |
 | `--column` | `-c` | 筛选指定列名 |
 | `--sheet` | `-s` | 筛选指定工作表名称 |
@@ -559,6 +567,10 @@ grep_excel data.xlsx employees.xlsx -i
 #   $ .help            # 显示点命令
 #   $ .exit            # 退出（Ctrl+D 也可退出）
 ```
+
+REPL 中输入的 SQL 和点命令会保存到历史文件（Linux：
+`~/.local/state/grep-excel/history.txt`，macOS：
+`~/Library/Application Support/grep-excel/history.txt`），下次启动可用上下方向键跨会话召回。传入 `--no-history` 可在本次会话中关闭。
 
 对每个匹配行执行 Shell 命令（`--run` / `-X`）：
 ```bash
