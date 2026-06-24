@@ -3,7 +3,7 @@ use clap::Parser;
 use grep_excel::app::App;
 use grep_excel::engine::{DefaultEngine, SearchEngine};
 use grep_excel::event::create_event_channel;
-use grep_excel::types::{FileInfo, SearchMode, SearchQuery, SearchResult};
+use grep_excel::types::{ContextRows, FileInfo, SearchMode, SearchQuery, SearchResult};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -257,6 +257,8 @@ fn run_cli(args: &Args) -> Result<()> {
         limit: usize::MAX,
         sheet: args.sheet.clone(),
         invert: args.invert,
+        context_lines: None,
+        conditions: Vec::new(),
     };
 
     let (results, stats) = match db.search(&query) {
@@ -705,6 +707,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                 matched_columns: vec![],
                 col_widths: vec![],
                 row_index: row_idx,
+                context: ContextRows::default(),
             }
         }).collect()
     } else if args.query.is_some() {
@@ -720,6 +723,8 @@ fn run_exec_shell(args: &Args) -> Result<()> {
             limit: usize::MAX,
             sheet: args.sheet.clone(),
             invert: args.invert,
+            context_lines: None,
+            conditions: Vec::new(),
         };
         match db.search(&query) {
             Ok((r, _stats)) => r,
@@ -1680,6 +1685,12 @@ fn exec_dispatch(
                 "truncated": r.truncated,
             }))?)
         }
+        "get_sheet_statistics" => {
+            let p: GetSheetStatisticsParams = serde_json::from_value(params.clone())?;
+            let max_top = p.max_top_values.unwrap_or(5);
+            let r = db.get_sheet_statistics(&p.file_name, &p.sheet_name, max_top)?;
+            Ok(serde_json::to_string_pretty(&r)?)
+        }
         "search" => {
             let p: SearchParams = serde_json::from_value(params.clone())?;
             let mode = p.mode.as_deref().map(|m| match m {
@@ -1696,6 +1707,8 @@ fn exec_dispatch(
                 limit: p.limit.unwrap_or(100),
                 sheet: p.sheet,
                 invert: p.invert.unwrap_or(false),
+                context_lines: p.context_lines,
+                conditions: p.conditions.unwrap_or_default(),
             };
             let (results, stats) = db.search(&query)?;
 
@@ -1727,6 +1740,8 @@ fn exec_dispatch(
                     "row": r.row,
                     "col_names": r.col_names,
                     "matched_column_names": matched_cols,
+                    "before": r.context.before,
+                    "after": r.context.after,
                 })
             }).collect();
 
@@ -1751,6 +1766,27 @@ fn exec_dispatch(
                 "truncated": result.truncated,
                 "duration_ms": result.duration.as_millis(),
             }))?)
+        }
+        "export_query" => {
+            let p: ExportQueryParams = serde_json::from_value(params.clone())?;
+            #[cfg(feature = "mcp-server")]
+            {
+                let sql_result = db.execute_sql(&p.sql, 10000)?;
+                if sql_result.rows.is_empty() {
+                    anyhow::bail!("Query returned no rows; nothing to export");
+                }
+                let sheet_name = p.sheet_name.unwrap_or_else(|| "Sheet1".to_string());
+                use grep_excel::engine::write_xlsx;
+                write_xlsx(
+                    &[(sheet_name.as_str(), &sql_result.columns, &sql_result.rows)],
+                    std::path::Path::new(&p.output_path),
+                )?;
+                Ok(format!("Exported {} rows to '{}'", sql_result.row_count, p.output_path))
+            }
+            #[cfg(not(feature = "mcp-server"))]
+            {
+                anyhow::bail!("export_query requires the mcp-server feature to be enabled")
+            }
         }
         "update_cell" => {
             let p: UpdateCellParams = serde_json::from_value(params.clone())?;
@@ -1831,7 +1867,7 @@ fn exec_dispatch(
             }
         }
         _ => anyhow::bail!(
-            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, search, execute_sql, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
+            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
             tool
         ),
     }

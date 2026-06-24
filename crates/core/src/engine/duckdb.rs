@@ -227,6 +227,43 @@ impl SearchEngine for DuckDbEngine {
 
                 let matched_columns = super::find_matched_columns(query, &row_vec, &col_names);
 
+                let context = if query.context_lines.unwrap_or(0) > 0 {
+                    let n = query.context_lines.unwrap_or(0) as i64;
+                    let ctx_sql = format!(
+                        "SELECT {} FROM {} WHERE rowid BETWEEN ? AND ? ORDER BY rowid",
+                        meta.col_names.iter().map(|c| super::quote_ident(c)).collect::<Vec<_>>().join(", "),
+                        super::quote_ident(&meta.table_name),
+                    );
+                    let mut ctx_stmt = self.conn.prepare(&ctx_sql).unwrap();
+                    let ctx_params: [&dyn ::duckdb::ToSql; 2] = [&(row_id - n), &(row_id + n)];
+                    let ctx_rows: Vec<Vec<String>> = ctx_stmt
+                        .query_map(ctx_params, |row: &::duckdb::Row| {
+                            let mut vals = Vec::new();
+                            for i in 0..meta.col_names.len() {
+                                vals.push(row.get::<_, Option<String>>(i)?);
+                            }
+                            Ok(vals)
+                        })
+                        .unwrap()
+                        .filter_map(|r| r.ok())
+                        .map(|row_opts| {
+                            row_opts.into_iter().map(|v| v.unwrap_or_default()).collect::<Vec<_>>()
+                        })
+                        .collect();
+
+                    let match_row_idx = ctx_rows.iter().position(|r| *r == row_vec);
+                    if let Some(mid) = match_row_idx {
+                        ContextRows {
+                            before: ctx_rows[..mid].to_vec(),
+                            after: ctx_rows[mid + 1..].to_vec(),
+                        }
+                    } else {
+                        ContextRows::default()
+                    }
+                } else {
+                    ContextRows::default()
+                };
+
                 results.push(SearchResult {
                     sheet_name: meta.sheet_name.clone(),
                     file_name: meta.file_name.clone(),
@@ -235,6 +272,7 @@ impl SearchEngine for DuckDbEngine {
                     matched_columns,
                     col_widths: meta.col_widths.clone(),
                     row_index: row_id as usize,
+                    context,
                 });
             }
         }
@@ -777,6 +815,60 @@ impl SearchEngine for DuckDbEngine {
 
             Ok(())
         }
+
+        fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
+            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+            let mut columns = Vec::new();
+            let total_count = meta.row_count;
+
+            for col_name in &meta.col_names {
+                let quoted = super::quote_ident(col_name);
+
+                let count_sql = format!(
+                    "SELECT COUNT({}) AS non_null, COUNT(DISTINCT {}) AS distinct_cnt FROM {}",
+                    quoted, quoted, super::quote_ident(&meta.table_name)
+                );
+                let (non_null_count, distinct_count): (usize, usize) = self.conn.query_row(
+                    &count_sql, [], |row| Ok((
+                        row.get::<_, i64>(0)? as usize,
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                )?;
+
+                let top_sql = format!(
+                    "SELECT {}, COUNT(*) AS cnt FROM {} WHERE {} IS NOT NULL AND {} != '' GROUP BY {} ORDER BY cnt DESC LIMIT {}",
+                    quoted, super::quote_ident(&meta.table_name), quoted, quoted, quoted, max_top_values
+                );
+                let mut top_stmt = self.conn.prepare(&top_sql)?;
+                let top_values: Vec<(String, usize)> = top_stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+                let null_count = total_count.saturating_sub(non_null_count);
+
+                columns.push(ColumnStatistics {
+                    column_name: col_name.clone(),
+                    total_count,
+                    non_null_count,
+                    null_count,
+                    distinct_count,
+                    top_values,
+                });
+            }
+
+            Ok(SheetStatistics {
+                file_name: file_name.to_string(),
+                sheet_name: sheet_name.to_string(),
+                row_count: total_count,
+                column_count: columns.len(),
+                columns,
+            })
+        }
 }
 
 impl DuckDbEngine {
@@ -1267,7 +1359,7 @@ impl DuckDbEngine {
     }
 
     fn build_wide_where_clause(query: &SearchQuery, col_names: &[String]) -> (String, Vec<String>) {
-        let mut parts = Vec::new();
+        let mut or_parts = Vec::new();
         let mut values = Vec::new();
 
         let target_cols: Vec<&String> = if let Some(ref col) = query.column {
@@ -1279,19 +1371,19 @@ impl DuckDbEngine {
         for col in target_cols {
             match query.mode {
                 SearchMode::FullText => {
-                    parts.push(format!("{} ILIKE ?", quote_ident(col)));
+                    or_parts.push(format!("{} ILIKE ?", quote_ident(col)));
                     values.push(format!("%{}%", query.text));
                 }
                 SearchMode::ExactMatch => {
-                    parts.push(format!("{} = ?", quote_ident(col)));
+                    or_parts.push(format!("{} = ?", quote_ident(col)));
                     values.push(query.text.clone());
                 }
                 SearchMode::Wildcard => {
-                    parts.push(format!("{} LIKE ?", quote_ident(col)));
+                    or_parts.push(format!("{} LIKE ?", quote_ident(col)));
                     values.push(query.text.clone());
                 }
                 SearchMode::Regex => {
-                    parts.push(format!(
+                    or_parts.push(format!(
                         "regexp_matches(CAST({} AS VARCHAR), ?)",
                         quote_ident(col)
                     ));
@@ -1300,10 +1392,27 @@ impl DuckDbEngine {
             }
         }
 
-        let where_sql = if parts.is_empty() {
-            "1=0".to_string()
-        } else {
-            parts.join(" OR ")
+        // Build AND parts from conditions
+        let mut and_parts = Vec::new();
+        for cond in &query.conditions {
+            let col = super::quote_ident(&cond.column);
+            let clause = match cond.operator.as_str() {
+                "=" | "==" => format!("{} = ?", col),
+                "!=" | "<>" => format!("{} <> ?", col),
+                "ILIKE" => format!("{} ILIKE ?", col),
+                "LIKE" => format!("{} LIKE ?", col),
+                ">" | "<" | ">=" | "<=" => format!("{} {} ?", col, cond.operator),
+                _ => continue,
+            };
+            and_parts.push(clause);
+            values.push(cond.value.clone());
+        }
+
+        let where_sql = match (or_parts.is_empty(), and_parts.is_empty()) {
+            (true, true) => "1=0".to_string(),
+            (false, true) => or_parts.join(" OR "),
+            (true, false) => and_parts.join(" AND "),
+            (false, false) => format!("({}) AND ({})", or_parts.join(" OR "), and_parts.join(" AND ")),
         };
         (where_sql, values)
     }

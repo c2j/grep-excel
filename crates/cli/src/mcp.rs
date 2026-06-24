@@ -34,6 +34,10 @@ pub struct McpSearchResult {
     pub row: Vec<String>,
     pub col_names: Vec<String>,
     pub matched_column_names: Vec<String>,
+    #[serde(default)]
+    pub before: Vec<Vec<String>>,
+    #[serde(default)]
+    pub after: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +150,8 @@ impl From<SearchResult> for McpSearchResult {
             row: r.row,
             col_names: r.col_names,
             matched_column_names,
+            before: r.context.before,
+            after: r.context.after,
         }
     }
 }
@@ -185,6 +191,50 @@ impl From<SheetDataResult> for McpSheetData {
             row_count: r.row_count,
             total_rows: r.total_rows,
             truncated: r.truncated,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct McpColumnStatistics {
+    pub column_name: String,
+    pub total_count: usize,
+    pub non_null_count: usize,
+    pub null_count: usize,
+    pub distinct_count: usize,
+    pub top_values: Vec<(String, usize)>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct McpSheetStatistics {
+    pub file_name: String,
+    pub sheet_name: String,
+    pub row_count: usize,
+    pub column_count: usize,
+    pub columns: Vec<McpColumnStatistics>,
+}
+
+impl From<ColumnStatistics> for McpColumnStatistics {
+    fn from(s: ColumnStatistics) -> Self {
+        McpColumnStatistics {
+            column_name: s.column_name,
+            total_count: s.total_count,
+            non_null_count: s.non_null_count,
+            null_count: s.null_count,
+            distinct_count: s.distinct_count,
+            top_values: s.top_values,
+        }
+    }
+}
+
+impl From<SheetStatistics> for McpSheetStatistics {
+    fn from(s: SheetStatistics) -> Self {
+        McpSheetStatistics {
+            file_name: s.file_name,
+            sheet_name: s.sheet_name,
+            row_count: s.row_count,
+            column_count: s.column_count,
+            columns: s.columns.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -252,6 +302,8 @@ impl GrepExcelServer {
             limit: params.limit.unwrap_or(100),
             sheet: params.sheet,
             invert: params.invert.unwrap_or(false),
+            context_lines: params.context_lines,
+            conditions: params.conditions.unwrap_or_default(),
         };
         let aggregate_col = params.aggregate;
         let db = Arc::clone(&self.db);
@@ -341,6 +393,33 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
+    #[tool(description = "Run a SQL SELECT query and export the result rows to a new .xlsx file. Combines execute_sql + save_as for filtered exports. Note: the memory engine does not support SQL queries.")]
+    pub async fn export_query(
+        &self,
+        Parameters(params): Parameters<ExportQueryParams>,
+    ) -> Result<String, String> {
+        let sql = params.sql;
+        let output_path = params.output_path;
+        let sheet_name = params.sheet_name.unwrap_or_else(|| "Sheet1".to_string());
+        let db = Arc::clone(&self.db);
+        let result: Result<String, String> = tokio::task::spawn_blocking(move || {
+            let guard = db.read();
+            let sql_result = guard.0.execute_sql(&sql, 10000)
+                .map_err(|e| format!("SQL execution failed: {}", e))?;
+            if sql_result.rows.is_empty() {
+                return Err("Query returned no rows; nothing to export".into());
+            }
+            let sheet_tuple: (&str, &[String], &[Vec<String>]) =
+                (&sheet_name, &sql_result.columns, &sql_result.rows);
+            crate::engine::write_xlsx(&[sheet_tuple], std::path::Path::new(&output_path))
+                .map(|_| format!("Exported {} rows to '{}'", sql_result.row_count, output_path))
+                .map_err(|e| format!("Failed to write xlsx: {}", e))
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| format!("Task error: {}", e))?;
+        result
+    }
+
     #[tool(description = "Get detailed metadata for imported files, including sheet names and column names. If file_name is omitted, returns metadata for all imported files.")]
     pub async fn get_metadata(
         &self,
@@ -419,6 +498,29 @@ impl GrepExcelServer {
                         .unwrap_or_else(|_| "Data retrieved".to_string())
                 })
                 .map_err(|e| format!("Failed to get sheet data: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Get per-column statistics for a sheet: null counts, distinct counts, top values. Useful for data profiling.")]
+    pub async fn get_sheet_statistics(
+        &self,
+        Parameters(params): Parameters<GetSheetStatisticsParams>,
+    ) -> Result<String, String> {
+        let max_top = params.max_top_values.unwrap_or(5);
+        let file_name = params.file_name;
+        let sheet_name = params.sheet_name;
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let guard = db.read();
+            guard.0.get_sheet_statistics(&file_name, &sheet_name, max_top)
+                .map(|r| {
+                    let mcp: McpSheetStatistics = r.into();
+                    serde_json::to_string_pretty(&mcp)
+                        .unwrap_or_else(|_| "Statistics retrieved".to_string())
+                })
+                .map_err(|e| format!("Failed to get statistics: {}", e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?

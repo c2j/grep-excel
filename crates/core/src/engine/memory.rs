@@ -140,6 +140,23 @@ impl SearchEngine for MemEngine {
                     continue;
                 }
 
+                // Multi-condition AND filter
+                if !query.conditions.is_empty() && !matches_conditions(row, &sheet.headers, &query.conditions) {
+                    continue;
+                }
+
+                let context = if query.context_lines.unwrap_or(0) > 0 {
+                    let n = query.context_lines.unwrap_or(0);
+                    let start_ctx = row_idx.saturating_sub(n);
+                    let end_ctx = (row_idx + n + 1).min(sheet.rows.len());
+                    ContextRows {
+                        before: sheet.rows[start_ctx..row_idx].to_vec(),
+                        after: sheet.rows[row_idx + 1..end_ctx].to_vec(),
+                    }
+                } else {
+                    ContextRows::default()
+                };
+
                 results.push(SearchResult {
                     sheet_name: sheet.sheet_name.clone(),
                     file_name: sheet.file_name.clone(),
@@ -148,6 +165,7 @@ impl SearchEngine for MemEngine {
                     matched_columns: if query.invert { vec![] } else { matched_columns },
                     col_widths: sheet.col_widths.clone(),
                     row_index: row_idx,
+                    context,
                 });
                 sheet_matches += 1;
             }
@@ -504,4 +522,83 @@ impl SearchEngine for MemEngine {
         sheet.headers[col_idx] = new_name.to_string();
         Ok(())
     }
+
+    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
+        let sheet = self.sheets.iter()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let total_rows = sheet.rows.len();
+        let mut columns = Vec::new();
+
+        for (col_idx, col_name) in sheet.headers.iter().enumerate() {
+            let mut count_map: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            let mut non_null = 0usize;
+
+            for row in &sheet.rows {
+                let val = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                if val.is_empty() {
+                    continue;
+                }
+                non_null += 1;
+                *count_map.entry(val).or_insert(0) += 1;
+            }
+
+            let null_count = total_rows - non_null;
+            let distinct_count = count_map.len();
+
+            let mut top: Vec<_> = count_map.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+            top.sort_by(|a, b| b.1.cmp(&a.1));
+            top.truncate(max_top_values);
+
+            columns.push(ColumnStatistics {
+                column_name: col_name.clone(),
+                total_count: total_rows,
+                non_null_count: non_null,
+                null_count,
+                distinct_count,
+                top_values: top,
+            });
+        }
+
+        Ok(SheetStatistics {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            row_count: total_rows,
+            column_count: columns.len(),
+            columns,
+        })
+    }
+}
+
+fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCondition]) -> bool {
+    for cond in conditions {
+        let idx = match headers.iter().position(|h| h == &cond.column) {
+            Some(i) => i,
+            None => return false,
+        };
+        let val = row.get(idx).map(|s| s.as_str()).unwrap_or("");
+        let matched = match cond.operator.as_str() {
+            "=" | "==" => val == cond.value,
+            "!=" | "<>" => val != cond.value,
+            "ILIKE" => val.to_lowercase().contains(&cond.value.to_lowercase()),
+            "LIKE" => super::like_match(&cond.value, val),
+            ">" | "<" | ">=" | "<=" => {
+                match (val.parse::<f64>(), cond.value.parse::<f64>()) {
+                    (Ok(a), Ok(b)) => match cond.operator.as_str() {
+                        ">" => a > b, "<" => a < b, ">=" => a >= b, "<=" => a <= b, _ => false,
+                    },
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+        if !matched {
+            return false;
+        }
+    }
+    true
 }
