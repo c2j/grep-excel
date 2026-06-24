@@ -1707,8 +1707,8 @@ fn exec_dispatch(
                 limit: p.limit.unwrap_or(100),
                 sheet: p.sheet,
                 invert: p.invert.unwrap_or(false),
-                context_lines: None,
-                conditions: Vec::new(),
+                context_lines: p.context_lines,
+                conditions: p.conditions.unwrap_or_default(),
             };
             let (results, stats) = db.search(&query)?;
 
@@ -1740,6 +1740,8 @@ fn exec_dispatch(
                     "row": r.row,
                     "col_names": r.col_names,
                     "matched_column_names": matched_cols,
+                    "before": r.context.before,
+                    "after": r.context.after,
                 })
             }).collect();
 
