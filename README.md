@@ -235,8 +235,8 @@ grep_excel --mcp
 | `import_file` | Import an Excel/CSV file |
 | `list_files` | List imported files and their sheets |
 | `get_metadata` | Get detailed metadata: sheet names, columns per sheet |
-| `get_sheet_sample` | Get evenly-spaced sampled rows from a sheet |
-| `get_sheet_data` | Get paginated row data with column filtering |
+| `get_sheet_sample` | **Preview** a sheet: get N evenly-spaced rows (default 10). Fastest way to understand structure without loading all rows |
+| `get_sheet_data` | Get rows from a sheet with pagination (`start_row`/`end_row` as numbers) and column filtering |
 | `search` | Search with fulltext/exact/wildcard/regex + aggregation |
 | `execute_sql` | Execute a raw SQL `SELECT` query |
 | `save_as` | Save imported data to a new Excel file (Save As) |
@@ -287,6 +287,47 @@ Assistant: [calls update_cell with file_name="data.xlsx", sheet_name="Employees"
 User: Now save
 Assistant: [calls save with file_name="data.xlsx"]
 ```
+
+### Tips for Effective Use
+
+**Preview large sheets without loading every row:**
+Use `get_sheet_sample` to fetch a small set of evenly-spaced rows. This is the fastest way to understand a sheet's structure, value formats, and column semantics before running expensive searches or SQL queries.
+
+**Use friendly table aliases in SQL — not internal names:**
+Each imported sheet is exposed under both an internal name (`sheet_{file_id}_{sheet_idx}`, e.g. `sheet_1_0`) and a friendly alias (`{file_stem}.{sheet_name}`, e.g. `data.Employees`). Prefer the alias for readability:
+
+```sql
+SELECT * FROM data.Employees WHERE "Department" = 'Engineering'
+```
+
+Run `--list-tables` from the CLI, or call the `list_files` MCP tool, to discover every available alias for the current session.
+
+**SQL already supports JOINs, window functions, and aggregations:**
+There is no need for separate filter, sort, or aggregation tools — `execute_sql` passes your query straight to DuckDB (or SQLite), which supports the full analytical SQL surface:
+
+```sql
+-- JOIN across two imported files
+SELECT e.Name, d.DeptName
+FROM employees.Sheet1 e
+JOIN departments.Sheet1 d ON e."DeptId" = d."Id"
+
+-- Window function (DuckDB engine)
+SELECT *,
+       ROW_NUMBER() OVER (PARTITION BY "DeptId" ORDER BY "Salary" DESC) AS rank
+FROM data.Employees
+
+-- Aggregation with GROUP BY
+SELECT "DeptId", COUNT(*) AS headcount
+FROM data.Employees
+GROUP BY "DeptId"
+ORDER BY headcount DESC
+```
+
+**`get_sheet_data` pagination parameters are numbers, not strings:**
+`start_row` and `end_row` are optional integers. Pass them as JSON numbers (e.g. `"start_row": 0`), never as strings (`"start_row": "0"`). Omit both to fetch all rows.
+
+**Recommended exploration workflow:**
+`import_file` → `get_metadata` → `get_sheet_sample` → `search` or `execute_sql`. Use `get_sheet_sample` instead of `get_sheet_data` whenever you only need to understand the data shape; it is significantly cheaper for large files.
 
 ## TUI Keybindings
 
