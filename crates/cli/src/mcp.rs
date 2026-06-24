@@ -195,6 +195,50 @@ impl From<SheetDataResult> for McpSheetData {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct McpColumnStatistics {
+    pub column_name: String,
+    pub total_count: usize,
+    pub non_null_count: usize,
+    pub null_count: usize,
+    pub distinct_count: usize,
+    pub top_values: Vec<(String, usize)>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct McpSheetStatistics {
+    pub file_name: String,
+    pub sheet_name: String,
+    pub row_count: usize,
+    pub column_count: usize,
+    pub columns: Vec<McpColumnStatistics>,
+}
+
+impl From<ColumnStatistics> for McpColumnStatistics {
+    fn from(s: ColumnStatistics) -> Self {
+        McpColumnStatistics {
+            column_name: s.column_name,
+            total_count: s.total_count,
+            non_null_count: s.non_null_count,
+            null_count: s.null_count,
+            distinct_count: s.distinct_count,
+            top_values: s.top_values,
+        }
+    }
+}
+
+impl From<SheetStatistics> for McpSheetStatistics {
+    fn from(s: SheetStatistics) -> Self {
+        McpSheetStatistics {
+            file_name: s.file_name,
+            sheet_name: s.sheet_name,
+            row_count: s.row_count,
+            column_count: s.column_count,
+            columns: s.columns.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 fn parse_search_mode(mode: &str) -> SearchMode {
     match mode {
         "exact" => SearchMode::ExactMatch,
@@ -426,6 +470,29 @@ impl GrepExcelServer {
                         .unwrap_or_else(|_| "Data retrieved".to_string())
                 })
                 .map_err(|e| format!("Failed to get sheet data: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Get per-column statistics for a sheet: null counts, distinct counts, top values. Useful for data profiling.")]
+    pub async fn get_sheet_statistics(
+        &self,
+        Parameters(params): Parameters<GetSheetStatisticsParams>,
+    ) -> Result<String, String> {
+        let max_top = params.max_top_values.unwrap_or(5);
+        let file_name = params.file_name;
+        let sheet_name = params.sheet_name;
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let guard = db.read();
+            guard.0.get_sheet_statistics(&file_name, &sheet_name, max_top)
+                .map(|r| {
+                    let mcp: McpSheetStatistics = r.into();
+                    serde_json::to_string_pretty(&mcp)
+                        .unwrap_or_else(|_| "Statistics retrieved".to_string())
+                })
+                .map_err(|e| format!("Failed to get statistics: {}", e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?

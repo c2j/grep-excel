@@ -1214,4 +1214,59 @@ impl SearchEngine for SqliteEngine {
 
         Ok(())
     }
+
+    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let mut columns = Vec::new();
+        let total_count = meta.row_count;
+
+        for col_name in &meta.col_names {
+            let quoted = super::quote_ident(col_name);
+
+            let count_sql = format!(
+                "SELECT COUNT({}) AS non_null, COUNT(DISTINCT {}) AS distinct_cnt FROM {}",
+                quoted, quoted, super::quote_ident(&meta.table_name)
+            );
+            let (non_null_count, distinct_count): (usize, usize) = self.conn.query_row(
+                &count_sql, [], |row| Ok((
+                    row.get::<_, i64>(0)? as usize,
+                    row.get::<_, i64>(1)? as usize,
+                ))
+            )?;
+
+            let top_sql = format!(
+                "SELECT {}, COUNT(*) AS cnt FROM {} WHERE {} IS NOT NULL AND {} != '' GROUP BY {} ORDER BY cnt DESC LIMIT {}",
+                quoted, super::quote_ident(&meta.table_name), quoted, quoted, quoted, max_top_values
+            );
+            let mut top_stmt = self.conn.prepare(&top_sql)?;
+            let top_values: Vec<(String, usize)> = top_stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let null_count = total_count.saturating_sub(non_null_count);
+
+            columns.push(ColumnStatistics {
+                column_name: col_name.clone(),
+                total_count,
+                non_null_count,
+                null_count,
+                distinct_count,
+                top_values,
+            });
+        }
+
+        Ok(SheetStatistics {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            row_count: total_count,
+            column_count: columns.len(),
+            columns,
+        })
+    }
 }

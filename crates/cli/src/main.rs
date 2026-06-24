@@ -1683,6 +1683,12 @@ fn exec_dispatch(
                 "truncated": r.truncated,
             }))?)
         }
+        "get_sheet_statistics" => {
+            let p: GetSheetStatisticsParams = serde_json::from_value(params.clone())?;
+            let max_top = p.max_top_values.unwrap_or(5);
+            let r = db.get_sheet_statistics(&p.file_name, &p.sheet_name, max_top)?;
+            Ok(serde_json::to_string_pretty(&r)?)
+        }
         "search" => {
             let p: SearchParams = serde_json::from_value(params.clone())?;
             let mode = p.mode.as_deref().map(|m| match m {
@@ -1835,7 +1841,7 @@ fn exec_dispatch(
             }
         }
         _ => anyhow::bail!(
-            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, search, execute_sql, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
+            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
             tool
         ),
     }

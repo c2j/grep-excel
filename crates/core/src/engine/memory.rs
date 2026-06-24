@@ -517,4 +517,54 @@ impl SearchEngine for MemEngine {
         sheet.headers[col_idx] = new_name.to_string();
         Ok(())
     }
+
+    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
+        let sheet = self.sheets.iter()
+            .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                sheet_name, file_name
+            ))?;
+
+        let total_rows = sheet.rows.len();
+        let mut columns = Vec::new();
+
+        for (col_idx, col_name) in sheet.headers.iter().enumerate() {
+            let mut count_map: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            let mut non_null = 0usize;
+
+            for row in &sheet.rows {
+                let val = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                if val.is_empty() {
+                    continue;
+                }
+                non_null += 1;
+                *count_map.entry(val).or_insert(0) += 1;
+            }
+
+            let null_count = total_rows - non_null;
+            let distinct_count = count_map.len();
+
+            let mut top: Vec<_> = count_map.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+            top.sort_by(|a, b| b.1.cmp(&a.1));
+            top.truncate(max_top_values);
+
+            columns.push(ColumnStatistics {
+                column_name: col_name.clone(),
+                total_count: total_rows,
+                non_null_count: non_null,
+                null_count,
+                distinct_count,
+                top_values: top,
+            });
+        }
+
+        Ok(SheetStatistics {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            row_count: total_rows,
+            column_count: columns.len(),
+            columns,
+        })
+    }
 }

@@ -295,3 +295,33 @@ pub struct RenameColumnParams {
     #[cfg_attr(feature = "mcp-server", schemars(description = "New column name (must not duplicate an existing column name)"))]
     pub new_name: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnStatistics {
+    pub column_name: String,
+    pub total_count: usize,
+    pub non_null_count: usize,
+    pub null_count: usize,
+    pub distinct_count: usize,
+    pub top_values: Vec<(String, usize)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SheetStatistics {
+    pub file_name: String,
+    pub sheet_name: String,
+    pub row_count: usize,
+    pub column_count: usize,
+    pub columns: Vec<ColumnStatistics>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+pub struct GetSheetStatisticsParams {
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")"))]
+    pub file_name: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    pub sheet_name: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Max number of top values to return per column (default 5). MUST be a number, not a string."))]
+    pub max_top_values: Option<usize>,
+}
