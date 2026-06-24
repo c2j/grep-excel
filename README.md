@@ -16,7 +16,7 @@ grep-excel provides a fast, interactive terminal interface for searching across 
 - **SQL Queries** — Execute `SELECT` statements directly against imported data with DuckDB analytical functions
 - **Multi-Engine Backend** — DuckDB (high-performance OLAP), SQLite, or pure in-memory engine; select via feature flags
 - **TUI Interactive Mode** — Keyboard-driven terminal interface with ratatui, tabbed results, detail panel, flat/table views
-- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 14 MCP tools for search, data exploration, editing, and export
+- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 16 MCP tools for search, data exploration, statistics, editing, and export
 - **CLI `--exec` Pipeline** — Execute MCP tools from the command line as single commands or multi-step JSON arrays
 - **File Editing** — Update cells, insert/delete rows, add/rename columns, save back to original or export as new file
 - **Aggregate Statistics** — Count distinct value distributions in matched rows by column
@@ -218,7 +218,7 @@ grep_excel --exec '[
 ]'
 ```
 
-Available tools for `--exec`: `import_file`, `list_files`, `get_metadata`, `get_sheet_sample`, `get_sheet_data`, `search`, `execute_sql`, `save_as`, `save`, `update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`.
+Available tools for `--exec`: `import_file`, `list_files`, `get_metadata`, `get_sheet_sample`, `get_sheet_data`, `get_sheet_statistics`, `search`, `execute_sql`, `export_query`, `save_as`, `save`, `update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`.
 
 ## MCP Server Mode
 
@@ -237,8 +237,10 @@ grep_excel --mcp
 | `get_metadata` | Get detailed metadata: sheet names, columns per sheet |
 | `get_sheet_sample` | **Preview** a sheet: get N evenly-spaced rows (default 10). Fastest way to understand structure without loading all rows |
 | `get_sheet_data` | Get rows from a sheet with pagination (`start_row`/`end_row` as numbers) and column filtering |
-| `search` | Search with fulltext/exact/wildcard/regex + aggregation |
+| `search` | Search with fulltext/exact/wildcard/regex + aggregation + context lines + multi-condition AND filtering |
 | `execute_sql` | Execute a raw SQL `SELECT` query |
+| `export_query` | Run a SQL SELECT and export results to a new .xlsx file |
+| `get_sheet_statistics` | Get per-column statistics (null counts, distinct counts, top values) for data profiling |
 | `save_as` | Save imported data to a new Excel file (Save As) |
 | `save` | Overwrite the original imported file with current data |
 | `update_cell` | Update a single cell value |
