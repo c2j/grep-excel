@@ -1762,6 +1762,27 @@ fn exec_dispatch(
                 "duration_ms": result.duration.as_millis(),
             }))?)
         }
+        "export_query" => {
+            let p: ExportQueryParams = serde_json::from_value(params.clone())?;
+            #[cfg(feature = "mcp-server")]
+            {
+                let sql_result = db.execute_sql(&p.sql, 10000)?;
+                if sql_result.rows.is_empty() {
+                    anyhow::bail!("Query returned no rows; nothing to export");
+                }
+                let sheet_name = p.sheet_name.unwrap_or_else(|| "Sheet1".to_string());
+                use grep_excel::engine::write_xlsx;
+                write_xlsx(
+                    &[(sheet_name.as_str(), &sql_result.columns, &sql_result.rows)],
+                    std::path::Path::new(&p.output_path),
+                )?;
+                Ok(format!("Exported {} rows to '{}'", sql_result.row_count, p.output_path))
+            }
+            #[cfg(not(feature = "mcp-server"))]
+            {
+                anyhow::bail!("export_query requires the mcp-server feature to be enabled")
+            }
+        }
         "update_cell" => {
             let p: UpdateCellParams = serde_json::from_value(params.clone())?;
             db.update_cell(&p.file_name, &p.sheet_name, p.row, &p.column, &p.value)?;
@@ -1841,7 +1862,7 @@ fn exec_dispatch(
             }
         }
         _ => anyhow::bail!(
-            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
+            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
             tool
         ),
     }

@@ -317,6 +317,17 @@ pub struct SheetStatistics {
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+pub struct ExportQueryParams {
+    #[cfg_attr(feature = "mcp-server", schemars(description = "SQL SELECT query whose result will be exported"))]
+    pub sql: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Absolute or relative path for the output .xlsx file"))]
+    pub output_path: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Sheet name in the output file (default: \"Sheet1\")"))]
+    pub sheet_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct GetSheetStatisticsParams {
     #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")"))]
     pub file_name: String,

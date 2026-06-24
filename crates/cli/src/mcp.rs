@@ -392,6 +392,33 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
+    #[tool(description = "Run a SQL SELECT query and export the result rows to a new .xlsx file. Combines execute_sql + save_as for filtered exports. Note: the memory engine does not support SQL queries.")]
+    pub async fn export_query(
+        &self,
+        Parameters(params): Parameters<ExportQueryParams>,
+    ) -> Result<String, String> {
+        let sql = params.sql;
+        let output_path = params.output_path;
+        let sheet_name = params.sheet_name.unwrap_or_else(|| "Sheet1".to_string());
+        let db = Arc::clone(&self.db);
+        let result: Result<String, String> = tokio::task::spawn_blocking(move || {
+            let guard = db.read();
+            let sql_result = guard.0.execute_sql(&sql, 10000)
+                .map_err(|e| format!("SQL execution failed: {}", e))?;
+            if sql_result.rows.is_empty() {
+                return Err("Query returned no rows; nothing to export".into());
+            }
+            let sheet_tuple: (&str, &[String], &[Vec<String>]) =
+                (&sheet_name, &sql_result.columns, &sql_result.rows);
+            crate::engine::write_xlsx(&[sheet_tuple], std::path::Path::new(&output_path))
+                .map(|_| format!("Exported {} rows to '{}'", sql_result.row_count, output_path))
+                .map_err(|e| format!("Failed to write xlsx: {}", e))
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| format!("Task error: {}", e))?;
+        result
+    }
+
     #[tool(description = "Get detailed metadata for imported files, including sheet names and column names. If file_name is omitted, returns metadata for all imported files.")]
     pub async fn get_metadata(
         &self,
