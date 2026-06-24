@@ -717,7 +717,8 @@ pub fn help_full_text() -> String {
                  基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
                   用法: grep_excel [FILES...] [OPTIONS]\n\n\
                    选项:\n\
-                                     -i, --interactive        进入交互式 SQL REPL ($ 提示符, 历史浏览, 多行)\n\
+                                      -i, --interactive        进入交互式 SQL REPL ($ 提示符, 历史浏览, 多行)\n\
+                                          --no-history         禁用跨会话 SQL 历史持久化 (默认保存)\n\
                                      -q, --query <QUERY>      搜索查询字符串\n\
                                      -c, --column <COLUMN>    筛选指定列名\n\
                                      -s, --sheet <SHEET>      筛选指定 Sheet 名称\n\
@@ -775,7 +776,8 @@ pub fn help_full_text() -> String {
                  TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
                   Usage: grep_excel [FILES...] [OPTIONS]\n\n\
                    Options:\n\
-                                     -i, --interactive        Enter interactive SQL REPL ($ prompt, history, multi-line)\n\
+                                      -i, --interactive        Enter interactive SQL REPL ($ prompt, history, multi-line)\n\
+                                          --no-history         Disable persistent SQL history across sessions (on by default)\n\
                                      -q, --query <QUERY>      Search query string\n\
                                      -c, --column <COLUMN>    Filter to a specific column name\n\
                                      -s, --sheet <SHEET>      Filter to a specific sheet name\n\
@@ -993,8 +995,8 @@ pub fn repl_welcome(version: &str) -> String {
 
 pub fn repl_hint() -> &'static str {
     match current() {
-        Lang::Zh => "输入 SQL (以 ; 结束) 执行，或输入 .help 查看命令列表，.exit 退出",
-        Lang::En => "Type SQL ending with ';' to execute. Type .help for commands, .exit to quit",
+        Lang::Zh => "输入 SQL (以 ; 结束) 执行，或输入 .help 查看命令列表，.exit 退出。历史会跨会话保存（用 --no-history 关闭）",
+        Lang::En => "Type SQL ending with ';' to execute. Type .help for commands, .exit to quit. History persists across sessions (use --no-history to disable)",
     }
 }
 
