@@ -669,6 +669,42 @@ impl SearchEngine for SqliteEngine {
                 let col_names = meta.col_names.clone();
                 let matched_columns = find_matched_columns(query, &row_vec, &col_names);
 
+                let context = if query.context_lines.unwrap_or(0) > 0 {
+                    let n = query.context_lines.unwrap_or(0) as i64;
+                    let ctx_sql = format!(
+                        "SELECT {} FROM {} WHERE rowid BETWEEN ? AND ? ORDER BY rowid",
+                        meta.col_names.iter().map(|c| super::quote_ident(c)).collect::<Vec<_>>().join(", "),
+                        super::quote_ident(&meta.table_name),
+                    );
+                    let mut ctx_stmt = self.conn.prepare(&ctx_sql).unwrap();
+                    let ctx_rows: Vec<Vec<String>> = ctx_stmt
+                        .query_map(rusqlite::params![row_id - n, row_id + n], |row| {
+                            let mut vals = Vec::new();
+                            for i in 0..meta.col_names.len() {
+                                vals.push(row.get::<_, Option<String>>(i)?);
+                            }
+                            Ok(vals)
+                        })
+                        .unwrap()
+                        .filter_map(|r| r.ok())
+                        .map(|row_opts| {
+                            row_opts.into_iter().map(|v| v.unwrap_or_default()).collect::<Vec<_>>()
+                        })
+                        .collect();
+
+                    let match_row_idx = ctx_rows.iter().position(|r| *r == row_vec);
+                    if let Some(mid) = match_row_idx {
+                        ContextRows {
+                            before: ctx_rows[..mid].to_vec(),
+                            after: ctx_rows[mid + 1..].to_vec(),
+                        }
+                    } else {
+                        ContextRows::default()
+                    }
+                } else {
+                    ContextRows::default()
+                };
+
                 results.push(SearchResult {
                     sheet_name: meta.sheet_name.clone(),
                     file_name: meta.file_name.clone(),
@@ -677,6 +713,7 @@ impl SearchEngine for SqliteEngine {
                     matched_columns,
                     col_widths: meta.col_widths.clone(),
                     row_index: (row_id - 1) as usize,
+                    context,
                 });
             }
         }

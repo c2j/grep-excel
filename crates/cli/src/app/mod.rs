@@ -197,6 +197,7 @@ impl App {
             limit: self.result_limit,
             sheet: None,
             invert: false,
+            context_lines: None,
         };
 
         let db = Arc::clone(&self.database);

@@ -27,6 +27,16 @@ pub struct SearchQuery {
     pub limit: usize,
     pub sheet: Option<String>,
     pub invert: bool,
+    /// Number of rows to include before and after each match (grep -C style).
+    /// 0 (default when None) means no context rows.
+    #[serde(default)]
+    pub context_lines: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ContextRows {
+    pub before: Vec<Vec<String>>,
+    pub after: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +48,8 @@ pub struct SearchResult {
     pub matched_columns: Vec<usize>,
     pub col_widths: Vec<f64>,
     pub row_index: usize,
+    #[serde(default)]
+    pub context: ContextRows,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +141,8 @@ pub struct SearchParams {
     pub aggregate: Option<String>,
     #[cfg_attr(feature = "mcp-server", schemars(description = "Invert match"))]
     pub invert: Option<bool>,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Number of rows to include before and after each match (grep -C style). 0 or omit for no context. MUST be a number, not a string."))]
+    pub context_lines: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

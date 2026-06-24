@@ -140,6 +140,18 @@ impl SearchEngine for MemEngine {
                     continue;
                 }
 
+                let context = if query.context_lines.unwrap_or(0) > 0 {
+                    let n = query.context_lines.unwrap_or(0);
+                    let start_ctx = row_idx.saturating_sub(n);
+                    let end_ctx = (row_idx + n + 1).min(sheet.rows.len());
+                    ContextRows {
+                        before: sheet.rows[start_ctx..row_idx].to_vec(),
+                        after: sheet.rows[row_idx + 1..end_ctx].to_vec(),
+                    }
+                } else {
+                    ContextRows::default()
+                };
+
                 results.push(SearchResult {
                     sheet_name: sheet.sheet_name.clone(),
                     file_name: sheet.file_name.clone(),
@@ -148,6 +160,7 @@ impl SearchEngine for MemEngine {
                     matched_columns: if query.invert { vec![] } else { matched_columns },
                     col_widths: sheet.col_widths.clone(),
                     row_index: row_idx,
+                    context,
                 });
                 sheet_matches += 1;
             }

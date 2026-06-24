@@ -3,7 +3,7 @@ use clap::Parser;
 use grep_excel::app::App;
 use grep_excel::engine::{DefaultEngine, SearchEngine};
 use grep_excel::event::create_event_channel;
-use grep_excel::types::{FileInfo, SearchMode, SearchQuery, SearchResult};
+use grep_excel::types::{ContextRows, FileInfo, SearchMode, SearchQuery, SearchResult};
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -257,6 +257,7 @@ fn run_cli(args: &Args) -> Result<()> {
         limit: usize::MAX,
         sheet: args.sheet.clone(),
         invert: args.invert,
+        context_lines: None,
     };
 
     let (results, stats) = match db.search(&query) {
@@ -705,6 +706,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                 matched_columns: vec![],
                 col_widths: vec![],
                 row_index: row_idx,
+                context: ContextRows::default(),
             }
         }).collect()
     } else if args.query.is_some() {
@@ -720,6 +722,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
             limit: usize::MAX,
             sheet: args.sheet.clone(),
             invert: args.invert,
+            context_lines: None,
         };
         match db.search(&query) {
             Ok((r, _stats)) => r,
@@ -1696,6 +1699,7 @@ fn exec_dispatch(
                 limit: p.limit.unwrap_or(100),
                 sheet: p.sheet,
                 invert: p.invert.unwrap_or(false),
+                context_lines: None,
             };
             let (results, stats) = db.search(&query)?;
 

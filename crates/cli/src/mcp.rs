@@ -34,6 +34,10 @@ pub struct McpSearchResult {
     pub row: Vec<String>,
     pub col_names: Vec<String>,
     pub matched_column_names: Vec<String>,
+    #[serde(default)]
+    pub before: Vec<Vec<String>>,
+    #[serde(default)]
+    pub after: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +150,8 @@ impl From<SearchResult> for McpSearchResult {
             row: r.row,
             col_names: r.col_names,
             matched_column_names,
+            before: r.context.before,
+            after: r.context.after,
         }
     }
 }
@@ -252,6 +258,7 @@ impl GrepExcelServer {
             limit: params.limit.unwrap_or(100),
             sheet: params.sheet,
             invert: params.invert.unwrap_or(false),
+            context_lines: params.context_lines,
         };
         let aggregate_col = params.aggregate;
         let db = Arc::clone(&self.db);
