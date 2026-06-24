@@ -132,6 +132,8 @@ impl SpikeApp {
             limit: 5000,
             sheet: None,
             invert: false,
+            context_lines: None,
+            conditions: Vec::new(),
         };
 
         match self.engine.search(&query) {
