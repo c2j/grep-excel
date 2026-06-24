@@ -38,6 +38,7 @@ parking_lot.workspace = true
 csv.workspace = true
 rustyline = "18"
 rustyline-derive = "0.12"
+dirs = "5"
 
 rfd = { version = "0.15", optional = true }
 rmcp = { version = "1.5", features = ["server", "transport-io"], optional = true }
