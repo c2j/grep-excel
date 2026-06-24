@@ -198,6 +198,7 @@ impl App {
             sheet: None,
             invert: false,
             context_lines: None,
+            conditions: Vec::new(),
         };
 
         let db = Arc::clone(&self.database);

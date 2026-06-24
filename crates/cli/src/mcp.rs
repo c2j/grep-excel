@@ -303,6 +303,7 @@ impl GrepExcelServer {
             sheet: params.sheet,
             invert: params.invert.unwrap_or(false),
             context_lines: params.context_lines,
+            conditions: params.conditions.unwrap_or_default(),
         };
         let aggregate_col = params.aggregate;
         let db = Arc::clone(&self.db);

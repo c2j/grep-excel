@@ -1359,7 +1359,7 @@ impl DuckDbEngine {
     }
 
     fn build_wide_where_clause(query: &SearchQuery, col_names: &[String]) -> (String, Vec<String>) {
-        let mut parts = Vec::new();
+        let mut or_parts = Vec::new();
         let mut values = Vec::new();
 
         let target_cols: Vec<&String> = if let Some(ref col) = query.column {
@@ -1371,19 +1371,19 @@ impl DuckDbEngine {
         for col in target_cols {
             match query.mode {
                 SearchMode::FullText => {
-                    parts.push(format!("{} ILIKE ?", quote_ident(col)));
+                    or_parts.push(format!("{} ILIKE ?", quote_ident(col)));
                     values.push(format!("%{}%", query.text));
                 }
                 SearchMode::ExactMatch => {
-                    parts.push(format!("{} = ?", quote_ident(col)));
+                    or_parts.push(format!("{} = ?", quote_ident(col)));
                     values.push(query.text.clone());
                 }
                 SearchMode::Wildcard => {
-                    parts.push(format!("{} LIKE ?", quote_ident(col)));
+                    or_parts.push(format!("{} LIKE ?", quote_ident(col)));
                     values.push(query.text.clone());
                 }
                 SearchMode::Regex => {
-                    parts.push(format!(
+                    or_parts.push(format!(
                         "regexp_matches(CAST({} AS VARCHAR), ?)",
                         quote_ident(col)
                     ));
@@ -1392,10 +1392,27 @@ impl DuckDbEngine {
             }
         }
 
-        let where_sql = if parts.is_empty() {
-            "1=0".to_string()
-        } else {
-            parts.join(" OR ")
+        // Build AND parts from conditions
+        let mut and_parts = Vec::new();
+        for cond in &query.conditions {
+            let col = super::quote_ident(&cond.column);
+            let clause = match cond.operator.as_str() {
+                "=" | "==" => format!("{} = ?", col),
+                "!=" | "<>" => format!("{} <> ?", col),
+                "ILIKE" => format!("{} ILIKE ?", col),
+                "LIKE" => format!("{} LIKE ?", col),
+                ">" | "<" | ">=" | "<=" => format!("{} {} ?", col, cond.operator),
+                _ => continue,
+            };
+            and_parts.push(clause);
+            values.push(cond.value.clone());
+        }
+
+        let where_sql = match (or_parts.is_empty(), and_parts.is_empty()) {
+            (true, true) => "1=0".to_string(),
+            (false, true) => or_parts.join(" OR "),
+            (true, false) => and_parts.join(" AND "),
+            (false, false) => format!("({}) AND ({})", or_parts.join(" OR "), and_parts.join(" AND ")),
         };
         (where_sql, values)
     }

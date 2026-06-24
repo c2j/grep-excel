@@ -140,6 +140,11 @@ impl SearchEngine for MemEngine {
                     continue;
                 }
 
+                // Multi-condition AND filter
+                if !query.conditions.is_empty() && !matches_conditions(row, &sheet.headers, &query.conditions) {
+                    continue;
+                }
+
                 let context = if query.context_lines.unwrap_or(0) > 0 {
                     let n = query.context_lines.unwrap_or(0);
                     let start_ctx = row_idx.saturating_sub(n);
@@ -567,4 +572,33 @@ impl SearchEngine for MemEngine {
             columns,
         })
     }
+}
+
+fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCondition]) -> bool {
+    for cond in conditions {
+        let idx = match headers.iter().position(|h| h == &cond.column) {
+            Some(i) => i,
+            None => return false,
+        };
+        let val = row.get(idx).map(|s| s.as_str()).unwrap_or("");
+        let matched = match cond.operator.as_str() {
+            "=" | "==" => val == cond.value,
+            "!=" | "<>" => val != cond.value,
+            "ILIKE" => val.to_lowercase().contains(&cond.value.to_lowercase()),
+            "LIKE" => super::like_match(&cond.value, val),
+            ">" | "<" | ">=" | "<=" => {
+                match (val.parse::<f64>(), cond.value.parse::<f64>()) {
+                    (Ok(a), Ok(b)) => match cond.operator.as_str() {
+                        ">" => a > b, "<" => a < b, ">=" => a >= b, "<=" => a <= b, _ => false,
+                    },
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+        if !matched {
+            return false;
+        }
+    }
+    true
 }

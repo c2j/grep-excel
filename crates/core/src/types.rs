@@ -20,6 +20,17 @@ pub enum SearchMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+pub struct SearchCondition {
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Column name to compare"))]
+    pub column: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Comparison operator: =, !=, ILIKE, LIKE, >, <, >=, <="))]
+    pub operator: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Value to compare against"))]
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
     pub text: String,
     pub column: Option<String>,
@@ -31,6 +42,8 @@ pub struct SearchQuery {
     /// 0 (default when None) means no context rows.
     #[serde(default)]
     pub context_lines: Option<usize>,
+    #[serde(default)]
+    pub conditions: Vec<SearchCondition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -143,6 +156,8 @@ pub struct SearchParams {
     pub invert: Option<bool>,
     #[cfg_attr(feature = "mcp-server", schemars(description = "Number of rows to include before and after each match (grep -C style). 0 or omit for no context. MUST be a number, not a string."))]
     pub context_lines: Option<usize>,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Additional AND conditions. Each is {column, operator, value}. Operators: =, !=, ILIKE, LIKE, >, <, >=, <="))]
+    pub conditions: Option<Vec<SearchCondition>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -258,6 +258,7 @@ fn run_cli(args: &Args) -> Result<()> {
         sheet: args.sheet.clone(),
         invert: args.invert,
         context_lines: None,
+        conditions: Vec::new(),
     };
 
     let (results, stats) = match db.search(&query) {
@@ -723,6 +724,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
             sheet: args.sheet.clone(),
             invert: args.invert,
             context_lines: None,
+            conditions: Vec::new(),
         };
         match db.search(&query) {
             Ok((r, _stats)) => r,
@@ -1706,6 +1708,7 @@ fn exec_dispatch(
                 sheet: p.sheet,
                 invert: p.invert.unwrap_or(false),
                 context_lines: None,
+                conditions: Vec::new(),
             };
             let (results, stats) = db.search(&query)?;
 
