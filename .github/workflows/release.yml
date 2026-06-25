@@ -20,19 +20,19 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            features: gui,engine-duckdb,mcp-server
+            features: file-dialog,engine-duckdb,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
             prebuilt_duckdb: true
             build_desktop: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: gui,duckdb-bundled,mcp-server
+            features: file-dialog,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
             zigbuild: true
             build_desktop: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04-arm
-            features: gui,duckdb-bundled,mcp-server
+            features: file-dialog,duckdb-bundled,mcp-server
             artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             zigbuild: true
             build_desktop: true
@@ -122,14 +122,12 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
-          strip --strip-unneeded target/${{ matrix.target }}/release/spike
           strip --strip-unneeded target/${{ matrix.target }}/release/grep-excel-desktop || true
 
       - name: Strip (Linux aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           strip --strip-unneeded target/${{ matrix.target }}/release/grep_excel
-          strip --strip-unneeded target/${{ matrix.target }}/release/spike
           strip --strip-unneeded target/${{ matrix.target }}/release/grep-excel-desktop || true
 
       - name: Archive (Windows)
@@ -139,29 +137,34 @@ jobs:
           cd target/${{ matrix.target }}/release
           find ../.. -name duckdb.dll -path "*/duckdb-download/*" -exec cp {} . \; 2>/dev/null || true
           cp ../../../duckdb-lib/duckdb.dll . 2>/dev/null || true
+          # CLI zip: grep_excel + duckdb.dll only (no spike)
+          7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe duckdb.dll
+          # Desktop zip: separate artifact with duckdb.dll (Windows uses dynamic linking)
           if [ -f "grep-excel-desktop.exe" ]; then
-            7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll grep-excel-desktop.exe
-          else
-            7z a ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel.exe spike.exe duckdb.dll
+            7z a grep-excel-desktop-${{ matrix.target }}-v${{ steps.version.outputs.version }}.zip grep-excel-desktop.exe duckdb.dll
           fi
 
       - name: Archive (Linux)
         if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
-          chmod +x grep_excel spike
+          chmod +x grep_excel
+          # CLI zip: grep_excel only (no spike)
+          zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel
+          # Desktop zip: separate artifact (Linux uses bundled duckdb, self-contained)
           if [ -f "grep-excel-desktop" ]; then
             chmod +x grep-excel-desktop
-            zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike grep-excel-desktop
-          else
-            zip ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip grep_excel spike
+            zip grep-excel-desktop-${{ matrix.target }}-v${{ steps.version.outputs.version }}.zip grep-excel-desktop
           fi
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip
+          path: |
+            target/${{ matrix.target }}/release/${{ matrix.artifact_name }}-v${{ steps.version.outputs.version }}.zip
+            target/${{ matrix.target }}/release/grep-excel-desktop-${{ matrix.target }}-v${{ steps.version.outputs.version }}.zip
+          if-no-files-found: ignore
 
   build-win7:
     name: Build windows-x86_64 (Win7 compatible)
@@ -190,7 +193,7 @@ jobs:
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
       - name: Build
-        run: cargo +nightly build --release -p grep-excel --no-default-features --features gui,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
+        run: cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
@@ -198,7 +201,7 @@ jobs:
           Copy-Item "duckdb-lib/duckdb.dll" "target/x86_64-win7-windows-msvc/release/"
           $version = "${{ steps.version.outputs.version }}"
           Compress-Archive `
-            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/spike.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
+            -Path "target/x86_64-win7-windows-msvc/release/grep_excel.exe","target/x86_64-win7-windows-msvc/release/duckdb.dll" `
             -DestinationPath "grep_excel-duckdb-x86_64-win7-windows-msvc-v${version}.zip"
 
       - name: Upload artifact
