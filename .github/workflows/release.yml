@@ -211,7 +211,7 @@ jobs:
           path: grep_excel-duckdb-x86_64-win7-windows-msvc-v${{ steps.version.outputs.version }}.zip
 
   release:
-    needs: [build, build-win7]
+    needs: [build]
     runs-on: ubuntu-latest
 
     steps:
