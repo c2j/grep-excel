@@ -192,6 +192,22 @@ jobs:
           Expand-Archive -Path duckdb.zip -DestinationPath duckdb-lib
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
+      - name: Fix windows lib paths for Win7 target
+        shell: pwsh
+        run: |
+          # With -Zbuild-std on the custom Win7 target, cargo doesn't
+          # automatically add windows_x86_64_msvc-0.48.x lib paths.
+          # Find and register them via RUSTFLAGS.
+          $cargoSrc = Get-ChildItem -Path "$env:USERPROFILE\.cargo\registry\src" -Directory | Select-Object -First 1
+          $libDirs = Get-ChildItem -Path $cargoSrc.FullName -Directory -Filter "windows_x86_64_msvc-*" -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "lib" } |
+            Where-Object { Test-Path $_ }
+          $flags = ($libDirs | ForEach-Object { "-L native=$_" }) -join " "
+          if ($flags) {
+            Write-Host "RUSTFLAGS=$flags"
+            Add-Content -Path $env:GITHUB_ENV -Value "RUSTFLAGS=$flags"
+          }
+
       - name: Build
         run: cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
@@ -211,7 +227,8 @@ jobs:
           path: grep_excel-duckdb-x86_64-win7-windows-msvc-v${{ steps.version.outputs.version }}.zip
 
   release:
-    needs: [build]
+    needs: [build, build-win7]
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
