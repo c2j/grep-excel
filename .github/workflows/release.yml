@@ -192,24 +192,19 @@ jobs:
           Expand-Archive -Path duckdb.zip -DestinationPath duckdb-lib
           "DUCKDB_LIB_DIR=$pwd\duckdb-lib" >> $env:GITHUB_ENV
 
-      - name: Fix windows lib paths for Win7 target
+      - name: Build
         shell: pwsh
         run: |
-          # With -Zbuild-std on the custom Win7 target, cargo doesn't
-          # automatically add windows_x86_64_msvc-0.48.x lib paths.
-          # Find and register them via RUSTFLAGS.
-          $cargoSrc = Get-ChildItem -Path "$env:USERPROFILE\.cargo\registry\src" -Directory | Select-Object -First 1
-          $libDirs = Get-ChildItem -Path $cargoSrc.FullName -Directory -Filter "windows_x86_64_msvc-*" -ErrorAction SilentlyContinue |
-            ForEach-Object { Join-Path $_.FullName "lib" } |
-            Where-Object { Test-Path $_ }
-          $flags = ($libDirs | ForEach-Object { "-L native=$_" }) -join " "
-          if ($flags) {
-            Write-Host "RUSTFLAGS=$flags"
-            Add-Content -Path $env:GITHUB_ENV -Value "RUSTFLAGS=$flags"
-          }
-
-      - name: Build
-        run: cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
+          # With -Zbuild-std on x86_64-win7-windows-msvc, cargo doesn't add
+          # windows_x86_64_msvc-0.48.x lib paths to the linker (LNK1181).
+          # Pre-fetch deps, find the lib dirs, then build with them in RUSTFLAGS.
+          cargo +nightly fetch
+          $regSrc = (Get-ChildItem "$env:USERPROFILE\.cargo\registry\src" -Directory |
+            Select-Object -First 1).FullName
+          $flags = (Get-ChildItem -Path $regSrc -Directory -Filter "windows_x86_64_msvc-*" -ErrorAction SilentlyContinue |
+            ForEach-Object { $lib = Join-Path $_.FullName "lib"; if (Test-Path $lib) { "-L native=$lib" } }) -join " "
+          if ($flags) { Write-Host "RUSTFLAGS=$flags"; $env:RUSTFLAGS = $flags }
+          cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
