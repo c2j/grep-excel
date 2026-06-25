@@ -1,256 +1,175 @@
-# Tauri + React + TypeScript + TailwindCSS Template
+# grep-excel Desktop
 
-A modern, batteries-included starter template for building desktop applications using:
+基于 Tauri + React + TypeScript 的 grep-excel 桌面 GUI 版本。
 
-- **[Tauri](https://tauri.app/)** - Build smaller, faster, and more secure desktop applications
-- **[React](https://reactjs.org/)** - A JavaScript library for building user interfaces
-- **[TypeScript](https://www.typescriptlang.org/)** - A strongly typed programming language that builds on JavaScript
-- **[Vite](https://vitejs.dev/)** - Next generation frontend tooling
-- **[TailwindCSS](https://tailwindcss.com/)** - A utility-first CSS framework
+grep-excel Desktop 提供图形化界面，复用 grep-excel 核心引擎（`grep-excel-core`），支持文件导入、多模式搜索、SQL 查询和单元格编辑，界面中英双语。
 
-## Features
+## 功能特性
 
-- ⚡️ Lightning-fast development with Vite
-- 🔒 Type-safe development with TypeScript
-- 🎨 Beautiful UI with TailwindCSS
-- 🖥️ Native desktop app with Tauri
-- 📦 Zero-config setup with sensible defaults
-- 🚀 Production-ready build configuration
+- **图形化文件导入** — 原生文件选择对话框，支持 `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`
+- **多模式搜索** — 全文、精确、通配符、正则四种模式，可按列/工作表筛选
+- **SQL 查询** — 内置 SQL 编辑器，直接对导入数据执行 `SELECT` 查询
+- **虚拟滚动结果表** — 大数据集流畅渲染（PR #12 优化），避免 DOM 节点爆炸
+- **单元格编辑** — 双击结果表格即可编辑单元格值
+- **中英双语界面** — 基于 react-i18next，随系统语言自动切换
 
-## Prerequisites
+## 技术栈
 
-Before you begin, ensure you have the following installed:
+| 层 | 技术 |
+|----|------|
+| 桌面框架 | [Tauri](https://tauri.app/) v1 |
+| 前端框架 | React 18 + TypeScript |
+| 构建工具 | Vite |
+| 样式 | TailwindCSS |
+| 国际化 | react-i18next |
+| 后端引擎 | `grep-excel-core`（通过 Tauri Commands 调用） |
 
-- [Node.js](https://nodejs.org/) (version 16 or higher)
-- [Rust](https://www.rust-lang.org/) (latest stable version)
-- [Tauri CLI](https://tauri.app/v1/guides/getting-started/prerequisites)
+## 前置条件
 
-### Install Tauri CLI
+- [Node.js](https://nodejs.org/) 16+
+- [Rust](https://www.rust-lang.org/)（最新 stable）
+- [Tauri CLI v1](https://tauri.app/v1/guides/getting-started/prerequisites) 系统依赖
 
 ```bash
-npm install --save-dev @tauri-apps/cli
-# or
-cargo install tauri-cli
+# 安装 Tauri CLI（如果尚未安装）
+cargo install tauri-cli --version "^1.0"
 ```
 
-## Getting Started
-
-### 1. Clone or use this template
-
-You can copy this template to your desired location:
+## 快速开始
 
 ```bash
-cp -r /path/to/template /path/to/your/new/project
-cd /path/to/your/new/project
-```
+cd Desktop
 
-Or clone it if it's in a git repository.
-
-### 2. Install dependencies
-
-```bash
+# 1. 安装前端依赖
 npm install
-```
 
-### 3. Configure your application
-
-Edit the following files to customize your application:
-
-- `src-tauri/tauri.conf.json` - Application configuration (name, identifier, windows, etc.)
-- `src-tauri/Cargo.toml` - Rust dependencies and metadata
-- `package.json` - Node.js dependencies and scripts
-- `tailwind.config.js` - TailwindCSS configuration
-
-### 4. Run in development mode
-
-```bash
+# 2. 开发模式（启动 Vite + Tauri 窗口）
 npm run tauri:dev
-```
 
-This will start the Vite development server and launch the Tauri application.
-
-### 5. Build for production
-
-```bash
+# 3. 生产构建（生成 .dmg / .AppImage / .msi）
 npm run tauri:build
 ```
 
-This will create a production build of your application.
+构建产物位于 `src-tauri/target/release/bundle/`。
 
-## Project Structure
+## 项目结构
 
 ```
-.
-├── src-tauri/           # Tauri backend (Rust)
+Desktop/
+├── src-tauri/                    # Tauri 后端 (Rust)
 │   ├── src/
-│   │   ├── main.rs      # Application entry point
-│   │   └── lib.rs       # Backend logic and Tauri commands
-│   ├── Cargo.toml       # Rust dependencies
-│   ├── build.rs         # Build configuration
-│   └── tauri.conf.json  # Tauri configuration
+│   │   ├── main.rs               # 应用入口
+│   │   ├── lib.rs                # Tauri Builder + invoke_handler 注册
+│   │   └── commands.rs           # Tauri Commands（桥接 grep-excel-core）
+│   ├── Cargo.toml                # Rust 依赖（依赖 grep-excel-core）
+│   ├── tauri.conf.json           # Tauri 配置（窗口、权限、标识）
+│   └── build.rs
 │
-├── frontend/            # Frontend (React + TypeScript)
-│   ├── components/      # React components
-│   ├── types/           # TypeScript type definitions
-│   ├── utils/           # Utility functions
-│   ├── App.tsx          # Main React component
-│   ├── index.tsx        # React entry point
-│   └── index.css        # Global styles
+├── frontend/                     # 前端源码 (React + TypeScript)
+│   ├── App.tsx                   # 主组件（Search / SQL 标签页）
+│   ├── index.tsx                 # React 入口
+│   ├── index.css                 # 全局样式 (Tailwind directives)
+│   ├── api/
+│   │   └── commands.ts           # Tauri Command 类型化封装
+│   ├── components/
+│   │   ├── FileImporter.tsx      # 文件导入按钮 + 对话框
+│   │   ├── FileList.tsx          # 已导入文件列表
+│   │   ├── SearchBar.tsx         # 搜索栏（模式/列/工作表筛选）
+│   │   ├── ResultsTable.tsx      # 结果表格（虚拟滚动）
+│   │   └── SqlEditor.tsx         # SQL 编辑器
+│   ├── i18n/                     # react-i18next 翻译文件
+│   └── types/                    # TypeScript 类型定义
 │
-├── public/              # Static assets
-├── index.html           # HTML template
-├── package.json         # Node.js dependencies
-├── vite.config.ts       # Vite configuration
-├── tsconfig.json        # TypeScript configuration
-├── tailwind.config.js   # TailwindCSS configuration
-└── postcss.config.js    # PostCSS configuration
+├── index.html                    # HTML 模板
+├── package.json                  # Node.js 依赖与脚本
+├── vite.config.ts                # Vite 配置
+├── tailwind.config.js            # TailwindCSS 配置
+└── tsconfig.json                 # TypeScript 配置
 ```
 
-## Available Scripts
+## Tauri Commands（后端接口）
 
-- `npm run dev` - Start development server (without Tauri)
-- `npm run build` - Build frontend for production
-- `npm run preview` - Preview production build
-- `npm run tauri` - Run Tauri CLI commands
-- `npm run tauri:dev` - Start development mode
-- `npm run tauri:build` - Build for production
+前端通过 `@tauri-apps/api` 的 `invoke()` 调用以下 Rust 命令，这些命令在 `src-tauri/src/commands.rs` 中定义，桥接到 `grep-excel-core` 的 `SearchEngine` trait：
 
-## Development
+| Command | 功能 |
+|---------|------|
+| `import_file` | 导入 Excel/CSV 文件 |
+| `search` | 多模式搜索（fulltext/exact/wildcard/regex） |
+| `execute_sql` | 执行 SQL SELECT 查询 |
+| `list_files` | 列出已导入文件 |
+| `list_table_aliases` | 列出表别名（`文件名.工作表名`） |
+| `get_metadata` | 获取文件元数据（列名等） |
+| `get_sheet_sample` | 均匀采样行数据 |
+| `get_sheet_data` | 分页获取行数据 |
+| `update_cell` | 更新单元格 |
+| `clear_data` | 清除所有已导入数据 |
 
-### Adding a new Tauri command
+前端封装位于 `frontend/api/commands.ts`，提供类型安全的 Promise 接口。
 
-1. Add the command in `src-tauri/src/lib.rs`:
+## 开发指南
+
+### 添加新的 Tauri Command
+
+1. 在 `src-tauri/src/commands.rs` 中添加命令函数：
 
 ```rust
 #[tauri::command]
-fn my_command(value: String) -> String {
-    format!("Received: {}", value)
+fn my_command(value: String) -> Result<String, String> {
+    Ok(format!("Received: {}", value))
 }
 ```
 
-2. Register the command in `src-tauri/src/main.rs`:
+2. 在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中注册：
 
 ```rust
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![my_command])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
+.invoke_handler(tauri::generate_handler![
+    commands::import_file,
+    // ...
+    commands::my_command,
+])
 ```
 
-3. Use the command in your React app:
-
-Create a new file `frontend/api/tauri.ts`:
+3. 在 `frontend/api/commands.ts` 中添加类型化封装：
 
 ```typescript
-import { invoke } from "@tauri-apps/api/tauri";
-
 export async function myCommand(value: string): Promise<string> {
   return await invoke("my_command", { value });
 }
 ```
 
-Then import and use it in your component:
+### 窗口配置
 
-```typescript
-import { myCommand } from "./api/tauri";
+编辑 `src-tauri/tauri.conf.json` 中的 `app.windows` 数组：
 
-async function handleClick() {
-  const result = await myCommand("Hello from React!");
-  console.log(result);
+```json
+{
+  "title": "grep-excel",
+  "width": 1200,
+  "height": 800,
+  "resizable": true
 }
 ```
 
-### Styling with TailwindCSS
+### 中文输入法支持
 
-This template includes TailwindCSS with sensible defaults. You can:
+WKWebView 中默认无法使用中文输入法。已在 `tauri.conf.json` 中设置 `lang=zh` 并在前端处理 IME composition 事件以确保 CJK 输入正常。
 
-1. Use utility classes directly in your JSX
-2. Extend the theme in `tailwind.config.js`
-3. Add custom styles in `frontend/index.css`
+## 可用脚本
 
-Example:
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 启动 Vite 开发服务器（无 Tauri 窗口） |
+| `npm run build` | 构建前端生产包 |
+| `npm run tauri:dev` | 开发模式（Vite + Tauri 窗口） |
+| `npm run tauri:build` | 生产构建（生成安装包） |
 
-```jsx
-<div className="bg-primary-500 text-white p-4 rounded-lg shadow-md">
-  Hello, TailwindCSS!
-</div>
-```
+## 相关文档
 
-### TypeScript Configuration
+- [项目根 README](../README.md) — grep-excel CLI/TUI/MCP 完整说明
+- [用户手册](../docs/UserGuide.md) — CLI、TUI、MCP 使用指南
+- [开发者指南](../docs/DeveloperGuide.md) — 架构、引擎 trait、扩展开发
+- [Desktop 集成计划](../docs/plans/2026-06-16-tauri-desktop-integration.md) — Tauri 集成设计文档
 
-The template includes TypeScript with strict mode enabled. Type definitions for Tauri APIs are automatically available through the `@tauri-apps/api` package.
+## 许可证
 
-## Building for Production
-
-### Desktop Applications
-
-The build command will create platform-specific binaries:
-
-```bash
-npm run tauri:build
-```
-
-Build artifacts will be in `src-tauri/target/release/bundle/`.
-
-### Customization
-
-You can customize various aspects of your application:
-
-- **App Name & Metadata**: Edit `src-tauri/tauri.conf.json`
-- **Window Settings**: Modify the `windows` array in `tauri.conf.json`
-- **Capabilities**: Configure `allowlist` in `tauri.conf.json`
-- **Dependencies**: Update `Cargo.toml` for Rust and `package.json` for Node.js
-
-## Learning Resources
-
-- [Tauri Guides](https://tauri.app/v1/guides/)
-- [React Documentation](https://reactjs.org/docs)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs)
-- [Vite Guide](https://vitejs.dev/guide/)
-- [TailwindCSS Documentation](https://tailwindcss.com/docs)
-
-## Troubleshooting
-
-### Rust version issues
-
-Ensure you have the latest stable version of Rust:
-
-```bash
-rustup update stable
-```
-
-### Dependencies not installing
-
-Try clearing the npm cache:
-
-```bash
-npm cache clean --force
-rm -rf node_modules
-npm install
-```
-
-### Build errors
-
-For Rust build errors, try:
-
-```bash
-cd src-tauri
-cargo clean
-cargo update
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
-
-## Acknowledgments
-
-- [Tauri Team](https://tauri.app/) for the amazing desktop app framework
-- [Vite Team](https://vitejs.dev/) for the lightning-fast build tool
-- [Tailwind Labs](https://tailwindcss.com/) for the utility-first CSS framework
+MIT License — 详见项目根目录 [LICENSE](../LICENSE)。

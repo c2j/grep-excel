@@ -16,11 +16,13 @@ grep-excel provides a fast, interactive terminal interface for searching across 
 - **SQL Queries** — Execute `SELECT` statements directly against imported data with DuckDB analytical functions
 - **Multi-Engine Backend** — DuckDB (high-performance OLAP), SQLite, or pure in-memory engine; select via feature flags
 - **TUI Interactive Mode** — Keyboard-driven terminal interface with ratatui, tabbed results, detail panel, flat/table views
-- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 16 MCP tools for search, data exploration, statistics, editing, and export
+- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 17 MCP tools for search, data exploration, statistics, editing, and export
+- **Interactive SQL REPL** — Multi-line SQL shell with `;`-terminated input, command history, and dot-commands (`.tables`, `.files`, `.help`); launch with `-i`
 - **CLI `--exec` Pipeline** — Execute MCP tools from the command line as single commands or multi-step JSON arrays
 - **File Editing** — Update cells, insert/delete rows, add/rename columns, save back to original or export as new file
 - **Aggregate Statistics** — Count distinct value distributions in matched rows by column
 - **Repair Damaged Files** — Recover data from corrupted `.xlsx` files at the ZIP/XML level (`--repair`)
+- **Excel Date Auto-Detection** — Detects Excel date serial numbers and converts them to readable `YYYYMMDD` strings, so date-based searches (`-q 0615`) work correctly
 - **Multiple Output Formats** — Markdown tables, pretty-printed, JSON, and simple TSV (`--format`)
 - **CSV Export** — Export search or SQL results to CSV files
 - **Friendly Table Aliases** — Use `filename.sheetname` syntax in SQL instead of internal `sheet_N_M` names
@@ -87,6 +89,8 @@ grep_excel [FILES...] [OPTIONS]
 
 | Flag | Short | Description |
 |------|-------|-------------|
+| `--interactive` | `-i` | Launch interactive SQL REPL: `$` prompt, multi-line input (`;` to run), up/down history, dot-commands |
+| `--no-history` | — | Disable persistent SQL history across sessions (history is saved by default) |
 | `--query` | `-q` | Search query string |
 | `--column` | `-c` | Filter to specific column name |
 | `--sheet` | `-s` | Filter to specific sheet name |
@@ -160,6 +164,25 @@ Launch in TUI mode (no CLI arguments):
 ```bash
 grep_excel
 ```
+
+Launch the interactive SQL REPL:
+```bash
+# Start REPL with files pre-imported
+grep_excel data.xlsx employees.xlsx -i
+
+# Inside the REPL:
+#   $ SELECT * FROM sheet_1_0 LIMIT 5;
+#   $ .tables          # list imported tables
+#   $ .files           # list imported files
+#   $ .help            # show dot-commands
+#   $ .exit            # quit (Ctrl+D also works)
+```
+
+SQL and dot-commands entered in the REPL are saved to a history file
+(`~/.local/state/grep-excel/history.txt` on Linux,
+`~/Library/Application Support/grep-excel/history.txt` on macOS) and recalled
+with up/down arrows across sessions. Pass `--no-history` to opt out for a
+session.
 
 Execute a shell command for each matching row (`--run` / `-X`):
 ```bash
@@ -383,11 +406,13 @@ grep-excel 提供快速的交互式终端界面，用于在多个 Excel 和 CSV 
 - **SQL 查询** — 直接对导入的数据执行 `SELECT` 语句，支持 DuckDB 分析函数
 - **多引擎后端** — DuckDB（高性能 OLAP）、SQLite 或纯内存引擎；通过 feature flag 选择
 - **TUI 交互模式** — 键盘驱动的终端界面，支持选项卡结果、详情面板、平铺/表格视图
-- **MCP 服务器模式** — 通过 14 个 MCP 工具与 AI 助手（Claude、Cursor）集成，支持搜索、数据探索、编辑和导出
+- **MCP 服务器模式** — 通过 17 个 MCP 工具与 AI 助手（Claude、Cursor）集成，支持搜索、数据探索、统计分析、编辑和导出
+- **交互式 SQL REPL** — 多行 SQL 交互式 shell，支持 `;` 结束输入、命令历史和点命令（`.tables`、`.files`、`.help`）；用 `-i` 启动
 - **CLI `--exec` 流水线** — 在命令行中以单条命令或多步 JSON 数组执行 MCP 工具
 - **文件编辑** — 更新单元格、插入/删除行、添加/重命名列、保存回原文件或导出为新文件
 - **聚合统计** — 对匹配结果按列统计不同值的分布
 - **修复损坏文件** — 在 ZIP/XML 层面从损坏的 `.xlsx` 文件中恢复数据（`--repair`）
+- **Excel 日期自动识别** — 自动检测 Excel 日期序列号并转换为可读的 `YYYYMMDD` 字符串，确保基于日期的搜索（`-q 0615`）能正确命中
 - **多种输出格式** — Markdown 表格、美化打印、JSON 和简单 TSV（`--format`）
 - **CSV 导出** — 将搜索或 SQL 结果导出为 CSV 文件
 - **友好表别名** — 在 SQL 中使用 `文件名.工作表名` 语法替代内部 `sheet_N_M` 名称
@@ -454,6 +479,8 @@ grep_excel [文件...] [选项]
 
 | 选项 | 缩写 | 说明 |
 |------|------|------|
+| `--interactive` | `-i` | 启动交互式 SQL REPL：`$` 提示符，多行输入（`;` 执行），上下方向键历史，点命令 |
+| `--no-history` | — | 禁用跨会话 SQL 历史持久化（默认保存） |
 | `--query` | `-q` | 搜索查询字符串 |
 | `--column` | `-c` | 筛选指定列名 |
 | `--sheet` | `-s` | 筛选指定工作表名称 |
@@ -527,6 +554,23 @@ grep_excel data.xlsx -q "关键词" -e results.csv -f json
 ```bash
 grep_excel
 ```
+
+启动交互式 SQL REPL：
+```bash
+# 预导入文件后启动 REPL
+grep_excel data.xlsx employees.xlsx -i
+
+# REPL 内操作：
+#   $ SELECT * FROM sheet_1_0 LIMIT 5;
+#   $ .tables          # 列出已导入表
+#   $ .files           # 列出已导入文件
+#   $ .help            # 显示点命令
+#   $ .exit            # 退出（Ctrl+D 也可退出）
+```
+
+REPL 中输入的 SQL 和点命令会保存到历史文件（Linux：
+`~/.local/state/grep-excel/history.txt`，macOS：
+`~/Library/Application Support/grep-excel/history.txt`），下次启动可用上下方向键跨会话召回。传入 `--no-history` 可在本次会话中关闭。
 
 对每个匹配行执行 Shell 命令（`--run` / `-X`）：
 ```bash

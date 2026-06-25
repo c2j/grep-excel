@@ -20,6 +20,12 @@ struct Args {
     )]
     interactive: bool,
 
+    #[arg(
+        long,
+        help = "Disable persistent SQL history across sessions (history is saved by default)"
+    )]
+    no_history: bool,
+
     #[arg(short, long, help = "Search query string")]
     query: Option<String>,
 
@@ -659,7 +665,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
         }
     }
 
-    grep_excel::interactive::run(&mut db)
+    grep_excel::interactive::run(&mut db, args.no_history)
 }
 
 fn run_exec_shell(args: &Args) -> Result<()> {

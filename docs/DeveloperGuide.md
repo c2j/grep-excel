@@ -24,7 +24,7 @@ grep-excel 采用分层架构，核心抽象是 `SearchEngine` trait：
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        入口层 (main.rs)                      │
-│  CLI 解析 → 模式路由（CLI / TUI / MCP / Exec / SQL / Run）         │
+│  CLI 解析 → 模式路由（CLI / TUI / MCP / Exec / SQL / Run / REPL）    │
 └───────┬──────────────┬──────────────┬───────────────────────┘
         │              │              │
         ▼              ▼              ▼
@@ -97,6 +97,7 @@ pub trait SearchEngine: Send {
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo>;
     fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult>;
     fn get_sheet_data(&self, file_name: &str, sheet_name: &str, start_row: Option<usize>, end_row: Option<usize>, columns: Option<&[String]>) -> Result<SheetDataResult>;
+    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics>;
 
     // 编辑
     fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()>;
@@ -237,7 +238,9 @@ AI 助手 (Claude/Cursor)
 │  ├── import_file            │
 │  ├── search                 │
 │  ├── execute_sql            │
-│  ├── ... (14 tools total)   │
+│  ├── export_query           │
+│  ├── get_sheet_statistics   │
+│  ├── ... (17 tools total)   │
 └──────────┬──────────────────┘
            │
            ▼
@@ -418,11 +421,13 @@ pub struct SheetDataResult {
 所有以 `Params` 结尾的结构体同时用于 MCP 和 `--exec` 模式：
 
 - `ImportFileParams`
-- `SearchParams`
+- `SearchParams`（含 `context_lines`、`conditions: Vec<SearchCondition>`）
 - `SqlQueryParams`
+- `ExportQueryParams`（`sql`, `output_path`, `sheet_name`）
 - `GetMetadataParams`
 - `GetSheetSampleParams`
 - `GetSheetDataParams`
+- `GetSheetStatisticsParams`（`file_name`, `sheet_name`, `max_top_values`）
 - `SaveAsParams`
 - `SaveParams`
 - `UpdateCellParams`
@@ -431,6 +436,8 @@ pub struct SheetDataResult {
 - `DeleteRowsParams`
 - `AddColumnParams`
 - `RenameColumnParams`
+
+`SearchParams.conditions` 中的每个条件是 `SearchCondition { column, operator, value }`，支持操作符 `=`, `!=`, `ILIKE`, `LIKE`, `>`, `<`, `>=`, `<=`，条件间为 AND 关系。
 
 这些结构体使用 `#[derive(Deserialize)]` 从 JSON 反序列化，MCP 构建时额外使用 `#[derive(schemars::JsonSchema)]` 生成 Schema。
 
@@ -512,6 +519,8 @@ if args.my_new_option.is_some() {
     return run_my_new_command(&args);
 }
 ```
+
+> **交互式 SQL REPL**：`-i` / `--interactive` 路由到 `run_interactive_cli()`，调用 `interactive::run(db, no_history)`（基于 rustyline），循环读取多行 SQL 并通过 `execute_sql` 执行。命令历史跨会话持久化到 `dirs::state_dir()/grep-excel/history.txt`（`--no-history` 关闭），每次 `add_history_entry` 后增量 `save_history` 以抵御执行期崩溃。详见 `crates/cli/src/interactive.rs`。
 
 **步骤 3**：实现处理函数：
 
@@ -661,6 +670,39 @@ CLI --run SHELL_CMD + (--query | --sql)
 ```
 
 `expand_exec_template` 在 `main.rs` 中实现，支持 `${column_name}` 占位符和 `$$` 转义。
+
+### 交互式 REPL 数据流
+
+```
+CLI -i (files...) 
+    │
+    ├── 导入位置参数文件
+    │
+    ├── interactive::run() (interactive.rs, rustyline)
+    │   ├── $ 提示符 → 读取多行输入（Validator: ';' 或 '.' 结尾才提交）
+    │   ├── SQL 输入 → execute_and_print() → SearchEngine::execute_sql()
+    │   │              → Unicode 对齐表格输出 + 行数统计
+    │   └── 点命令 (.tables/.files/.help/.history/.clear/.exit)
+    │
+    └── Ctrl+D / .exit → 退出
+```
+
+### Excel 日期自动检测（导入阶段）
+
+```
+import_excel (excel.rs)
+    │
+    ├── 第一遍：收集 calamine Data 原始行
+    │
+    ├── detect_date_columns_from_data()
+    │   ├── 信号 1（高置信度）：列含 ≥1 个 Data::DateTime 单元格 → 标记为日期列
+    │   └── 信号 2（兜底）：列名匹配日期关键词 + >50% Float 值在 Excel 序列号范围 [1, 100000]
+    │
+    ├── 第二遍：对日期列调用 as_datetime() / excel_serial_to_date_string()
+    │           转换为 YYYYMMDD 字符串
+    │
+    └── --repair 路径：convert_date_columns_in_place() 执行同样的后处理
+```
 
 ---
 

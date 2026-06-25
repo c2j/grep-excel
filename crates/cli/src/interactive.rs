@@ -12,6 +12,7 @@ use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Config, Editor};
 use rustyline_derive::{Completer, Helper, Hinter};
 use std::borrow::Cow;
+use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 use crate::engine::SearchEngine;
@@ -22,6 +23,11 @@ const PROMPT: &str = "$ ";
 const CONTINUATION_PROMPT: &str = "> ";
 const SQL_ROW_LIMIT: usize = 1000;
 const HISTORY_MAX: usize = 500;
+
+fn history_path() -> Option<PathBuf> {
+    let base = dirs::state_dir().or_else(dirs::config_dir)?;
+    Some(base.join("grep-excel").join("history.txt"))
+}
 
 #[derive(Completer, Helper, Hinter)]
 struct SqlHelper;
@@ -51,7 +57,7 @@ impl Highlighter for SqlHelper {
     }
 }
 
-pub fn run<Engine: SearchEngine>(db: &mut Engine) -> Result<()> {
+pub fn run<Engine: SearchEngine>(db: &mut Engine, no_history: bool) -> Result<()> {
     print_welcome(db);
 
     let config = Config::builder()
@@ -62,6 +68,23 @@ pub fn run<Engine: SearchEngine>(db: &mut Engine) -> Result<()> {
     let mut rl: Editor<SqlHelper, DefaultHistory> = Editor::with_config(config)?;
     rl.set_helper(Some(SqlHelper));
 
+    // Load persistent history (unless disabled). The history file is resolved
+    // once and reused for incremental saves below. `load_history` appends to
+    // the in-memory history and tolerates a missing file on first run; the
+    // parent directory is created so the first `save_history` can succeed.
+    let hist_path: Option<PathBuf> = if no_history {
+        None
+    } else {
+        history_path().inspect(|p| {
+            if let Some(parent) = p.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        })
+    };
+    if let Some(p) = &hist_path {
+        let _ = rl.load_history(p);
+    }
+
     loop {
         match rl.readline(PROMPT) {
             Ok(input) => {
@@ -70,6 +93,13 @@ pub fn run<Engine: SearchEngine>(db: &mut Engine) -> Result<()> {
                     continue;
                 }
                 let _ = rl.add_history_entry(&input);
+                // Save after every entry, not at loop end: DuckDB execution
+                // happens below and a panic there must not lose this session's
+                // history (rustyline's save is non-atomic, but an intact prior
+                // save survives a crash between saves).
+                if let Some(p) = &hist_path {
+                    let _ = rl.save_history(p);
+                }
 
                 if trimmed.starts_with('.') {
                     if handle_dot_command(trimmed, db, rl.history())? {
