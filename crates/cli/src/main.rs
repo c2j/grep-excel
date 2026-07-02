@@ -428,7 +428,12 @@ fn run_sql_cli(args: &Args) -> Result<()> {
     }
 
     let sql = args.sql.as_ref().unwrap();
-    let result = match db.execute_sql(sql, 10000) {
+    let sql_limit = if args.export.is_some() {
+        usize::MAX
+    } else {
+        10000
+    };
+    let result = match db.execute_sql(sql, sql_limit) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("{}", grep_excel::i18n::cli_sql_failed(&e.to_string()));

@@ -1063,6 +1063,69 @@ pub fn repl_sql_summary(shown: usize, total: usize, truncated: bool, duration_ms
     }
 }
 
+pub fn repl_output_on(path: &str) -> String {
+    match current() {
+        Lang::Zh => format!("已切换输出到 {}", path),
+        Lang::En => format!("Output redirected to {}", path),
+    }
+}
+
+pub fn repl_output_off() -> String {
+    match current() {
+        Lang::Zh => "已恢复输出到终端".to_string(),
+        Lang::En => "Output restored to terminal".to_string(),
+    }
+}
+
+pub fn repl_output_error(msg: &str) -> String {
+    match current() {
+        Lang::Zh => format!("输出错误: {}", msg),
+        Lang::En => format!("Output error: {}", msg),
+    }
+}
+
+pub fn repl_output_open_error(path: &str, err: &str) -> String {
+    match current() {
+        Lang::Zh => format!("无法打开输出文件 '{}': {}", path, err),
+        Lang::En => format!("Cannot open output file '{}': {}", path, err),
+    }
+}
+
+pub fn repl_output_write_error(err: &str) -> String {
+    match current() {
+        Lang::Zh => format!("写入输出文件失败: {}", err),
+        Lang::En => format!("Error writing to output file: {}", err),
+    }
+}
+
+pub fn repl_save_done(path: &str, rows: usize) -> String {
+    match current() {
+        Lang::Zh => format!("已保存 {} 行到 {}", rows, path),
+        Lang::En => format!("Saved {} row(s) to {}", rows, path),
+    }
+}
+
+pub fn repl_save_no_result() -> String {
+    match current() {
+        Lang::Zh => "没有可保存的上次 SQL 结果".to_string(),
+        Lang::En => "No previous SQL result to save".to_string(),
+    }
+}
+
+pub fn repl_save_error(path: &str, err: &str) -> String {
+    match current() {
+        Lang::Zh => format!("保存到 '{}' 失败: {}", path, err),
+        Lang::En => format!("Failed to save to '{}': {}", path, err),
+    }
+}
+
+pub fn repl_save_truncated() -> String {
+    match current() {
+        Lang::Zh => "注意: 结果被截断 (终端显示限制). 使用 .output <文件> 可导出完整数据。".to_string(),
+        Lang::En => "Note: result was truncated (terminal display limit). Use .output <file> for full export.".to_string(),
+    }
+}
+
 pub fn repl_help() -> String {
     match current() {
         Lang::Zh => {
@@ -1072,7 +1135,10 @@ pub fn repl_help() -> String {
              \x1b[1m.tables\x1b[0m / \x1b[1m.schema\x1b[0m  列出可用表别名和列名\n\
              \x1b[1m.files\x1b[0m             列出已导入文件\n\
              \x1b[1m.history\x1b[0m           显示 SQL 历史\n\
-             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      清屏\n\n\
+             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      清屏\n\
+             \x1b[1m.output <文件>\x1b[0m     持续重定向 SQL 结果到文件 (CSV 格式)\n\
+             \x1b[1m.output\x1b[0m            恢复终端输出\n\
+             \x1b[1m.save <文件> [fmt]\x1b[0m  保存上次 SQL 结果到文件 (fmt: csv|json|tsv|table)\n\n\
              SQL 执行:\n\
              • 输入以 \x1b[1m;\x1b[0m 结尾即执行；未结束时显示 \x1b[1m> \x1b[0m 续行提示\n\
              • \x1b[2mSELECT 1;\x1b[0m  →  立即执行\n\
@@ -1096,7 +1162,10 @@ pub fn repl_help() -> String {
              \x1b[1m.tables\x1b[0m / \x1b[1m.schema\x1b[0m  List available table aliases and columns\n\
              \x1b[1m.files\x1b[0m             List imported files\n\
              \x1b[1m.history\x1b[0m           Show SQL history\n\
-             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      Clear screen\n\n\
+             \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      Clear screen\n\
+             \x1b[1m.output <file>\x1b[0m     Continuously redirect SQL results to file (CSV)\n\
+             \x1b[1m.output\x1b[0m            Restore terminal output\n\
+             \x1b[1m.save <file> [fmt]\x1b[0m Save last SQL result to file (fmt: csv|json|tsv|table)\n\n\
              SQL execution:\n\
              • Input executes when it ends with \x1b[1m;\x1b[0m; mid-statement shows \x1b[1m> \x1b[0m continuation prompt\n\
              • \x1b[2mSELECT 1;\x1b[0m  →  executes immediately\n\
