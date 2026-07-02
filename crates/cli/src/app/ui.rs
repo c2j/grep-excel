@@ -1,14 +1,14 @@
 use super::render::*;
 use super::theme::theme;
 use super::{App, AppMode};
-use crate::engine::{SearchMode, SearchResult};
+use crate::engine::{SearchEngine, SearchMode, SearchResult};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
         Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Scrollbar,
-        ScrollbarOrientation, Table,
+        ScrollbarOrientation, ScrollbarState, Table,
     },
     Frame,
 };
@@ -361,6 +361,17 @@ impl App {
                     self.draw_detail_panel(frame, area, result);
                 }
             }
+            return;
+        }
+
+        if !self.loading
+            && self.results.is_empty()
+            && self.sql_input.value().is_empty()
+            && self.sql_result.is_none()
+            && self.stats.is_none()
+            && self.browse_data.is_some()
+        {
+            self.draw_browse_results(frame, area);
             return;
         }
 
@@ -1087,6 +1098,175 @@ impl App {
         frame.render_stateful_widget(table, area, &mut self.table_state);
     }
 
+    fn draw_browse_results(&mut self, frame: &mut Frame, area: Rect) {
+        let data = match &self.browse_data {
+            Some(d) => d,
+            None => return,
+        };
+
+        if data.rows.is_empty() {
+            let paragraph = Paragraph::new(Line::from(Span::styled(
+                "No data in this sheet",
+                Style::default().fg(theme().text_dim),
+            )))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
+        let col_names = &data.columns;
+        let total_cols = col_names.len();
+
+        let total_rows = data.rows.len();
+        let scroll_offset = self.browse_scroll_offset.min(total_rows.saturating_sub(1));
+        let visible_row_count = area.height.saturating_sub(4) as usize;
+        self.browse_visible_rows = visible_row_count;
+
+        let col_widths: Vec<u16> = {
+            let mut widths = vec![6u16; total_cols];
+            for (i, name) in col_names.iter().enumerate() {
+                widths[i] = UnicodeWidthStr::width(name.as_str()).clamp(4, 50) as u16;
+            }
+            for row in data.rows.iter().skip(scroll_offset).take(visible_row_count) {
+                for (i, cell) in row.iter().enumerate() {
+                    if i < total_cols {
+                        let w = UnicodeWidthStr::width(cell.as_str()).clamp(4, 50) as u16;
+                        if w > widths[i] {
+                            widths[i] = w;
+                        }
+                    }
+                }
+            }
+            widths
+        };
+
+        let available_width = area.width.saturating_sub(4);
+        let mut visible_col_count = 0usize;
+        let mut used: u16 = 0;
+        let col_offset = self.browse_col_offset.min(total_cols.saturating_sub(1));
+        for &w in col_widths.iter().skip(col_offset) {
+            if used + w > available_width {
+                break;
+            }
+            used += w;
+            visible_col_count += 1;
+        }
+        visible_col_count = visible_col_count.max(1);
+
+        let mut header_cells: Vec<ratatui::widgets::Cell<'_>> = Vec::new();
+        for name in col_names.iter().skip(col_offset).take(visible_col_count) {
+            header_cells.push(
+                ratatui::widgets::Cell::from(name.as_str()).style(
+                    Style::default()
+                        .fg(theme().label)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            );
+        }
+        let header_row = ratatui::widgets::Row::new(header_cells)
+            .height(1)
+            .bottom_margin(1);
+
+        let rows: Vec<_> = data
+            .rows
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_row_count)
+            .map(|(_, row)| {
+                let cells: Vec<ratatui::widgets::Cell<'_>> = row
+                    .iter()
+                    .skip(col_offset)
+                    .take(visible_col_count)
+                    .map(|cell| {
+                        ratatui::widgets::Cell::from(truncate_str(cell, 50))
+                            .style(Style::default().fg(theme().text))
+                    })
+                    .collect();
+                ratatui::widgets::Row::new(cells).height(1)
+            })
+            .collect();
+
+        let mut constraints: Vec<Constraint> = col_widths
+            .iter()
+            .skip(col_offset)
+            .take(visible_col_count)
+            .map(|&w| Constraint::Length(w))
+            .collect();
+        if constraints.is_empty() {
+            constraints.push(Constraint::Min(10));
+        }
+
+        let file_name = &data.file_name;
+        let sheet_name = &data.sheet_name;
+
+        let mut title_spans = vec![
+            Span::styled(
+                format!(" {} / {} ", file_name, sheet_name),
+                Style::default()
+                    .fg(theme().label)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("({} rows)", total_rows),
+                Style::default().fg(theme().text_dim),
+            ),
+        ];
+
+        let files = {
+            let db_guard = self.database.read();
+            db_guard.0.list_files()
+        };
+        let total_sheets = files
+            .get(self.browse_file_index)
+            .map(|f| f.sheets.len())
+            .unwrap_or(0);
+        if total_sheets > 1 {
+            title_spans.push(Span::styled(
+                format!(
+                    " [Sheet {}/{}]",
+                    self.browse_sheet_index + 1,
+                    total_sheets
+                ),
+                Style::default().fg(theme().info),
+            ));
+        }
+
+        if col_offset > 0 {
+            title_spans.push(Span::styled(" ◄", Style::default().fg(theme().highlight)));
+        }
+        if col_offset + visible_col_count < total_cols {
+            title_spans.push(Span::styled(" ►", Style::default().fg(theme().highlight)));
+        }
+
+        let table = Table::new(rows, constraints)
+            .header(header_row)
+            .block(Block::default().borders(Borders::ALL).title(
+                Line::from(title_spans),
+            ))
+            .row_highlight_style(
+                Style::default()
+                    .fg(theme().highlight)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol(">> ");
+
+        frame.render_stateful_widget(table, area, &mut self.table_state);
+
+        let scrollbar = Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"));
+        let mut scrollbar_state = ScrollbarState::new(total_rows)
+            .position(scroll_offset);
+        frame.render_stateful_widget(
+            scrollbar,
+            area.inner(ratatui::layout::Margin::new(0, 1)),
+            &mut scrollbar_state,
+        );
+    }
+
     fn draw_detail_panel(&self, frame: &mut Frame, area: Rect, result: &SearchResult) {
         let compiled_regex = match self.search_mode {
             SearchMode::FullText => regex::Regex::new(&format!(
@@ -1365,6 +1545,18 @@ impl App {
                 Span::styled(" │ ", Style::default().fg(theme().text_dim)),
                 Span::styled(sheet_info.join(" "), Style::default().fg(theme().text_dim)),
                 Span::styled(aggregate_indicator, Style::default().fg(theme().highlight_match)),
+            ])
+        } else if let Some(ref data) = self.browse_data {
+            let total_rows = data.rows.len();
+            let total_cols = data.columns.len();
+            let selected = self.table_state.selected().unwrap_or(0);
+            let row_indicator = format!("Row {}/{}", self.browse_scroll_offset + selected + 1, total_rows);
+            let col_indicator = format!(" Col {}/{}", self.browse_col_offset + 1, total_cols);
+            Line::from(vec![
+                Span::styled(format!(" {} / {}", data.file_name, data.sheet_name), Style::default().fg(theme().text)),
+                Span::styled(" │ ", Style::default().fg(theme().text_dim)),
+                Span::styled(row_indicator, Style::default().fg(theme().text)),
+                Span::styled(col_indicator, Style::default().fg(theme().text_dim)),
             ])
         } else {
             let file_count = self.file_list.len();

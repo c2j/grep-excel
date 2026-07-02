@@ -7,6 +7,7 @@ use crate::engine::{
     DefaultEngine, FileInfo, SearchEngine, SearchMode, SearchQuery, SearchResult, SearchStats,
 };
 use crate::event::{AppEvent, EventReceiver, EventSender};
+use crate::types::SheetDataResult;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use parking_lot::RwLock;
@@ -70,6 +71,14 @@ pub struct App {
     pub(crate) aggregate_stats: Option<crate::types::AggregateStats>,
     pub(crate) table_aliases: Vec<crate::types::TableAliasInfo>,
     pub(crate) table_info_scroll: usize,
+    /// Browse mode: when files are loaded but no search performed, show sheet data directly
+    pub(crate) browse_data: Option<SheetDataResult>,
+    pub(crate) browse_file_index: usize,
+    pub(crate) browse_sheet_index: usize,
+    pub(crate) browse_scroll_offset: usize,
+    pub(crate) browse_col_offset: usize,
+    pub(crate) browse_loading: bool,
+    pub(crate) browse_visible_rows: usize,
 }
 
 impl App {
@@ -119,6 +128,13 @@ impl App {
             aggregate_stats: None,
             table_aliases: Vec::new(),
             table_info_scroll: 0,
+            browse_data: None,
+            browse_file_index: 0,
+            browse_sheet_index: 0,
+            browse_scroll_offset: 0,
+            browse_col_offset: 0,
+            browse_loading: false,
+            browse_visible_rows: 15,
         }
     }
 
@@ -132,6 +148,36 @@ impl App {
 
     pub fn set_search_mode(&mut self, mode: SearchMode) {
         self.search_mode = mode;
+    }
+
+    pub fn load_browse_data(&mut self) {
+        let files = {
+            let db_guard = self.database.read();
+            db_guard.0.list_files()
+        };
+        if files.is_empty() || self.browse_file_index >= files.len() {
+            return;
+        }
+        if self.browse_sheet_index >= files[self.browse_file_index].sheets.len() {
+            return;
+        }
+
+        let file_name = files[self.browse_file_index].name.clone();
+        let sheet_name = files[self.browse_file_index].sheets[self.browse_sheet_index].0.clone();
+
+        self.browse_loading = true;
+        self.status_message = crate::i18n::status_browse_loading(&file_name, &sheet_name);
+
+        let db = Arc::clone(&self.database);
+        let tx = self.event_tx.clone();
+
+        std::thread::spawn(move || {
+            let result = {
+                let db_guard = db.read();
+                db_guard.0.get_sheet_data(&file_name, &sheet_name, Some(0), Some(500), None)
+            };
+            let _ = tx.send(AppEvent::BrowseDataLoaded(result));
+        });
     }
 
     pub fn import_file(&mut self, path: PathBuf) {
@@ -234,6 +280,11 @@ impl App {
                         }
                         self.status_message = crate::i18n::status_imported(&file_info.name);
                         self.error_message = None;
+                        if self.file_list.len() == 1 {
+                            self.browse_file_index = 0;
+                            self.browse_sheet_index = 0;
+                            self.load_browse_data();
+                        }
                     }
                     Err(e) => {
                         self.error_message = Some(crate::i18n::status_import_error(&e.to_string()));
@@ -289,6 +340,24 @@ impl App {
             }
             AppEvent::Progress(current, total) => {
                 self.status_message = crate::i18n::status_progress(current, total);
+            }
+            AppEvent::BrowseDataLoaded(result) => {
+                self.browse_loading = false;
+                match result {
+                    Ok(data) => {
+                        let count = data.rows.len();
+                        self.browse_data = Some(data);
+                        self.browse_scroll_offset = 0;
+                        self.browse_col_offset = 0;
+                        self.table_state.select(Some(0));
+                        self.status_message = crate::i18n::status_browse_loaded(count);
+                        self.error_message = None;
+                    }
+                    Err(e) => {
+                        self.error_message = Some(crate::i18n::status_browse_load_error(&e.to_string()));
+                        self.status_message = crate::i18n::status_browse_load_failed().to_string();
+                    }
+                }
             }
             AppEvent::SqlCompleted(result) => {
                 self.loading = false;

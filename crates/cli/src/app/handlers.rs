@@ -1,6 +1,8 @@
 use super::{App, AppMode};
 use crate::engine::{SearchEngine, SearchMode, SearchResult};
+use crate::event::AppEvent;
 use ratatui::widgets::ScrollbarState;
+use std::sync::Arc;
 use tui_input::backend::crossterm::EventHandler;
 
 impl App {
@@ -18,8 +20,17 @@ impl App {
         }
     }
 
+    pub(super) fn is_browse_mode(&self) -> bool {
+        self.results.is_empty()
+            && self.search_input.value().is_empty()
+            && self.sql_result.is_none()
+            && self.browse_data.is_some()
+    }
+
     pub(super) fn handle_normal_mode(&mut self, key: crossterm::event::KeyEvent) {
         use crossterm::event::KeyCode;
+
+        let browsing = self.is_browse_mode();
 
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('c')
@@ -51,8 +62,20 @@ impl App {
                 let mode_str = crate::i18n::mode_name(self.search_mode);
                 self.status_message = crate::i18n::status_mode_changed(mode_str);
             }
+            KeyCode::Char(']') => {
+                if browsing {
+                    self.browse_next_sheet();
+                }
+            }
+            KeyCode::Char('[') => {
+                if browsing {
+                    self.browse_prev_sheet();
+                }
+            }
             KeyCode::Enter => {
-                if self.results.is_empty() || self.loading {
+                if browsing {
+                    self.browse_show_detail();
+                } else if self.results.is_empty() || self.loading {
                     self.execute_search();
                 } else if self.is_flat_view_active() {
                     let results = self.get_flat_current_results();
@@ -89,11 +112,39 @@ impl App {
                 self.mode = AppMode::Help;
             }
             KeyCode::Char(c @ '1'..='9') => {
-                let index = (c as usize) - ('1' as usize);
-                self.select_tab(index);
+                if browsing {
+                    let index = (c as usize) - ('1' as usize);
+                    let files = {
+                        let db_guard = self.database.read();
+                        db_guard.0.list_files()
+                    };
+                    let mut total_sheets = 0usize;
+                    for f in &files {
+                        total_sheets += f.sheets.len();
+                    }
+                    if index < total_sheets {
+                        let mut remaining = index;
+                        for (fi, f) in files.iter().enumerate() {
+                            if remaining < f.sheets.len() {
+                                self.browse_file_index = fi;
+                                self.browse_sheet_index = remaining;
+                                self.load_browse_data();
+                                break;
+                            }
+                            remaining -= f.sheets.len();
+                        }
+                    }
+                } else {
+                    let index = (c as usize) - ('1' as usize);
+                    self.select_tab(index);
+                }
             }
             KeyCode::Left => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    if self.browse_col_offset > 0 {
+                        self.browse_col_offset -= 1;
+                    }
+                } else if self.is_flat_view_active() {
                     if let Some(sheet_name) = self.get_flat_current_sheet_name() {
                         let offset = self.get_flat_col_offset(&sheet_name);
                         if offset > 0 {
@@ -105,7 +156,13 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    let total_cols = self.browse_data.as_ref()
+                        .map(|d| d.columns.len()).unwrap_or(0);
+                    if self.browse_col_offset < total_cols.saturating_sub(1) {
+                        self.browse_col_offset += 1;
+                    }
+                } else if self.is_flat_view_active() {
                     if let Some(sheet_name) = self.get_flat_current_sheet_name() {
                         let col_count = self.get_flat_current_col_count();
                         let offset = self.get_flat_col_offset(&sheet_name);
@@ -121,21 +178,28 @@ impl App {
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    self.browse_scroll_up(1);
+                } else if self.is_flat_view_active() {
                     self.navigate_flat_view(-1);
                 } else {
                     self.navigate_table(-1);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    self.browse_scroll_down(1);
+                } else if self.is_flat_view_active() {
                     self.navigate_flat_view(1);
                 } else {
                     self.navigate_table(1);
                 }
             }
             KeyCode::Char('g') => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    self.table_state.select(Some(0));
+                    self.browse_scroll_offset = 0;
+                } else if self.is_flat_view_active() {
                     self.flat_selected_sheet = 0;
                     self.flat_row_index = 0;
                     self.flat_scroll_offset = 0;
@@ -145,7 +209,13 @@ impl App {
                 }
             }
             KeyCode::Char('G') => {
-                if self.is_flat_view_active() {
+                if browsing {
+                    let total_rows = self.browse_data.as_ref()
+                        .map(|d| d.rows.len()).unwrap_or(0);
+                    let last = total_rows.saturating_sub(1);
+                    self.table_state.select(Some(last));
+                    self.browse_scroll_offset = last;
+                } else if self.is_flat_view_active() {
                     let sheet_names = self.get_sorted_sheet_names();
                     if let Some(last_sheet) = sheet_names.last() {
                         self.flat_selected_sheet = sheet_names.len().saturating_sub(1);
@@ -162,17 +232,35 @@ impl App {
                 }
             }
             KeyCode::Char('H') => {
-                if self.col_offset > 0 {
+                if browsing {
+                    if self.browse_col_offset > 0 {
+                        self.browse_col_offset -= 1;
+                    }
+                } else if self.col_offset > 0 {
                     self.col_offset -= 1;
                 }
             }
             KeyCode::Char('L') => {
-                let col_count = self.get_current_col_count();
-                if self.col_offset < col_count.saturating_sub(1) {
-                    self.col_offset += 1;
+                if browsing {
+                    let total_cols = self.browse_data.as_ref()
+                        .map(|d| d.columns.len()).unwrap_or(0);
+                    if self.browse_col_offset < total_cols.saturating_sub(1) {
+                        self.browse_col_offset += 1;
+                    }
+                } else {
+                    let col_count = self.get_current_col_count();
+                    if self.col_offset < col_count.saturating_sub(1) {
+                        self.col_offset += 1;
+                    }
                 }
             }
             KeyCode::Char('d') => {
+                self.browse_data = None;
+                self.browse_scroll_offset = 0;
+                self.browse_col_offset = 0;
+                self.browse_file_index = 0;
+                self.browse_sheet_index = 0;
+
                 let mut db = self.database.write();
                 if db.0.clear().is_ok() {
                     self.file_list.clear();
@@ -197,7 +285,9 @@ impl App {
                 }
             }
             KeyCode::Char('n') => {
-                if self.stats.as_ref().map_or(false, |s| s.truncated) {
+                if browsing {
+                    self.load_more_browse_data();
+                } else if self.stats.as_ref().map_or(false, |s| s.truncated) {
                     self.result_limit = self.result_limit.saturating_add(5000);
                     self.execute_search();
                 }
@@ -368,8 +458,15 @@ impl App {
     fn handle_detail_panel_mode(&mut self, key: crossterm::event::KeyEvent) {
         use crossterm::event::KeyCode;
 
+        let came_from_browse = self.results.len() == 1 && self.browse_data.is_some();
+
         match key.code {
             KeyCode::Enter | KeyCode::Esc => {
+                if came_from_browse {
+                    self.results.clear();
+                    self.results_by_sheet.clear();
+                    self.tab_state = 0;
+                }
                 self.mode = AppMode::Normal;
                 self.detail_scroll = 0;
             }
@@ -494,5 +591,141 @@ impl App {
             .find(|r| !r.col_names.is_empty())
             .map(|r| r.col_names.len())
             .unwrap_or(0)
+    }
+
+    pub(super) fn browse_show_detail(&mut self) {
+        let data = match &self.browse_data {
+            Some(d) => d,
+            None => return,
+        };
+        let selected = self.table_state.selected().unwrap_or(0);
+        let row_idx = self.browse_scroll_offset + selected;
+        if row_idx >= data.rows.len() {
+            return;
+        }
+        let row = data.rows[row_idx].clone();
+        let fake_result = SearchResult {
+            sheet_name: data.sheet_name.clone(),
+            file_name: data.file_name.clone(),
+            row,
+            col_names: data.columns.clone(),
+            matched_columns: vec![],
+            col_widths: vec![],
+            row_index: row_idx,
+            context: crate::types::ContextRows::default(),
+        };
+        self.results = vec![fake_result];
+        self.results_by_sheet.clear();
+        self.results_by_sheet
+            .insert(data.sheet_name.clone(), self.results.clone());
+        self.tab_state = 1;
+        self.detail_scroll = 0;
+        self.mode = AppMode::DetailPanel;
+    }
+
+    pub(super) fn browse_scroll_up(&mut self, amount: usize) {
+        let total_rows = self.browse_data.as_ref().map(|d| d.rows.len()).unwrap_or(0);
+        if total_rows == 0 {
+            return;
+        }
+        let current = self.table_state.selected().unwrap_or(0);
+        let new_selection = current.saturating_sub(amount);
+        self.table_state.select(Some(new_selection));
+        if new_selection < self.browse_scroll_offset {
+            self.browse_scroll_offset = new_selection;
+        }
+    }
+
+    pub(super) fn browse_scroll_down(&mut self, amount: usize) {
+        let total_rows = self.browse_data.as_ref().map(|d| d.rows.len()).unwrap_or(0);
+        if total_rows == 0 {
+            return;
+        }
+        let current = self.table_state.selected().unwrap_or(0);
+        let new_selection = (current + amount).min(total_rows.saturating_sub(1));
+        self.table_state.select(Some(new_selection));
+
+        let visible_rows = self.browse_visible_rows.max(5);
+        if new_selection >= self.browse_scroll_offset + visible_rows {
+            self.browse_scroll_offset = new_selection.saturating_sub(visible_rows - 1);
+        }
+    }
+
+    pub(super) fn browse_next_sheet(&mut self) {
+        let files = {
+            let db_guard = self.database.read();
+            db_guard.0.list_files()
+        };
+        if files.is_empty() {
+            return;
+        }
+        if self.browse_file_index >= files.len() {
+            self.browse_file_index = 0;
+            self.browse_sheet_index = 0;
+        } else {
+            let sheets_in_file = files[self.browse_file_index].sheets.len();
+            if self.browse_sheet_index + 1 < sheets_in_file {
+                self.browse_sheet_index += 1;
+            } else if self.browse_file_index + 1 < files.len() {
+                self.browse_file_index += 1;
+                self.browse_sheet_index = 0;
+            } else {
+                self.browse_file_index = 0;
+                self.browse_sheet_index = 0;
+            }
+        }
+        self.load_browse_data();
+    }
+
+    pub(super) fn browse_prev_sheet(&mut self) {
+        let files = {
+            let db_guard = self.database.read();
+            db_guard.0.list_files()
+        };
+        if files.is_empty() {
+            return;
+        }
+        if self.browse_sheet_index > 0 {
+            self.browse_sheet_index -= 1;
+        } else if self.browse_file_index > 0 {
+            self.browse_file_index -= 1;
+            self.browse_sheet_index = files[self.browse_file_index].sheets.len().saturating_sub(1);
+        } else {
+            self.browse_file_index = files.len().saturating_sub(1);
+            self.browse_sheet_index = files[self.browse_file_index].sheets.len().saturating_sub(1);
+        }
+        self.load_browse_data();
+    }
+
+    pub(super) fn load_more_browse_data(&mut self) {
+        let data = match &self.browse_data {
+            Some(d) => d,
+            None => return,
+        };
+        if data.truncated {
+            let file_name = data.file_name.clone();
+            let sheet_name = data.sheet_name.clone();
+            let current_count = data.rows.len();
+
+            self.browse_loading = true;
+            self.status_message = crate::i18n::status_browse_loading(&file_name, &sheet_name);
+
+            let db = Arc::clone(&self.database);
+            let tx = self.event_tx.clone();
+
+            std::thread::spawn(move || {
+                let result = {
+                    let db_guard = db.read();
+                    db_guard.0.get_sheet_data(
+                        &file_name,
+                        &sheet_name,
+                        Some(0),
+                        Some(current_count + 500),
+                        None,
+                    )
+                };
+                let _ = tx.send(AppEvent::BrowseDataLoaded(result));
+            });
+        }
     }
 }

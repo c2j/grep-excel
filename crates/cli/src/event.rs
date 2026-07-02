@@ -1,4 +1,4 @@
-use crate::types::{FileInfo, SearchResult, SearchStats, SqlResult};
+use crate::types::{FileInfo, SearchResult, SearchStats, SheetDataResult, SqlResult};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use std::sync::mpsc;
@@ -9,6 +9,7 @@ pub enum AppEvent {
     FileImported(Result<FileInfo>),
     SearchCompleted(Result<(Vec<SearchResult>, SearchStats)>),
     SqlCompleted(Result<SqlResult>),
+    BrowseDataLoaded(Result<SheetDataResult>),
     Progress(usize, usize),
 }
 
