@@ -356,6 +356,34 @@ pub fn status_loading() -> &'static str {
     match current() { Lang::Zh => "加载中...", Lang::En => "Loading..." }
 }
 
+pub fn status_browse_loading(file: &str, sheet: &str) -> String {
+    match current() {
+        Lang::Zh => format!("正在加载: {}/{}...", file, sheet),
+        Lang::En => format!("Loading: {}/{}...", file, sheet),
+    }
+}
+
+pub fn status_browse_loaded(count: usize) -> String {
+    match current() {
+        Lang::Zh => format!("已加载 {} 行数据", count),
+        Lang::En => format!("Browsing: {} rows loaded", count),
+    }
+}
+
+pub fn status_browse_load_failed() -> &'static str {
+    match current() {
+        Lang::Zh => "浏览数据加载失败",
+        Lang::En => "Browse load failed",
+    }
+}
+
+pub fn status_browse_load_error(e: &str) -> String {
+    match current() {
+        Lang::Zh => format!("浏览加载错误: {}", e),
+        Lang::En => format!("Browse load error: {}", e),
+    }
+}
+
 pub fn status_mode_changed(mode: &str) -> String {
     match current() {
         Lang::Zh => format!("模式切换为: {}", mode),
