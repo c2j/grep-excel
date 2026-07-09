@@ -1,6 +1,7 @@
 use super::{App, AppMode};
 use crate::engine::{SearchEngine, SearchMode, SearchResult};
 use crate::event::AppEvent;
+use crossterm::event::KeyModifiers;
 use ratatui::widgets::ScrollbarState;
 use std::sync::Arc;
 use tui_input::backend::crossterm::EventHandler;
@@ -140,15 +141,26 @@ impl App {
                 }
             }
             KeyCode::Left => {
-                if browsing {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if ctrl {
+                    if browsing {
+                        self.browse_prev_sheet_in_file();
+                    } else if self.is_flat_view_active() {
+                        self.navigate_flat_prev_sheet_in_file();
+                    } else if !self.results_by_sheet.is_empty() {
+                        self.tab_state = 0;
+                        self.flat_view = true;
+                        self.navigate_flat_prev_sheet_in_file();
+                    }
+                } else if browsing {
                     if self.browse_col_offset > 0 {
                         self.browse_col_offset -= 1;
                     }
                 } else if self.is_flat_view_active() {
-                    if let Some(sheet_name) = self.get_flat_current_sheet_name() {
-                        let offset = self.get_flat_col_offset(&sheet_name);
+                    if let Some(sheet_key) = self.get_flat_current_sheet_name() {
+                        let offset = self.get_flat_col_offset(&sheet_key);
                         if offset > 0 {
-                            self.set_flat_col_offset(&sheet_name, offset - 1);
+                            self.set_flat_col_offset(&sheet_key, offset - 1);
                         }
                     }
                 } else if self.col_offset > 0 {
@@ -156,18 +168,29 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                if browsing {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if ctrl {
+                    if browsing {
+                        self.browse_next_sheet_in_file();
+                    } else if self.is_flat_view_active() {
+                        self.navigate_flat_next_sheet_in_file();
+                    } else if !self.results_by_sheet.is_empty() {
+                        self.tab_state = 0;
+                        self.flat_view = true;
+                        self.navigate_flat_next_sheet_in_file();
+                    }
+                } else if browsing {
                     let total_cols = self.browse_data.as_ref()
                         .map(|d| d.columns.len()).unwrap_or(0);
                     if self.browse_col_offset < total_cols.saturating_sub(1) {
                         self.browse_col_offset += 1;
                     }
                 } else if self.is_flat_view_active() {
-                    if let Some(sheet_name) = self.get_flat_current_sheet_name() {
+                    if let Some(sheet_key) = self.get_flat_current_sheet_name() {
                         let col_count = self.get_flat_current_col_count();
-                        let offset = self.get_flat_col_offset(&sheet_name);
+                        let offset = self.get_flat_col_offset(&sheet_key);
                         if offset < col_count.saturating_sub(1) {
-                            self.set_flat_col_offset(&sheet_name, offset + 1);
+                            self.set_flat_col_offset(&sheet_key, offset + 1);
                         }
                     }
                 } else {
@@ -178,7 +201,18 @@ impl App {
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if browsing {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if ctrl {
+                    if browsing {
+                        self.browse_prev_file();
+                    } else if self.is_flat_view_active() {
+                        self.navigate_flat_prev_file();
+                    } else if !self.results_by_sheet.is_empty() {
+                        self.tab_state = 0;
+                        self.flat_view = true;
+                        self.navigate_flat_prev_file();
+                    }
+                } else if browsing {
                     self.browse_scroll_up(1);
                 } else if self.is_flat_view_active() {
                     self.navigate_flat_view(-1);
@@ -187,7 +221,18 @@ impl App {
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if browsing {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if ctrl {
+                    if browsing {
+                        self.browse_next_file();
+                    } else if self.is_flat_view_active() {
+                        self.navigate_flat_next_file();
+                    } else if !self.results_by_sheet.is_empty() {
+                        self.tab_state = 0;
+                        self.flat_view = true;
+                        self.navigate_flat_next_file();
+                    }
+                } else if browsing {
                     self.browse_scroll_down(1);
                 } else if self.is_flat_view_active() {
                     self.navigate_flat_view(1);
@@ -216,10 +261,10 @@ impl App {
                     self.table_state.select(Some(last));
                     self.browse_scroll_offset = last;
                 } else if self.is_flat_view_active() {
-                    let sheet_names = self.get_sorted_sheet_names();
-                    if let Some(last_sheet) = sheet_names.last() {
-                        self.flat_selected_sheet = sheet_names.len().saturating_sub(1);
-                        if let Some(results) = self.results_by_sheet.get(last_sheet) {
+                    let sheet_keys = self.get_ordered_sheet_list();
+                    if let Some(last_key) = sheet_keys.last() {
+                        self.flat_selected_sheet = sheet_keys.len().saturating_sub(1);
+                        if let Some(results) = self.results_by_sheet.get(last_key) {
                             self.flat_row_index = results.len().saturating_sub(1);
                             self.flat_scroll_offset = self.flat_row_index;
                         }
@@ -504,13 +549,10 @@ impl App {
         if self.tab_state == 0 {
             self.results.iter().collect()
         } else {
-            let sheet_names: Vec<_> = self.results_by_sheet.keys().cloned().collect();
-            let mut sorted_sheets = sheet_names;
-            sorted_sheets.sort();
-
-            if let Some(sheet_name) = sorted_sheets.get(self.tab_state - 1) {
+            let ordered = self.get_ordered_sheet_list();
+            if let Some(sheet_key) = ordered.get(self.tab_state - 1) {
                 self.results_by_sheet
-                    .get(sheet_name)
+                    .get(sheet_key)
                     .map(|v: &Vec<SearchResult>| v.iter().collect())
                     .unwrap_or_default()
             } else {
@@ -550,25 +592,25 @@ impl App {
     }
 
     pub(super) fn navigate_flat_view(&mut self, direction: i32) {
-        let sheet_names = self.get_sorted_sheet_names();
-        if sheet_names.is_empty() {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
             return;
         }
 
-        let current_sheet = &sheet_names[self.flat_selected_sheet];
-        let results = self.results_by_sheet.get(current_sheet).unwrap();
+        let current_key = &sheet_keys[self.flat_selected_sheet];
+        let results = self.results_by_sheet.get(current_key).unwrap();
         let new_row = self.flat_row_index as i32 + direction;
 
         if new_row < 0 {
             if self.flat_selected_sheet > 0 {
                 self.flat_selected_sheet -= 1;
-                let prev_sheet = &sheet_names[self.flat_selected_sheet];
-                let prev_results = self.results_by_sheet.get(prev_sheet).unwrap();
+                let prev_key = &sheet_keys[self.flat_selected_sheet];
+                let prev_results = self.results_by_sheet.get(prev_key).unwrap();
                 self.flat_row_index = prev_results.len().saturating_sub(1);
                 self.flat_scroll_offset = self.flat_row_index;
             }
         } else if new_row >= results.len() as i32 {
-            if self.flat_selected_sheet < sheet_names.len() - 1 {
+            if self.flat_selected_sheet < sheet_keys.len() - 1 {
                 self.flat_selected_sheet += 1;
                 self.flat_row_index = 0;
                 self.flat_scroll_offset = 0;
@@ -581,6 +623,96 @@ impl App {
             } else if self.flat_row_index >= self.flat_scroll_offset + visible_rows {
                 self.flat_scroll_offset = self.flat_row_index.saturating_sub(visible_rows - 1);
             }
+        }
+    }
+
+    /// Ctrl+←: previous sheet within the same file
+    pub(super) fn navigate_flat_prev_sheet_in_file(&mut self) {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
+            return;
+        }
+        let (file_start, _) = self.get_file_sheet_range(self.flat_selected_sheet);
+        if self.flat_selected_sheet > file_start {
+            self.flat_selected_sheet -= 1;
+            self.flat_row_index = 0;
+            self.flat_scroll_offset = 0;
+            self.status_message = self.format_flat_sheet_status();
+        }
+    }
+
+    /// Ctrl+→: next sheet within the same file
+    pub(super) fn navigate_flat_next_sheet_in_file(&mut self) {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
+            return;
+        }
+        let (_, file_end) = self.get_file_sheet_range(self.flat_selected_sheet);
+        if self.flat_selected_sheet < file_end {
+            self.flat_selected_sheet += 1;
+            self.flat_row_index = 0;
+            self.flat_scroll_offset = 0;
+            self.status_message = self.format_flat_sheet_status();
+        }
+    }
+
+    /// Ctrl+↑: switch to previous file's first sheet
+    pub(super) fn navigate_flat_prev_file(&mut self) {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
+            return;
+        }
+        let current_file_idx = self.find_file_for_sheet_key(&sheet_keys[self.flat_selected_sheet]);
+        if let Some(fi) = current_file_idx {
+            if fi > 0 {
+                // Find the first sheet of the previous file
+                let prev_file_name = &self.file_list[fi - 1].name;
+                for (i, key) in sheet_keys.iter().enumerate() {
+                    let (f, _) = App::parse_sheet_key(key);
+                    if f == prev_file_name {
+                        self.flat_selected_sheet = i;
+                        self.flat_row_index = 0;
+                        self.flat_scroll_offset = 0;
+                        self.status_message = self.format_flat_sheet_status();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ctrl+↓: switch to next file's first sheet
+    pub(super) fn navigate_flat_next_file(&mut self) {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
+            return;
+        }
+        let current_file_idx = self.find_file_for_sheet_key(&sheet_keys[self.flat_selected_sheet]);
+        if let Some(fi) = current_file_idx {
+            if fi + 1 < self.file_list.len() {
+                let next_file_name = &self.file_list[fi + 1].name;
+                for (i, key) in sheet_keys.iter().enumerate() {
+                    let (f, _) = App::parse_sheet_key(key);
+                    if f == next_file_name {
+                        self.flat_selected_sheet = i;
+                        self.flat_row_index = 0;
+                        self.flat_scroll_offset = 0;
+                        self.status_message = self.format_flat_sheet_status();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn format_flat_sheet_status(&self) -> String {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if self.flat_selected_sheet < sheet_keys.len() {
+            let (file_name, sheet_name) = App::parse_sheet_key(&sheet_keys[self.flat_selected_sheet]);
+            let total = sheet_keys.len();
+            crate::i18n::status_flat_sheet(file_name, sheet_name, self.flat_selected_sheet + 1, total)
+        } else {
+            String::new()
         }
     }
 
@@ -616,8 +748,9 @@ impl App {
         };
         self.results = vec![fake_result];
         self.results_by_sheet.clear();
+        let key = format!("{}::{}", data.file_name, data.sheet_name);
         self.results_by_sheet
-            .insert(data.sheet_name.clone(), self.results.clone());
+            .insert(key, self.results.clone());
         self.tab_state = 1;
         self.detail_scroll = 0;
         self.mode = AppMode::DetailPanel;
@@ -727,5 +860,67 @@ impl App {
                 let _ = tx.send(AppEvent::BrowseDataLoaded(result));
             });
         }
+    }
+
+    /// Ctrl+←: switch to previous sheet within the same file (browse mode)
+    pub(super) fn browse_prev_sheet_in_file(&mut self) {
+        if self.file_list.is_empty() || self.browse_file_index >= self.file_list.len() {
+            return;
+        }
+        let sheets_in_file = self.file_list[self.browse_file_index].sheets.len();
+        if sheets_in_file <= 1 {
+            return;
+        }
+        if self.browse_sheet_index > 0 {
+            self.browse_sheet_index -= 1;
+        } else {
+            self.browse_sheet_index = sheets_in_file - 1;
+        }
+        self.load_browse_data();
+    }
+
+    /// Ctrl+→: switch to next sheet within the same file (browse mode)
+    pub(super) fn browse_next_sheet_in_file(&mut self) {
+        if self.file_list.is_empty() || self.browse_file_index >= self.file_list.len() {
+            return;
+        }
+        let sheets_in_file = self.file_list[self.browse_file_index].sheets.len();
+        if sheets_in_file <= 1 {
+            return;
+        }
+        if self.browse_sheet_index + 1 < sheets_in_file {
+            self.browse_sheet_index += 1;
+        } else {
+            self.browse_sheet_index = 0;
+        }
+        self.load_browse_data();
+    }
+
+    /// Ctrl+↑: switch to previous file's first sheet (browse mode)
+    pub(super) fn browse_prev_file(&mut self) {
+        if self.file_list.len() <= 1 {
+            return;
+        }
+        if self.browse_file_index > 0 {
+            self.browse_file_index -= 1;
+        } else {
+            self.browse_file_index = self.file_list.len() - 1;
+        }
+        self.browse_sheet_index = 0;
+        self.load_browse_data();
+    }
+
+    /// Ctrl+↓: switch to next file's first sheet (browse mode)
+    pub(super) fn browse_next_file(&mut self) {
+        if self.file_list.len() <= 1 {
+            return;
+        }
+        if self.browse_file_index + 1 < self.file_list.len() {
+            self.browse_file_index += 1;
+        } else {
+            self.browse_file_index = 0;
+        }
+        self.browse_sheet_index = 0;
+        self.load_browse_data();
     }
 }
