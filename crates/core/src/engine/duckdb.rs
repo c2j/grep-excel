@@ -905,7 +905,7 @@ impl DuckDbEngine {
             .ok_or_else(|| anyhow::anyhow!("Invalid file path encoding"))?;
 
         let create_sql = format!(
-            "CREATE TABLE {} AS SELECT * FROM read_csv_auto('{}', header=true, all_varchar=true)",
+            "CREATE TABLE {} AS SELECT * FROM read_csv_auto('{}', header=true, all_varchar=true, ignore_errors=true)",
             quote_ident(&table_name),
             path_str.replace('\'', "''")
         );

@@ -14,7 +14,7 @@ export async function importFileDialog(): Promise<FileInfo | null> {
   const selected = await open({
     multiple: false,
     filters: [
-      { name: "Spreadsheets", extensions: ["xlsx", "xls", "xlsm", "xlsb", "ods", "csv"] },
+      { name: "Spreadsheets & WDR Reports", extensions: ["xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "html", "htm"] },
     ],
   });
   if (!selected || typeof selected !== "string") {

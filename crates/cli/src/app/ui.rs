@@ -84,16 +84,22 @@ impl App {
         let all_count = self.results.len();
         let mut tab_titles = vec![crate::i18n::tab_all(all_count)];
 
-        let mut sheet_names: Vec<_> = self.results_by_sheet.keys().cloned().collect();
-        sheet_names.sort();
+        let sheet_keys = self.get_ordered_sheet_list();
 
-        for sheet_name in &sheet_names {
+        for sheet_key in &sheet_keys {
             let count = self
                 .results_by_sheet
-                .get(sheet_name)
+                .get(sheet_key)
                 .map(|v: &Vec<SearchResult>| v.len())
                 .unwrap_or(0);
-            tab_titles.push(format!("{}({})", sheet_name, count));
+            let (file_name, sheet_name) = App::parse_sheet_key(sheet_key);
+            // Show "file:sheet" if multiple files, otherwise just "sheet"
+            let label = if self.file_list.len() > 1 {
+                format!("{}:{}", file_name, sheet_name)
+            } else {
+                sheet_name.to_string()
+            };
+            tab_titles.push(format!("{}({})", label, count));
         }
 
         let mut spans: Vec<Span> = Vec::new();
@@ -733,8 +739,8 @@ impl App {
     }
 
     fn draw_flat_results(&mut self, frame: &mut Frame, area: Rect) {
-        let sheet_names = self.get_sorted_sheet_names();
-        if sheet_names.is_empty() {
+        let sheet_keys = self.get_ordered_sheet_list();
+        if sheet_keys.is_empty() {
             return;
         }
 
@@ -746,7 +752,7 @@ impl App {
         let max_y = inner.y + inner.height;
         let selected_sheet = self.flat_selected_sheet;
 
-        for (sheet_idx, sheet_name) in sheet_names.iter().enumerate() {
+        for (sheet_idx, sheet_key) in sheet_keys.iter().enumerate() {
             if current_y >= max_y {
                 break;
             }
@@ -754,9 +760,16 @@ impl App {
             let is_selected = sheet_idx == selected_sheet;
             let results: Vec<SearchResult> = self
                 .results_by_sheet
-                .get(sheet_name)
+                .get(sheet_key)
                 .unwrap()
                 .clone();
+
+            let (file_name, sheet_name) = App::parse_sheet_key(sheet_key);
+            let display_name = if self.file_list.len() > 1 {
+                format!("{}:{}", file_name, sheet_name)
+            } else {
+                sheet_name.to_string()
+            };
 
             if is_selected {
                 let available_height = max_y.saturating_sub(current_y);
@@ -771,7 +784,7 @@ impl App {
                     height: available_height.min(inner.height),
                 };
 
-                self.draw_sheet_block(frame, sheet_area, sheet_name, &results, true);
+                self.draw_sheet_block(frame, sheet_area, sheet_key, &display_name, &results, true);
                 break;
             } else {
                 let collapsed_height = 1u16;
@@ -786,7 +799,7 @@ impl App {
                     height: collapsed_height,
                 };
 
-                let text = format!("▶ {} ({})", sheet_name, results.len());
+                let text = format!("▶ {} ({})", display_name, results.len());
                 let paragraph =
                     Paragraph::new(text).style(Style::default().fg(theme().text_dim));
                 frame.render_widget(paragraph, sheet_area);
@@ -799,7 +812,8 @@ impl App {
         &mut self,
         frame: &mut Frame,
         area: Rect,
-        sheet_name: &str,
+        sheet_key: &str,
+        display_name: &str,
         results: &[SearchResult],
         is_selected: bool,
     ) {
@@ -817,7 +831,7 @@ impl App {
             });
 
         let total_cols = col_names.len();
-        let col_offset = self.get_flat_col_offset(sheet_name);
+        let col_offset = self.get_flat_col_offset(sheet_key);
 
         let col_widths: Vec<u16> = if let Some(r) = results.first() {
             if r.col_widths.is_empty() {
@@ -967,7 +981,7 @@ impl App {
         }
 
         let mut title_spans = vec![Span::styled(
-            format!(" {} ", sheet_name),
+            format!(" {} ", display_name),
             Style::default().fg(theme().label).add_modifier(Modifier::BOLD),
         )];
         if col_offset > 0 {
@@ -1704,6 +1718,16 @@ impl App {
                 Span::styled("    1-9   ", key_style),
                 Span::styled("···  ", sep_style),
                 Span::styled(crate::i18n::help_nav_tab(), desc_style),
+            ]),
+            Line::from(vec![
+                Span::styled(" Ctrl←/→ ", key_style),
+                Span::styled("···  ", sep_style),
+                Span::styled(crate::i18n::help_nav_sheet_in_file(), desc_style),
+            ]),
+            Line::from(vec![
+                Span::styled(" Ctrl↑/↓ ", key_style),
+                Span::styled("···  ", sep_style),
+                Span::styled(crate::i18n::help_nav_file(), desc_style),
             ]),
             Line::from(""),
             Line::from(Span::styled(crate::i18n::help_group_search(), group_style)),

@@ -583,6 +583,27 @@ pub fn status_view_table() -> &'static str {
     match current() { Lang::Zh => "表格", Lang::En => "Table" }
 }
 
+pub fn status_flat_sheet(file: &str, sheet: &str, index: usize, total: usize) -> String {
+    match current() {
+        Lang::Zh => format!("{} / {} ({}/{})", file, sheet, index, total),
+        Lang::En => format!("{} / {} ({}/{})", file, sheet, index, total),
+    }
+}
+
+pub fn help_nav_sheet_in_file() -> &'static str {
+    match current() {
+        Lang::Zh => "切换文件内 Sheet",
+        Lang::En => "Switch sheet within file",
+    }
+}
+
+pub fn help_nav_file() -> &'static str {
+    match current() {
+        Lang::Zh => "切换文件",
+        Lang::En => "Switch file",
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Help popup
 // ─────────────────────────────────────────────────────────────

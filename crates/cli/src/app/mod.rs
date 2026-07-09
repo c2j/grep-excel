@@ -42,6 +42,7 @@ pub struct App {
     pub(crate) column_input: Input,
     pub(crate) search_mode: SearchMode,
     pub(crate) results: Vec<SearchResult>,
+    /// Key is "file_name::sheet_name" to avoid collisions across files
     pub(crate) results_by_sheet: HashMap<String, Vec<SearchResult>>,
     pub(crate) stats: Option<SearchStats>,
     pub(crate) table_state: TableState,
@@ -151,19 +152,15 @@ impl App {
     }
 
     pub fn load_browse_data(&mut self) {
-        let files = {
-            let db_guard = self.database.read();
-            db_guard.0.list_files()
-        };
-        if files.is_empty() || self.browse_file_index >= files.len() {
+        if self.file_list.is_empty() || self.browse_file_index >= self.file_list.len() {
             return;
         }
-        if self.browse_sheet_index >= files[self.browse_file_index].sheets.len() {
+        if self.browse_sheet_index >= self.file_list[self.browse_file_index].sheets.len() {
             return;
         }
 
-        let file_name = files[self.browse_file_index].name.clone();
-        let sheet_name = files[self.browse_file_index].sheets[self.browse_sheet_index].0.clone();
+        let file_name = self.file_list[self.browse_file_index].name.clone();
+        let sheet_name = self.file_list[self.browse_file_index].sheets[self.browse_sheet_index].0.clone();
 
         self.browse_loading = true;
         self.status_message = crate::i18n::status_browse_loading(&file_name, &sheet_name);
@@ -300,11 +297,12 @@ impl App {
                         self.stats = Some(stats.clone());
 
                         self.results_by_sheet.clear();
-                        for result in results {
+                        for result in &results {
+                            let key = format!("{}::{}", result.file_name, result.sheet_name);
                             self.results_by_sheet
-                                .entry(result.sheet_name.clone())
+                                .entry(key)
                                 .or_insert_with(Vec::new)
-                                .push(result);
+                                .push(result.clone());
                         }
 
                         self.tab_state = 0;
@@ -435,21 +433,30 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn get_sorted_sheet_names(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.results_by_sheet.keys().cloned().collect();
-        names.sort();
-        names
+    /// Returns sheet keys ("file_name::sheet_name") in file import order,
+    /// then sheet order within each file. Only includes sheets present in results_by_sheet.
+    pub(crate) fn get_ordered_sheet_list(&self) -> Vec<String> {
+        let mut ordered = Vec::new();
+        for file in &self.file_list {
+            for (sheet_name, _) in &file.sheets {
+                let key = format!("{}::{}", file.name, sheet_name);
+                if self.results_by_sheet.contains_key(&key) {
+                    ordered.push(key);
+                }
+            }
+        }
+        ordered
     }
 
     pub(crate) fn get_flat_current_sheet_name(&self) -> Option<String> {
-        let names = self.get_sorted_sheet_names();
+        let names = self.get_ordered_sheet_list();
         names.get(self.flat_selected_sheet).cloned()
     }
 
     pub(crate) fn get_flat_current_results(&self) -> Vec<&SearchResult> {
-        if let Some(sheet_name) = self.get_flat_current_sheet_name() {
+        if let Some(sheet_key) = self.get_flat_current_sheet_name() {
             self.results_by_sheet
-                .get(&sheet_name)
+                .get(&sheet_key)
                 .map(|v| v.iter().collect())
                 .unwrap_or_default()
         } else {
@@ -461,12 +468,45 @@ impl App {
         self.tab_state == 0 && self.flat_view && self.results_by_sheet.len() > 1
     }
 
-    pub(crate) fn get_flat_col_offset(&self, sheet_name: &str) -> usize {
-        self.flat_col_offsets.get(sheet_name).copied().unwrap_or(0)
+    pub(crate) fn get_flat_col_offset(&self, sheet_key: &str) -> usize {
+        self.flat_col_offsets.get(sheet_key).copied().unwrap_or(0)
     }
 
-    pub(crate) fn set_flat_col_offset(&mut self, sheet_name: &str, offset: usize) {
-        self.flat_col_offsets.insert(sheet_name.to_string(), offset);
+    pub(crate) fn set_flat_col_offset(&mut self, sheet_key: &str, offset: usize) {
+        self.flat_col_offsets.insert(sheet_key.to_string(), offset);
+    }
+
+    /// Parse "file_name::sheet_name" into (file_name, sheet_name)
+    pub(crate) fn parse_sheet_key(key: &str) -> (&str, &str) {
+        if let Some(pos) = key.find("::") {
+            (&key[..pos], &key[pos + 2..])
+        } else {
+            ("", key)
+        }
+    }
+
+    /// Find the file index for a given sheet key in the ordered list
+    pub(crate) fn find_file_for_sheet_key(&self, sheet_key: &str) -> Option<usize> {
+        let (file_name, _) = Self::parse_sheet_key(sheet_key);
+        self.file_list.iter().position(|f| f.name == file_name)
+    }
+
+    /// Get the index range of sheets belonging to the same file as the given index
+    pub(crate) fn get_file_sheet_range(&self, index: usize) -> (usize, usize) {
+        let ordered = self.get_ordered_sheet_list();
+        if ordered.is_empty() || index >= ordered.len() {
+            return (0, 0);
+        }
+        let (file_name, _) = Self::parse_sheet_key(&ordered[index]);
+        let start = ordered.iter().position(|k| {
+            let (f, _) = Self::parse_sheet_key(k);
+            f == file_name
+        }).unwrap_or(0);
+        let end = ordered.iter().rposition(|k| {
+            let (f, _) = Self::parse_sheet_key(k);
+            f == file_name
+        }).unwrap_or(start);
+        (start, end)
     }
 
     pub(crate) fn compute_aggregate_stats(&self) -> Option<crate::types::AggregateStats> {
