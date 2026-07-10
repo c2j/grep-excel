@@ -383,14 +383,145 @@ fn extract_table_from_section(section: &Section) -> Option<TableData> {
     })
 }
 
+/// Attempt to detect a table in a section by analyzing column alignment,
+/// for sections that have a tilde underline but NO dash-separator line.
+/// This handles Pattern C from AWR reports (e.g., Host CPU, Instance CPU).
+fn detect_table_by_alignment(section: &Section) -> Option<TableData> {
+    let body_lines: Vec<&str> = section.body.iter().map(|s| s.as_str()).collect();
+    if body_lines.len() < 2 {
+        return None;
+    }
+
+    // Filter out blank lines
+    let non_blank: Vec<&str> = body_lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .copied()
+        .collect();
+
+    if non_blank.len() < 3 {
+        return None;
+    }
+
+    // Parse each line into (token_count, token_start_positions)
+    struct LineTokens {
+        count: usize,
+        positions: Vec<usize>,
+    }
+
+    let parsed: Vec<LineTokens> = non_blank
+        .iter()
+        .map(|line| {
+            let mut tokens = Vec::new();
+            let mut chars = line.char_indices().peekable();
+            while let Some(&(pos, c)) = chars.peek() {
+                if c.is_whitespace() {
+                    chars.next();
+                } else {
+                    tokens.push(pos);
+                    // Skip to end of this token
+                    while let Some(&(_, c2)) = chars.peek() {
+                        if c2.is_whitespace() {
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+            }
+            LineTokens {
+                count: tokens.len(),
+                positions: tokens,
+            }
+        })
+        .collect();
+
+    if parsed.is_empty() {
+        return None;
+    }
+
+    // Find the most common token count (mode)
+    let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for pt in &parsed {
+        *counts.entry(pt.count).or_insert(0) += 1;
+    }
+    let best_count = counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
+        .map(|(col, _)| col)
+        .unwrap_or(0);
+
+    if best_count < 2 {
+        return None;
+    }
+
+    // Filter lines matching the best token count
+    let matching: Vec<&LineTokens> = parsed.iter().filter(|pt| pt.count == best_count).collect();
+    if matching.len() < 3 {
+        return None;
+    }
+
+    // Compute median start position for each column index
+    let mut boundaries: Vec<(usize, usize)> = Vec::new();
+    for col in 0..best_count {
+        let mut positions: Vec<usize> =
+            matching.iter().filter_map(|pt| pt.positions.get(col)).copied().collect();
+        if positions.is_empty() {
+            return None;
+        }
+        positions.sort();
+        let median = positions[positions.len() / 2];
+        let end = if col + 1 < best_count {
+            let mut next_positions: Vec<usize> = matching
+                .iter()
+                .filter_map(|pt| pt.positions.get(col + 1))
+                .copied()
+                .collect();
+            if next_positions.is_empty() {
+                non_blank.iter().map(|l| l.len()).max().unwrap_or(80)
+            } else {
+                next_positions.sort();
+                next_positions[next_positions.len() / 2]
+            }
+        } else {
+            non_blank.iter().map(|l| l.len()).max().unwrap_or(80)
+        };
+        boundaries.push((median, end));
+    }
+
+    if boundaries.len() < 2 {
+        return None;
+    }
+
+    // First line = header, rest = data
+    let header = split_by_boundaries(non_blank[0], &boundaries);
+    let rows: Vec<Vec<String>> = non_blank[1..]
+        .iter()
+        .map(|line| split_by_boundaries(line, &boundaries))
+        .collect();
+
+    if rows.is_empty() {
+        return None;
+    }
+
+    Some(TableData {
+        name: section.title.clone(),
+        headers: header,
+        rows,
+    })
+}
+
 /// Extract tables from a plain text file using section segmentation and
-/// dash-separator detection.
+/// dash-separator detection, with alignment-based fallback.
 pub fn extract_tables_txt(text: &str) -> Vec<TableData> {
     let (_preamble, sections) = collect_sections(text);
     let mut tables = Vec::new();
 
     for section in &sections {
+        // Primary: try dash-separator detection
         if let Some(table) = extract_table_from_section(section) {
+            tables.push(table);
+        } else if let Some(table) = detect_table_by_alignment(section) {
+            // Fallback: try alignment-based detection (Pattern C)
             tables.push(table);
         }
     }
@@ -694,5 +825,44 @@ b    2
 "#;
         let tables = extract_tables_txt(txt);
         assert_eq!(tables.len(), 2, "prose between sections should be skipped");
+    }
+
+    #[test]
+    fn test_detect_table_by_alignment_pattern_c() {
+        // Pattern C: no dash separator, header directly after tildes
+        let txt = r#"Host CPU
+~~~~~~~~
+%User  %System  %Idle
+ 45.2    12.3    32.1
+ 67.8     8.9    23.3
+"#;
+        let tables = extract_tables_txt(txt);
+        assert_eq!(tables.len(), 1, "should detect Pattern C table");
+        assert_eq!(tables[0].name, "Host CPU");
+        assert_eq!(tables[0].rows.len(), 2);
+    }
+
+    #[test]
+    fn test_detect_table_by_alignment_not_enough_rows() {
+        // Only 1 data row -> not enough for alignment detection
+        let txt = r#"Mini
+~~~~~
+A    B
+1    2
+"#;
+        let tables = extract_tables_txt(txt);
+        assert!(tables.is_empty(), "1 data row is not enough");
+    }
+
+    #[test]
+    fn test_extract_tables_txt_section_no_table() {
+        // Section with tilde but no table content at all
+        let txt = r#"Empty Section
+~~~~~~~~~~~~~~~
+Just some text.
+Nothing tabular.
+"#;
+        let tables = extract_tables_txt(txt);
+        assert!(tables.is_empty(), "section without table should yield nothing");
     }
 }
