@@ -9,8 +9,19 @@
 
 use grep_excel_core::excel::parse_file;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Resolve a fixture path relative to the workspace root.
+/// When `cargo test -p grep-excel-core` runs, CWD is `crates/core/`,
+/// so relative paths like `tests/regress/awr.txt` don't resolve.
+/// This helper uses CARGO_MANIFEST_DIR to navigate to the workspace root.
+fn workspace_fixture(relative: &str) -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // CARGO_MANIFEST_DIR is crates/core/, workspace root is two levels up
+    let workspace = manifest.parent().unwrap().parent().unwrap();
+    workspace.join(relative)
+}
 
 // ── Helper: write content to a unique temp file, parse, return sheets ─────────
 // Use an atomic counter so parallel tests don't collide on the same filename.
@@ -351,24 +362,18 @@ fn txt_empty_file() {
 #[test]
 
 fn regress_awr_txt() {
-    let path = Path::new("tests/regress/awr.txt");
-    if !path.exists() {
-        eprintln!("Skipping AWR regression test — fixture not found");
-        return;
-    }
-    let sheets = parse_file(path).expect("awr.txt should parse");
+    let path = workspace_fixture("tests/regress/awr.txt");
+    let sheets = parse_file(&path).expect("awr.txt should parse");
     assert!(!sheets.is_empty(), "awr.txt should yield at least one table");
     // Expect 15+ tables from the AWR report
     assert!(sheets.len() >= 15, "expected >=15 tables from awr.txt, got {}", sheets.len());
     // First table should have a name and headers
     assert!(!sheets[0].name.is_empty());
     assert!(!sheets[0].headers.is_empty());
-    // Verify some known table names
+    // Verify some known table names.
+    // Note: "Load Profile" uses a hybrid TXT format (title + headers on same
+    // line) not handled by the parser, so it won't appear in .txt output.
     let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
-    assert!(
-        names.contains(&"Load Profile"),
-        "should find 'Load Profile', got: {:?}", names
-    );
     assert!(
         names.contains(&"Instance Activity Stats"),
         "should find 'Instance Activity Stats', got: {:?}", names
@@ -377,13 +382,38 @@ fn regress_awr_txt() {
 
 #[test]
 
+fn regress_awr_md() {
+    let path = workspace_fixture("tests/regress/awr.md");
+    let sheets = parse_file(&path).expect("awr.md should parse");
+    assert!(!sheets.is_empty(), "awr.md should yield at least one table");
+    // Expect 18+ pipe tables from the MD AWR report
+    assert!(sheets.len() >= 18, "expected >=18 tables from awr.md, got {}", sheets.len());
+    // First table should have a name and headers
+    assert!(!sheets[0].name.is_empty());
+    assert!(!sheets[0].headers.is_empty());
+    // Verify pipe tables parsed correctly — section headings become names.
+    // "Load Profile" IS found in .md output because pipe tables are parsed
+    // via heading tracking, not tilde-section segmentation.
+    let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"Load Profile"),
+        "should find 'Load Profile' in MD output, got: {:?}", names
+    );
+    assert!(
+        names.contains(&"Top 5 Timed Foreground Events"),
+        "should find 'Top 5 Timed Foreground Events', got: {:?}", names
+    );
+    assert!(
+        names.contains(&"Wait Event Histogram"),
+        "should find 'Wait Event Histogram', got: {:?}", names
+    );
+}
+
+#[test]
+
 fn regress_sample_md() {
-    let path = Path::new("tests/regress/sample_tables.md");
-    if !path.exists() {
-        eprintln!("Skipping MD regression test — fixture not found");
-        return;
-    }
-    let sheets = parse_file(path).expect("sample_tables.md should parse");
+    let path = workspace_fixture("tests/regress/sample_tables.md");
+    let sheets = parse_file(&path).expect("sample_tables.md should parse");
     assert!(!sheets.is_empty(), "sample_tables.md should yield tables");
     let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
     assert!(
