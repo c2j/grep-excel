@@ -298,12 +298,13 @@ fn split_by_boundaries(line: &str, boundaries: &[(usize, usize)]) -> Vec<String>
             } else {
                 line_len
             };
-            if line_len > start {
-                let slice = &line[start..std::cmp::min(line_len, end)];
-                slice.trim().to_string()
-            } else {
-                String::new()
-            }
+            let end = std::cmp::min(line_len, end);
+            // Use str::get() instead of indexing [] to avoid panicking when
+            // byte offsets fall inside multi-byte UTF-8 characters (e.g.
+            // Chinese commas in AWR reports).
+            line.get(start..end)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default()
         })
         .collect()
 }
