@@ -42,7 +42,7 @@ export function ResultsTable({ results, stats, columnsBySheet }: Props) {
   }
 
   const colNames = columnsBySheet[results[0].sheet_name]?.col_names ?? [];
-  const colCount = colNames.length + 2;
+  const colCount = colNames.length + 1;
   const durationMs = stats ? Math.round(stats.search_duration.secs * 1000 + stats.search_duration.nanos / 1e6) : 0;
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -72,12 +72,6 @@ export function ResultsTable({ results, stats, columnsBySheet }: Props) {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200">
-              <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
-                {t("files.title").replace("已导入", "").replace("Imported ", "")}
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
-                {t("search.sheet")}
-              </th>
               {colNames.map((col, i) => (
                 <th
                   key={i}
@@ -86,6 +80,9 @@ export function ResultsTable({ results, stats, columnsBySheet }: Props) {
                   {col}
                 </th>
               ))}
+              <th className="px-3 py-2 text-left font-medium text-gray-400 whitespace-nowrap">
+                {t("search.source")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -98,12 +95,6 @@ export function ResultsTable({ results, stats, columnsBySheet }: Props) {
               const resultCols = columnsBySheet[result.sheet_name]?.col_names ?? colNames;
               return (
                 <tr key={startIndex + idx} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap text-xs">
-                    {result.file_name}
-                  </td>
-                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap text-xs">
-                    {result.sheet_name}
-                  </td>
                   {resultCols.map((_, colIdx) => {
                     const value = result.row[colIdx] ?? "";
                     const isMatched = result.matched_columns.includes(colIdx);
@@ -120,6 +111,12 @@ export function ResultsTable({ results, stats, columnsBySheet }: Props) {
                       </td>
                     );
                   })}
+                  <td
+                    className="px-3 py-2 whitespace-nowrap text-xs text-gray-400 max-w-[140px] truncate"
+                    title={`${result.file_name} / ${result.sheet_name}`}
+                  >
+                    {result.file_name} · {result.sheet_name}
+                  </td>
                 </tr>
               );
             })}

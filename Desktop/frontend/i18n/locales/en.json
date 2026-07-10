@@ -22,6 +22,7 @@
     "columnAll": "All Columns",
     "sheet": "Sheet",
     "sheetAll": "All Sheets",
+    "source": "Source",
     "invert": "Invert Match",
     "results": "{{count}} matches found",
     "noResults": "No matches found",
