@@ -1,8 +1,7 @@
 //! Regression tests for text/markdown table extraction (`text_table` module).
 //!
 //! These tests exercise GFM pipe table parsing and TXT alignment-based
-//! table detection. All tests are marked `#[ignore]` until the module is
-//! implemented; remove `#[ignore]` in Task 8 after implementation is complete.
+//! table detection.
 //!
 //! Test fixtures:
 //!   - tests/regress/sample_tables.md (workspace root)
@@ -11,12 +10,17 @@
 use grep_excel_core::excel::parse_file;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-// ── Helper: write content to a temp file, parse, return sheets ───────────────
+// ── Helper: write content to a unique temp file, parse, return sheets ─────────
+// Use an atomic counter so parallel tests don't collide on the same filename.
+
+static TMP_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn parse_text_content(content: &str, ext: &str) -> Vec<grep_excel_core::excel::SheetData> {
     let dir = std::env::temp_dir();
-    let path = dir.join(format!("test_text_table.{}", ext));
+    let id = TMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let path = dir.join(format!("test_text_table_{}.{}", id, ext));
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(content.as_bytes()).unwrap();
     let result = parse_file(&path);
@@ -29,7 +33,7 @@ fn parse_text_content(content: &str, ext: &str) -> Vec<grep_excel_core::excel::S
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore]
+
 fn md_basic_pipe_table() {
     let md = r#"| Name | Age | City |
 |---|---|---|
@@ -45,7 +49,7 @@ fn md_basic_pipe_table() {
 }
 
 #[test]
-#[ignore]
+
 fn md_alignment_colons() {
     let md = r#"| Left | Center | Right |
 |:-----|:------:|------:|
@@ -59,7 +63,7 @@ fn md_alignment_colons() {
 }
 
 #[test]
-#[ignore]
+
 fn md_no_separator_line() {
     let md = r#"| H1 | H2 |
 | A | B |
@@ -72,7 +76,7 @@ fn md_no_separator_line() {
 }
 
 #[test]
-#[ignore]
+
 fn md_empty_cells() {
     let md = r#"| Col1 | Col2 | Col3 |
 |---|---|---|
@@ -86,7 +90,7 @@ fn md_empty_cells() {
 }
 
 #[test]
-#[ignore]
+
 fn md_single_column() {
     let md = r#"| X |
 |---|
@@ -100,7 +104,7 @@ fn md_single_column() {
 }
 
 #[test]
-#[ignore]
+
 fn md_multiple_tables_no_gap() {
     let md = r#"| A | B |
 |---|---|
@@ -117,7 +121,7 @@ fn md_multiple_tables_no_gap() {
 }
 
 #[test]
-#[ignore]
+
 fn md_section_heading_as_name() {
     let md = r#"## Performance Metrics
 
@@ -131,7 +135,7 @@ fn md_section_heading_as_name() {
 }
 
 #[test]
-#[ignore]
+
 fn md_multiple_sections_multiple_tables() {
     let md = r#"## Section One
 
@@ -152,7 +156,7 @@ fn md_multiple_sections_multiple_tables() {
 }
 
 #[test]
-#[ignore]
+
 fn md_code_block_skips_tables() {
     let md = r#"```markdown
 | This | Should | Not |
@@ -170,7 +174,7 @@ fn md_code_block_skips_tables() {
 }
 
 #[test]
-#[ignore]
+
 fn md_ragged_columns() {
     let md = r#"| H1 | H2 | H3 |
 |---|---|---|
@@ -187,7 +191,7 @@ fn md_ragged_columns() {
 }
 
 #[test]
-#[ignore]
+
 fn md_no_tables() {
     let md = r#"This is just a paragraph.
 No tables here at all.
@@ -197,14 +201,14 @@ No tables here at all.
 }
 
 #[test]
-#[ignore]
+
 fn md_empty_file() {
     let sheets = parse_text_content("", "md");
     assert!(sheets.is_empty(), "empty file -> empty result");
 }
 
 #[test]
-#[ignore]
+
 fn md_pipe_trims() {
     let md = r#"| X | Y | Z |
 |---|---|---|
@@ -216,7 +220,7 @@ fn md_pipe_trims() {
 }
 
 #[test]
-#[ignore]
+
 fn md_data_rows_without_separator() {
     let md = r#"| a | b |
 | c | d |
@@ -228,7 +232,7 @@ fn md_data_rows_without_separator() {
 }
 
 #[test]
-#[ignore]
+
 fn md_no_trailing_newline() {
     let md = "| H |\n|---|\n| v |";
     let sheets = parse_text_content(md, "md");
@@ -242,7 +246,7 @@ fn md_no_trailing_newline() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore]
+
 fn txt_standard_section() {
     let txt = r#"Load Profile
 ~~~~~~~~~~~~
@@ -260,7 +264,7 @@ CPU Time(s)    2.3
 }
 
 #[test]
-#[ignore]
+
 fn txt_multi_section_multi_table() {
     let txt = r#"Section One
 ~~~~~~~~~~~
@@ -282,7 +286,7 @@ a        b        c
 }
 
 #[test]
-#[ignore]
+
 fn txt_no_dash_separator() {
     let txt = r#"Host CPU
 ~~~~~~~~
@@ -298,7 +302,7 @@ fn txt_no_dash_separator() {
 }
 
 #[test]
-#[ignore]
+
 fn txt_mixed_prose_and_tables() {
     let txt = r#"Some introductory text that is not a table.
 
@@ -323,7 +327,7 @@ b    2
 }
 
 #[test]
-#[ignore]
+
 fn txt_no_tables() {
     let txt = r#"This is a plain text file.
 There are no tables here.
@@ -334,7 +338,7 @@ Just paragraphs of text.
 }
 
 #[test]
-#[ignore]
+
 fn txt_empty_file() {
     let sheets = parse_text_content("", "txt");
     assert!(sheets.is_empty(), "empty file -> empty result");
@@ -345,7 +349,7 @@ fn txt_empty_file() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore]
+
 fn regress_awr_txt() {
     let path = Path::new("tests/regress/awr.txt");
     if !path.exists() {
@@ -372,7 +376,7 @@ fn regress_awr_txt() {
 }
 
 #[test]
-#[ignore]
+
 fn regress_sample_md() {
     let path = Path::new("tests/regress/sample_tables.md");
     if !path.exists() {
@@ -397,7 +401,7 @@ fn regress_sample_md() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore]
+
 fn txt_extension_supported() {
     let content = "Title\n~~~~~\nK    V\n-    -\na    1\n";
     let sheets = parse_text_content(content, "txt");
@@ -405,7 +409,7 @@ fn txt_extension_supported() {
 }
 
 #[test]
-#[ignore]
+
 fn md_extension_supported() {
     let content = "| H |\n|---|---|\n| v |\n";
     let sheets = parse_text_content(content, "md");

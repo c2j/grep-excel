@@ -84,6 +84,40 @@ pub fn extract_tables_md(text: &str) -> Vec<TableData> {
             continue;
         }
 
+        // Fallback: consecutative pipe lines without separator — treat as
+        // header-first table (first row = headers, rest = data rows).
+        if is_pipe_line(line)
+            && i + 1 < lines.len()
+            && is_pipe_line(lines[i + 1])
+            && !is_pipe_separator(lines[i + 1])
+        {
+            let mut table_rows: Vec<Vec<String>> = Vec::new();
+            while i < lines.len() {
+                let data_line = lines[i];
+                if data_line.trim().is_empty() || !is_pipe_line(data_line) {
+                    break;
+                }
+                table_rows.push(parse_pipe_row(data_line));
+                i += 1;
+            }
+
+            if table_rows.is_empty() {
+                continue;
+            }
+
+            let headers = table_rows.remove(0);
+            let name = current_heading
+                .clone()
+                .unwrap_or_else(|| format!("Table_{}", tables.len() + 1));
+
+            tables.push(TableData {
+                name,
+                headers,
+                rows: table_rows,
+            });
+            continue;
+        }
+
         i += 1;
     }
 
@@ -652,12 +686,14 @@ mod tests {
 
     #[test]
     fn test_md_no_separator_line() {
-        // Without separator line, no table should be detected
+        // Without separator line, first pipe line is header, rest are data
         let md = r#"| H1 | H2 |
 | A | B |
 "#;
         let tables = extract_tables_md(md);
-        assert!(tables.is_empty(), "separator-less pipe lines should not parse as table");
+        assert_eq!(tables.len(), 1, "separator-less pipe lines should parse as header+data");
+        assert_eq!(tables[0].headers, vec!["H1", "H2"]);
+        assert_eq!(tables[0].rows[0], vec!["A", "B"]);
     }
 
     #[test]
