@@ -540,6 +540,13 @@ fn detect_table_by_alignment(section: &Section) -> Option<TableData> {
         return None;
     }
 
+    // Reject tables where the "header" line contains numeric values — these
+    // are key-value pair layouts (e.g. "Instance Efficiency Percentages")
+    // being misidentified as multi-column tables by the alignment heuristic.
+    if header.iter().any(|c| c.trim().parse::<f64>().is_ok()) {
+        return None;
+    }
+
     Some(TableData {
         name: section.title.clone(),
         headers: header,

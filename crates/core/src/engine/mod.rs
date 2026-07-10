@@ -154,6 +154,8 @@ pub fn export_results_csv(results: &[SearchResult], path: &Path) -> Result<()> {
 }
 
 pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
+    // Use lowercased keys for dedup since SQL engines (DuckDB, SQLite, etc.)
+    // treat column names case-insensitively.
     let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
     headers
         .iter()
@@ -163,13 +165,15 @@ pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
             } else {
                 h.clone()
             };
-            if used.insert(base.clone()) {
+            let base_lower = base.to_lowercase();
+            if used.insert(base_lower) {
                 return base;
             }
             let mut counter = 2;
             loop {
                 let candidate = format!("{}_{}", base, counter);
-                if used.insert(candidate.clone()) {
+                let candidate_lower = candidate.to_lowercase();
+                if used.insert(candidate_lower) {
                     return candidate;
                 }
                 counter += 1;
