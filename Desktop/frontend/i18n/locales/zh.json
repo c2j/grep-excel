@@ -22,6 +22,7 @@
     "columnAll": "所有列",
     "sheet": "工作表",
     "sheetAll": "所有工作表",
+    "source": "来源",
     "invert": "反向匹配",
     "results": "找到 {{count}} 个匹配结果",
     "noResults": "未找到匹配结果",

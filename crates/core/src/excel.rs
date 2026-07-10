@@ -14,6 +14,8 @@ pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
         parse_csv(path)
     } else if ext == "html" || ext == "htm" {
         parse_html(path)
+    } else if ext == "txt" || ext == "md" || ext == "markdown" {
+        parse_text(path)
     } else {
         parse_excel(path)
     }
@@ -26,6 +28,25 @@ fn parse_html(path: &Path) -> Result<Vec<SheetData>> {
         .map_err(|e| anyhow::anyhow!("Failed to read HTML file '{}': {}", path.display(), e))?;
     let tables = html_table::extract_tables(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse HTML file '{}': {}", path.display(), e))?;
+
+    Ok(tables
+        .into_iter()
+        .map(|t| SheetData {
+            name: t.name,
+            headers: t.headers,
+            rows: t.rows,
+            col_widths: Vec::new(),
+        })
+        .collect())
+}
+
+fn parse_text(path: &Path) -> Result<Vec<SheetData>> {
+    use crate::text_table;
+
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read text file '{}': {}", path.display(), e))?;
+    let tables = text_table::extract_tables(path, &content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse text file '{}': {}", path.display(), e))?;
 
     Ok(tables
         .into_iter()
@@ -316,6 +337,8 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         parse_csv_metadata(path)
     } else if ext == "html" || ext == "htm" {
         parse_html_metadata(path)
+    } else if ext == "txt" || ext == "md" || ext == "markdown" {
+        parse_text_metadata(path)
     } else {
         parse_excel_metadata(path)
     }
@@ -335,6 +358,18 @@ fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
             name: t.name,
             headers: t.headers,
             row_count: t.rows.len(),
+        })
+        .collect())
+}
+
+fn parse_text_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let sheets = parse_text(path)?;
+    Ok(sheets
+        .into_iter()
+        .map(|s| SheetMetadata {
+            name: s.name,
+            headers: s.headers,
+            row_count: s.rows.len(),
         })
         .collect())
 }
@@ -431,6 +466,17 @@ where
             let row_count = sheet.rows.len();
             handler(sheet, idx)?;
             info.push((format!("html_{}", idx), row_count));
+        }
+        return Ok(info);
+    }
+
+    if ext == "txt" || ext == "md" || ext == "markdown" {
+        let sheets = parse_text(path)?;
+        let mut info = Vec::new();
+        for (idx, sheet) in sheets.into_iter().enumerate() {
+            let row_count = sheet.rows.len();
+            handler(sheet, idx)?;
+            info.push((format!("text_{}", idx), row_count));
         }
         return Ok(info);
     }
@@ -607,6 +653,9 @@ pub fn parse_file_repair(path: &Path) -> Result<Vec<SheetData>> {
     if ext == "html" || ext == "htm" {
         return parse_html(path);
     }
+    if ext == "txt" || ext == "md" || ext == "markdown" {
+        return parse_text(path);
+    }
 
     parse_xlsx_repair(path)
 }
@@ -639,6 +688,16 @@ where
             let row_count = sheet.rows.len();
             handler(sheet, idx)?;
             info.push((format!("html_{}", idx), row_count));
+        }
+        return Ok(info);
+    }
+    if ext == "txt" || ext == "md" || ext == "markdown" {
+        let sheets = parse_text(path)?;
+        let mut info = Vec::new();
+        for (idx, sheet) in sheets.into_iter().enumerate() {
+            let row_count = sheet.rows.len();
+            handler(sheet, idx)?;
+            info.push((format!("text_{}", idx), row_count));
         }
         return Ok(info);
     }
