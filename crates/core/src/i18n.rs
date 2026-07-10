@@ -173,12 +173,8 @@ pub fn tab_all(count: usize) -> String {
 // Columns
 // ─────────────────────────────────────────────────────────────
 
-pub fn col_file() -> &'static str {
-    match current() { Lang::Zh => "文件", Lang::En => "File" }
-}
-
-pub fn col_sheet() -> &'static str {
-    match current() { Lang::Zh => "Sheet", Lang::En => "Sheet" }
+pub fn col_source() -> &'static str {
+    match current() { Lang::Zh => "来源", Lang::En => "Source" }
 }
 
 pub fn col_auto_name(idx: usize) -> String {

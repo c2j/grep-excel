@@ -574,7 +574,8 @@ impl App {
             vec![10; total_cols]
         };
 
-        let fixed_width: u16 = 15 + 12;
+        let show_source_col = self.tab_state == 0;
+        let fixed_width: u16 = if show_source_col { 15 } else { 0 };
         let available_width = area.width.saturating_sub(fixed_width + 4);
 
         let mut visible_count = 0usize;
@@ -603,18 +604,17 @@ impl App {
             .copied()
             .collect();
 
-        let mut header_cells: Vec<ratatui::widgets::Cell<'_>> = vec![
-            ratatui::widgets::Cell::from(crate::i18n::col_file()).style(
-                Style::default()
-                    .fg(theme().label)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            ratatui::widgets::Cell::from(crate::i18n::col_sheet()).style(
-                Style::default()
-                    .fg(theme().label)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ];
+        let mut header_cells: Vec<ratatui::widgets::Cell<'_>> = if show_source_col {
+            vec![
+                ratatui::widgets::Cell::from(crate::i18n::col_source()).style(
+                    Style::default()
+                        .fg(theme().label)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]
+        } else {
+            vec![]
+        };
         for name in &visible_col_names {
             header_cells.push(
                 ratatui::widgets::Cell::from(name.as_str()).style(
@@ -643,12 +643,13 @@ impl App {
         let rows: Vec<_> = results
             .iter()
             .map(|result| {
-                let mut cells: Vec<ratatui::widgets::Cell<'_>> = vec![
-                    ratatui::widgets::Cell::from(truncate_str(&result.file_name, 15))
-                        .style(Style::default().fg(theme().text_dim)),
-                    ratatui::widgets::Cell::from(truncate_str(&result.sheet_name, 12))
-                        .style(Style::default().fg(theme().text_dim)),
-                ];
+                let mut cells: Vec<ratatui::widgets::Cell<'_>> = if show_source_col {
+                    let source = format!("{}:{}", result.file_name, result.sheet_name);
+                    vec![ratatui::widgets::Cell::from(truncate_str(&source, 15))
+                        .style(Style::default().fg(theme().text_dim))]
+                } else {
+                    vec![]
+                };
                 for (col_idx, cell_value) in result.row.iter().enumerate() {
                     if col_idx < col_offset {
                         continue;
@@ -683,11 +684,15 @@ impl App {
             })
             .collect();
 
-        let mut constraints = vec![Constraint::Length(15), Constraint::Length(12)];
+        let mut constraints: Vec<Constraint> = if show_source_col {
+            vec![Constraint::Length(15)]
+        } else {
+            vec![]
+        };
         for &w in &visible_col_widths {
             constraints.push(Constraint::Length(w));
         }
-        if constraints.len() == 2 {
+        if constraints.is_empty() {
             constraints.push(Constraint::Min(10));
         }
 
@@ -850,8 +855,7 @@ impl App {
             vec![10; total_cols]
         };
 
-        let fixed_width: u16 = 15 + 12;
-        let available_width = area.width.saturating_sub(fixed_width + 4);
+        let available_width = area.width.saturating_sub(4);
 
         let mut visible_count = 0usize;
         let mut used_width: u16 = 0;
@@ -877,18 +881,7 @@ impl App {
             .copied()
             .collect();
 
-        let mut header_cells: Vec<ratatui::widgets::Cell<'_>> = vec![
-            ratatui::widgets::Cell::from(crate::i18n::col_file()).style(
-                Style::default()
-                    .fg(theme().label)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            ratatui::widgets::Cell::from(crate::i18n::col_sheet()).style(
-                Style::default()
-                    .fg(theme().label)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ];
+        let mut header_cells: Vec<ratatui::widgets::Cell<'_>> = vec![];
         for name in &visible_col_names {
             header_cells.push(
                 ratatui::widgets::Cell::from(name.as_str()).style(
@@ -924,12 +917,7 @@ impl App {
             .take(visible_row_count)
             .map(|(row_idx, result)| {
                 let is_highlighted = is_selected && row_idx == self.flat_row_index;
-                let mut cells: Vec<ratatui::widgets::Cell<'_>> = vec![
-                    ratatui::widgets::Cell::from(truncate_str(&result.file_name, 15))
-                        .style(Style::default().fg(theme().text_dim)),
-                    ratatui::widgets::Cell::from(truncate_str(&result.sheet_name, 12))
-                        .style(Style::default().fg(theme().text_dim)),
-                ];
+                let mut cells: Vec<ratatui::widgets::Cell<'_>> = vec![];
                 for (col_idx, cell_value) in result.row.iter().enumerate() {
                     if col_idx < col_offset {
                         continue;
@@ -972,11 +960,11 @@ impl App {
             })
             .collect();
 
-        let mut constraints = vec![Constraint::Length(15), Constraint::Length(12)];
+        let mut constraints: Vec<Constraint> = vec![];
         for &w in &visible_col_widths {
             constraints.push(Constraint::Length(w));
         }
-        if constraints.len() == 2 {
+        if constraints.is_empty() {
             constraints.push(Constraint::Min(10));
         }
 
