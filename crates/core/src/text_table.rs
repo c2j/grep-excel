@@ -1,3 +1,5 @@
+use std::path::Path;
+
 /// A single table extracted from markdown or plain text.
 /// Mirrors the sheet-level abstraction used by Excel import.
 #[derive(Debug, Clone)]
@@ -527,6 +529,31 @@ pub fn extract_tables_txt(text: &str) -> Vec<TableData> {
     }
 
     tables
+}
+
+/// Public entry point: detect file type by extension and dispatch to the
+/// appropriate parser. For .md files with no pipe tables, falls back to the
+/// TXT parser to handle markdown files with aligned text tables.
+pub fn extract_tables(path: &Path, content: &str) -> Result<Vec<TableData>, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "md" || ext == "markdown" {
+        let tables = extract_tables_md(content);
+        if tables.is_empty() {
+            // Fallback: try TXT parser — some .md files have aligned text tables
+            let txt_tables = extract_tables_txt(content);
+            if !txt_tables.is_empty() {
+                return Ok(txt_tables);
+            }
+        }
+        Ok(tables)
+    } else {
+        Ok(extract_tables_txt(content))
+    }
 }
 
 #[cfg(test)]
