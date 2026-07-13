@@ -1,10 +1,11 @@
 # grep-excel 用户手册
 
-grep-excel 是一款基于 DuckDB 的高性能 Excel/CSV 文件搜索工具，支持终端交互（TUI）、命令行（CLI）、MCP 服务器和批量执行等多种使用方式。
+grep-excel 是一款基于 DuckDB 的高性能多格式表格文件搜索工具（Excel / CSV / HTML / 文本 / Markdown），支持终端交互（TUI）、命令行（CLI）、MCP 服务器和批量执行等多种使用方式。
 
 ## 目录
 
 - [快速开始](#快速开始)
+- [支持的文件格式](#支持的文件格式)
 - [CLI 命令行模式](#cli-命令行模式)
 - [交互式 SQL REPL（-i）](#交互式-sql-repl-i)
 - [TUI 交互模式](#tui-交互模式)
@@ -56,6 +57,33 @@ cargo build --release --features full
 ```
 
 构建完成后，二进制文件位于 `target/release/grep_excel`。
+
+---
+
+## 支持的文件格式
+
+| 扩展名 | 说明 |
+|--------|------|
+| `.xlsx` / `.xls` / `.xlsm` / `.xlsb` / `.ods` | Excel / OpenDocument 电子表格 |
+| `.csv` | 逗号分隔值 |
+| `.html` / `.htm` | HTML 表格；每个 `<table>` 导入为一个 sheet；自动检测编码（UTF-8 / `<meta charset>` / CJK 回退） |
+| `.txt` | 纯文本表格（按章节、短横线分隔或列对齐启发式提取） |
+| `.md` / `.markdown` | GFM Markdown 管道表（`\| col \|`） |
+
+HTML / 文本 / Markdown 与 Excel 用法相同：
+
+```bash
+# 搜索 HTML 报告（如 openGauss WDR）
+grep_excel report.html -q "CPU"
+
+# 对 Markdown 中的表执行 SQL
+grep_excel awr.md -x "SELECT * FROM sheet_1_0 LIMIT 10"
+
+# 列出文本文件中提取到的表
+grep_excel data.txt -t
+```
+
+> 运行 `grep_excel --help` 可查看与当前版本一致的格式列表与选项说明（中英文随 `LANG` 自动切换）。
 
 ---
 
@@ -187,10 +215,26 @@ REPL 支持以下以 `.` 开头的元命令：
 |------|------|
 | `.tables` / `.schema` | 列出已导入的表及其友好别名、列名 |
 | `.files` | 列出已导入的文件 |
+| `.output <文件>` | 将后续 SQL 结果持续重定向到文件（CSV）；终端不再打印表格 |
+| `.output` | 关闭重定向，恢复终端输出 |
+| `.save <文件> [fmt]` | 将**上次** SQL 结果一次性保存到文件；`fmt` 可选 `csv`（默认）、`json`、`tsv`、`table` |
 | `.help` | 显示帮助信息 |
 | `.history` | 查看命令历史 |
 | `.clear` / `.cls` | 清屏 |
 | `.exit` / `.quit` | 退出 REPL |
+
+导出示例：
+
+```
+$ SELECT * FROM sheet_1_0 WHERE 部门 = '工程部';
+$ .save eng.csv
+$ .save eng.json json
+$ .output full.csv
+$ SELECT * FROM sheet_1_0;
+$ .output
+```
+
+> 若上次结果因终端显示限制被截断，`.save` 会提示改用 `.output <文件>` 以导出完整数据（写入文件时不做行数截断）。
 
 ### 退出方式
 
@@ -211,7 +255,7 @@ REPL 支持以下以 `.` 开头的元命令：
   共 2 行 (用时 3ms)
 ```
 
-> **提示**：REPL 单次查询最多返回 1000 行。命令历史跨会话持久保存到 `~/.local/state/grep-excel/history.txt`（macOS：`~/Library/Application Support/grep-excel/history.txt`），最多 500 条，可用上下方向键浏览过往会话的输入。传入 `--no-history` 可关闭本次会话的持久化。
+> **提示**：REPL 单次查询在终端最多显示约 1000 行；使用 `.output` 可导出完整结果。命令历史跨会话持久保存到 `~/.local/state/grep-excel/history.txt`（macOS：`~/Library/Application Support/grep-excel/history.txt`），最多 500 条，可用上下方向键浏览过往会话的输入。传入 `--no-history` 可关闭本次会话的持久化。
 
 ---
 
@@ -233,19 +277,25 @@ grep_excel data.xlsx employees.xlsx
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ GREP EXCEL                        v0.3.3        │ ← 标题栏
+│ grep-excel │ [普通] │ 2 个文件                  │ ← 标题栏
+├─────────────────────────────────────────────────┤
+│ 全部(2) │ data:员工 │ emp:Sheet1                │ ← 标签（多文件时带 file:sheet）
 ├─────────────────────────────────────────────────┤
 │ [搜索________] [全文] [列___] [聚合___]         │ ← 搜索栏
 ├─────────────────────────────────────────────────┤
-│ │ 文件  │ Sheet │ 姓名  │ 部门   │ 职位  │     │ ← 结果表格
-│ │ data  │ 员工  │ 张三  │ 工程部 │ 工程师│     │
-│ │ data  │ 员工  │ 李四  │ 工程部 │ 经理  │     │
+│ │ 来源        │ 姓名  │ 部门   │ 职位  │       │ ← 结果（全部标签用「来源」列）
+│ │ data:员工   │ 张三  │ 工程部 │ 工程师│       │
+│ │ data:员工   │ 李四  │ 工程部 │ 经理  │       │
 ├─────────────────────────────────────────────────┤
 │ 找到 2 个匹配 / 150 行, 用时 0.05s             │ ← 状态栏
 ├─────────────────────────────────────────────────┤
 │ /搜索 c列 Tab模式 o打开 ?帮助 s导出 q退出      │ ← 提示栏
 └─────────────────────────────────────────────────┘
 ```
+
+### 自动浏览（Auto-browse）
+
+带文件启动或通过 `o` 导入后，TUI **自动加载并显示首个 sheet 的数据**，无需先输入搜索词。可直接浏览、滚动，再用 `/` 搜索或 `S` 执行 SQL。
 
 ### 快捷键
 
@@ -258,18 +308,22 @@ grep_excel data.xlsx employees.xlsx
 | `g` | 跳转到顶部 |
 | `G` | 跳转到底部 |
 | `←` / `→` | 左右滚动列 |
-| `1`–`9` | 切换标签页 |
+| `H` / `L` | 左右滚动列（vim 风格） |
+| `[` / `]` | 上一个 / 下一个 Sheet（浏览模式，跨文件） |
+| `Ctrl+←` / `Ctrl+→` | 在同一文件内切换 Sheet（浏览 / 平铺 / 表格视图均可用） |
+| `Ctrl+↑` / `Ctrl+↓` | 切换文件 |
+| `1`–`9` | 切换标签页（浏览模式下跳到第 N 个 Sheet） |
 
 #### 搜索
 
 | 按键 | 功能 |
 |------|------|
-| `/` | 输入搜索关键词 |
+| `/` 或 `e` | 输入搜索关键词 |
 | `c` | 设置列过滤器 |
-| `g` | 设置聚合统计列 |
+| `a` | 设置聚合统计列 |
 | `Tab` | 循环切换搜索模式（全文 → 精确 → 通配符 → 正则） |
 | `Enter` | 执行搜索 |
-| `n` | 加载更多结果（结果被截断时） |
+| `n` | 加载更多结果（搜索截断时；浏览模式下再加载 500 行） |
 
 #### 文件与数据
 
@@ -291,7 +345,7 @@ grep_excel data.xlsx employees.xlsx
 
 | 按键 | 功能 |
 |------|------|
-| `?` | 显示帮助 |
+| `?` | 显示帮助（含 Ctrl+方向键说明） |
 | `q` | 退出 |
 
 ### SQL 查询（TUI 内）
@@ -305,12 +359,12 @@ grep_excel data.xlsx employees.xlsx
 4. 结果在表格中显示
 5. 按 `d` 清除 SQL 结果返回正常搜索模式
 
-### 平铺视图
+### 平铺视图与来源列
 
 按 `v` 可在表格视图和平铺视图之间切换。
 
-- **表格视图**：所有结果在一个表格中，按文件/工作表分组
-- **平铺视图**：每个工作表独立显示，适合数据量大的场景
+- **表格视图**：结果在表格中展示；「全部」标签使用单一 **来源** 列（`文件:sheet`），单 sheet 标签不再重复显示文件/Sheet 列
+- **平铺视图**：每个工作表独立成块，块标题含来源信息；可用 `Ctrl+方向键` 在文件/Sheet 间切换
 
 ---
 
@@ -360,7 +414,7 @@ grep_excel --mcp
 
 | 工具 | 说明 | 主要参数 |
 |------|------|----------|
-| `import_file` | 导入 Excel/CSV 文件 | `file_path` |
+| `import_file` | 导入表格文件（Excel/CSV/HTML/文本/Markdown） | `file_path` |
 | `list_files` | 列出已导入文件 | 无 |
 | `get_metadata` | 获取文件元数据（列名等） | `file_name`（可选） |
 | `get_sheet_sample` | 均匀采样行 | `file_name`, `sheet_name`, `sample_size` |
@@ -742,7 +796,7 @@ data	Sheet1	张三	工程部
 
 ### Q: 支持哪些文件格式？
 
-A: `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`。
+A: `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`、`.html`/`.htm`、`.txt`、`.md`/`.markdown`。HTML 与文本文件会自动检测编码；详见 [支持的文件格式](#支持的文件格式)。
 
 ### Q: 如何加速大文件搜索？
 
@@ -770,7 +824,11 @@ A: 支持 Windows 7 及以上版本。需要启用 ANSI 转义序列支持的终
 
 ### Q: 如何在 TUI 中执行 SQL？
 
-A: 按 `S` 进入 SQL 模式，输入查询语句后按 `Enter`。先按 `o` 查看可用的表名。
+A: 按 `S` 进入 SQL 模式，输入查询语句后按 `Enter`。先按 `o` 查看可用的表名。导入后会自动浏览首个 sheet；用 `Ctrl+←/→` 切换同文件 Sheet，`Ctrl+↑/↓` 切换文件。
+
+### Q: REPL 如何导出查询结果？
+
+A: 使用 `.save <文件> [csv|json|tsv|table]` 保存上次结果，或 `.output <文件>` 将后续查询持续写入 CSV，再用 `.output` 恢复终端输出。
 
 ### Q: --exec 和 --mcp 有什么区别？
 
