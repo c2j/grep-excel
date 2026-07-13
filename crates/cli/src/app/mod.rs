@@ -10,7 +10,7 @@ use crate::event::{AppEvent, EventReceiver, EventSender};
 use crate::types::SheetDataResult;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use ratatui::widgets::{ScrollbarState, TableState};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -54,7 +54,7 @@ pub struct App {
     pub(crate) file_list_state: ratatui::widgets::ListState,
     pub(crate) loading: bool,
     pub(crate) error_message: Option<String>,
-    pub(crate) database: Arc<RwLock<SyncDb>>,
+    pub(crate) database: Arc<Mutex<SyncDb>>,
     pub(crate) event_tx: EventSender,
     pub(crate) event_rx: EventReceiver,
     pub(crate) tick_count: usize,
@@ -84,8 +84,8 @@ pub struct App {
 
 impl App {
     pub fn new(database: DefaultEngine, event_tx: EventSender, event_rx: EventReceiver) -> Self {
-        let database = Arc::new(RwLock::new(SyncDb(database)));
-        let initial_files = database.read().0.list_files();
+        let database = Arc::new(Mutex::new(SyncDb(database)));
+        let initial_files = database.lock().0.list_files();
         let file_count = initial_files.len();
         let status = if file_count > 0 {
             crate::i18n::welcome_loaded(file_count)
@@ -170,7 +170,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = {
-                let db_guard = db.read();
+                let db_guard = db.lock();
                 db_guard.0.get_sheet_data(&file_name, &sheet_name, Some(0), Some(500), None)
             };
             let _ = tx.send(AppEvent::BrowseDataLoaded(result));
@@ -186,7 +186,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = {
-                let mut db_guard = db.write();
+                let mut db_guard = db.lock();
                 let progress_cb = |current, total| {
                     let _ = tx.send(AppEvent::Progress(current, total));
                 };
@@ -212,7 +212,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = {
-                let db_guard = db.read();
+                let db_guard = db.lock();
                 db_guard.0.execute_sql(&sql, limit)
             };
             let _ = tx.send(AppEvent::SqlCompleted(result));
@@ -249,7 +249,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = {
-                let db_guard = db.read();
+                let db_guard = db.lock();
                 db_guard.0.search(&query)
             };
             let _ = tx.send(AppEvent::SearchCompleted(result));
@@ -272,7 +272,7 @@ impl App {
                     Ok(file_info) => {
                         self.file_list.push(file_info.clone());
                         {
-                            let db_guard = self.database.read();
+                            let db_guard = self.database.lock();
                             self.table_aliases = db_guard.0.list_table_aliases();
                         }
                         self.status_message = crate::i18n::status_imported(&file_info.name);

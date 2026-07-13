@@ -115,17 +115,13 @@ impl App {
             KeyCode::Char(c @ '1'..='9') => {
                 if browsing {
                     let index = (c as usize) - ('1' as usize);
-                    let files = {
-                        let db_guard = self.database.read();
-                        db_guard.0.list_files()
-                    };
                     let mut total_sheets = 0usize;
-                    for f in &files {
+                    for f in &self.file_list {
                         total_sheets += f.sheets.len();
                     }
                     if index < total_sheets {
                         let mut remaining = index;
-                        for (fi, f) in files.iter().enumerate() {
+                        for (fi, f) in self.file_list.iter().enumerate() {
                             if remaining < f.sheets.len() {
                                 self.browse_file_index = fi;
                                 self.browse_sheet_index = remaining;
@@ -306,7 +302,7 @@ impl App {
                 self.browse_file_index = 0;
                 self.browse_sheet_index = 0;
 
-                let mut db = self.database.write();
+                let mut db = self.database.lock();
                 if db.0.clear().is_ok() {
                     self.file_list.clear();
                     self.results.clear();
@@ -356,7 +352,7 @@ impl App {
             }
             KeyCode::Char('S') => {
                 if self.table_aliases.is_empty() {
-                    let db_guard = self.database.read();
+                    let db_guard = self.database.lock();
                     self.table_aliases = db_guard.0.list_table_aliases();
                 }
                 if self.table_aliases.is_empty() {
@@ -504,6 +500,11 @@ impl App {
         use crossterm::event::KeyCode;
 
         let came_from_browse = self.results.len() == 1 && self.browse_data.is_some();
+        let browse_restore_row = if came_from_browse {
+            self.results.first().map(|r| r.row_index)
+        } else {
+            None
+        };
 
         match key.code {
             KeyCode::Enter | KeyCode::Esc => {
@@ -511,6 +512,15 @@ impl App {
                     self.results.clear();
                     self.results_by_sheet.clear();
                     self.tab_state = 0;
+                    if let Some(row_idx) = browse_restore_row {
+                        self.table_state.select(Some(row_idx));
+                        let visible = self.browse_visible_rows.max(5);
+                        if row_idx < self.browse_scroll_offset
+                            || row_idx >= self.browse_scroll_offset + visible
+                        {
+                            self.browse_scroll_offset = row_idx.saturating_sub(visible / 2);
+                        }
+                    }
                 }
                 self.mode = AppMode::Normal;
                 self.detail_scroll = 0;
@@ -730,8 +740,7 @@ impl App {
             Some(d) => d,
             None => return,
         };
-        let selected = self.table_state.selected().unwrap_or(0);
-        let row_idx = self.browse_scroll_offset + selected;
+        let row_idx = self.table_state.selected().unwrap_or(0);
         if row_idx >= data.rows.len() {
             return;
         }
@@ -753,6 +762,7 @@ impl App {
             .insert(key, self.results.clone());
         self.tab_state = 1;
         self.detail_scroll = 0;
+        self.table_state.select(Some(0));
         self.mode = AppMode::DetailPanel;
     }
 
@@ -785,21 +795,17 @@ impl App {
     }
 
     pub(super) fn browse_next_sheet(&mut self) {
-        let files = {
-            let db_guard = self.database.read();
-            db_guard.0.list_files()
-        };
-        if files.is_empty() {
+        if self.file_list.is_empty() {
             return;
         }
-        if self.browse_file_index >= files.len() {
+        if self.browse_file_index >= self.file_list.len() {
             self.browse_file_index = 0;
             self.browse_sheet_index = 0;
         } else {
-            let sheets_in_file = files[self.browse_file_index].sheets.len();
+            let sheets_in_file = self.file_list[self.browse_file_index].sheets.len();
             if self.browse_sheet_index + 1 < sheets_in_file {
                 self.browse_sheet_index += 1;
-            } else if self.browse_file_index + 1 < files.len() {
+            } else if self.browse_file_index + 1 < self.file_list.len() {
                 self.browse_file_index += 1;
                 self.browse_sheet_index = 0;
             } else {
@@ -811,21 +817,23 @@ impl App {
     }
 
     pub(super) fn browse_prev_sheet(&mut self) {
-        let files = {
-            let db_guard = self.database.read();
-            db_guard.0.list_files()
-        };
-        if files.is_empty() {
+        if self.file_list.is_empty() {
             return;
         }
         if self.browse_sheet_index > 0 {
             self.browse_sheet_index -= 1;
         } else if self.browse_file_index > 0 {
             self.browse_file_index -= 1;
-            self.browse_sheet_index = files[self.browse_file_index].sheets.len().saturating_sub(1);
+            self.browse_sheet_index = self.file_list[self.browse_file_index]
+                .sheets
+                .len()
+                .saturating_sub(1);
         } else {
-            self.browse_file_index = files.len().saturating_sub(1);
-            self.browse_sheet_index = files[self.browse_file_index].sheets.len().saturating_sub(1);
+            self.browse_file_index = self.file_list.len().saturating_sub(1);
+            self.browse_sheet_index = self.file_list[self.browse_file_index]
+                .sheets
+                .len()
+                .saturating_sub(1);
         }
         self.load_browse_data();
     }
@@ -848,7 +856,7 @@ impl App {
 
             std::thread::spawn(move || {
                 let result = {
-                    let db_guard = db.read();
+                    let db_guard = db.lock();
                     db_guard.0.get_sheet_data(
                         &file_name,
                         &sheet_name,

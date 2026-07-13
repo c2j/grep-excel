@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
 use rmcp::tool_router;
@@ -250,7 +250,7 @@ fn parse_search_mode(mode: &str) -> SearchMode {
 
 #[derive(Clone)]
 pub struct GrepExcelServer {
-    db: Arc<RwLock<SyncDb>>,
+    db: Arc<Mutex<SyncDb>>,
     import_paths: Arc<RwLock<std::collections::HashMap<String, String>>>,
 }
 
@@ -269,7 +269,7 @@ impl GrepExcelServer {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or(file_path.clone());
         tokio::task::spawn_blocking(move || {
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard
                 .0
                 .import_excel(&path, &|_, _| {})
@@ -308,7 +308,7 @@ impl GrepExcelServer {
         let aggregate_col = params.aggregate;
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             guard
                 .0
                 .search(&query)
@@ -353,7 +353,7 @@ impl GrepExcelServer {
     pub async fn list_files(&self) -> String {
         let db = Arc::clone(&self.db);
         let result = tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             let files: Vec<McpFileInfo> = guard
                 .0
                 .list_files()
@@ -378,7 +378,7 @@ impl GrepExcelServer {
         let limit = params.limit.unwrap_or(1000);
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             guard
                 .0
                 .execute_sql(&sql, limit)
@@ -403,7 +403,7 @@ impl GrepExcelServer {
         let sheet_name = params.sheet_name.unwrap_or_else(|| "Sheet1".to_string());
         let db = Arc::clone(&self.db);
         let result: Result<String, String> = tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             let sql_result = guard.0.execute_sql(&sql, 10000)
                 .map_err(|e| format!("SQL execution failed: {}", e))?;
             if sql_result.rows.is_empty() {
@@ -427,7 +427,7 @@ impl GrepExcelServer {
     ) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             if let Some(file_name) = params.file_name {
                 guard.0.get_metadata(&file_name)
                     .map(|m| {
@@ -465,7 +465,7 @@ impl GrepExcelServer {
         let sheet_name = params.sheet_name;
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             guard.0.get_sheet_sample(&file_name, &sheet_name, sample_size)
                 .map(|r| {
                     let mcp: McpSheetData = r.into();
@@ -490,7 +490,7 @@ impl GrepExcelServer {
         let end_row = params.end_row;
         let columns = params.columns;
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             guard.0.get_sheet_data(&file_name, &sheet_name, start_row, end_row, columns.as_deref())
                 .map(|r| {
                     let mcp: McpSheetData = r.into();
@@ -513,7 +513,7 @@ impl GrepExcelServer {
         let sheet_name = params.sheet_name;
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             guard.0.get_sheet_statistics(&file_name, &sheet_name, max_top)
                 .map(|r| {
                     let mcp: McpSheetStatistics = r.into();
@@ -536,7 +536,7 @@ impl GrepExcelServer {
         let output_path = params.output_path;
         let sheet_name = params.sheet_name;
         let result: Result<String, String> = tokio::task::spawn_blocking(move || {
-            let guard = db.read();
+            let guard = db.lock();
             if let Some(ref sheet_name) = sheet_name {
                 let data = guard.0.get_sheet_data(&file_name, sheet_name, None, None, None)
                     .map_err(|e| format!("Failed to read sheet data: {}", e))?;
@@ -564,7 +564,7 @@ impl GrepExcelServer {
     ) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.update_cell(&params.file_name, &params.sheet_name, params.row, &params.column, &params.value)
                 .map(|_| format!("Updated cell at row {}, column '{}' to '{}'", params.row, params.column, params.value))
                 .map_err(|e| format!("Failed to update cell: {}", e))
@@ -584,7 +584,7 @@ impl GrepExcelServer {
                 .map(|u| (u.row, u.column, u.value))
                 .collect();
             let total = updates.len();
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.update_cells(&params.file_name, &params.sheet_name, &updates)
                 .map(|count| format!("Updated {}/{} cells", count, total))
                 .map_err(|e| format!("Failed to update cells: {}", e))
@@ -601,7 +601,7 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let count = params.rows.len();
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.insert_rows(&params.file_name, &params.sheet_name, params.start_row, params.rows)
                 .map(|_| format!("Inserted {} rows at position {}", count, params.start_row))
                 .map_err(|e| format!("Failed to insert rows: {}", e))
@@ -617,7 +617,7 @@ impl GrepExcelServer {
     ) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.delete_rows(&params.file_name, &params.sheet_name, params.start_row, params.count)
                 .map(|actual| format!("Deleted {} rows starting at row {}", actual, params.start_row))
                 .map_err(|e| format!("Failed to delete rows: {}", e))
@@ -634,7 +634,7 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let default = params.default_value.unwrap_or_default();
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.add_column(&params.file_name, &params.sheet_name, &params.column_name, &default)
                 .map(|_| format!("Added column '{}' with default value '{}'", params.column_name, default))
                 .map_err(|e| format!("Failed to add column: {}", e))
@@ -650,7 +650,7 @@ impl GrepExcelServer {
     ) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let mut guard = db.write();
+            let mut guard = db.lock();
             guard.0.rename_column(&params.file_name, &params.sheet_name, &params.old_name, &params.new_name)
                 .map(|_| format!("Renamed column '{}' to '{}'", params.old_name, params.new_name))
                 .map_err(|e| format!("Failed to rename column: {}", e))
@@ -670,7 +670,7 @@ impl GrepExcelServer {
             let original_path = import_paths.read().get(&params.file_name).cloned()
                 .ok_or_else(|| format!("Original path for '{}' not found. File may not have been imported via import_file, or path tracking lost.", params.file_name))?;
 
-            let guard = db.read();
+            let guard = db.lock();
             if let Some(ref sheet_name) = params.sheet_name {
                 let data = guard.0.get_sheet_data(&params.file_name, sheet_name, None, None, None)
                     .map_err(|e| format!("Failed to read sheet data: {}", e))?;
@@ -694,7 +694,7 @@ impl GrepExcelServer {
 
 pub async fn run_mcp_server() -> anyhow::Result<()> {
     let engine = DefaultEngine::new()?;
-    let db = Arc::new(RwLock::new(SyncDb(engine)));
+    let db = Arc::new(Mutex::new(SyncDb(engine)));
     let import_paths = Arc::new(RwLock::new(std::collections::HashMap::new()));
     let server = GrepExcelServer { db, import_paths };
     let service = server.serve(rmcp::transport::stdio()).await?;
