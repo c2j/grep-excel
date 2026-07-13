@@ -60,6 +60,8 @@ grep-excel 采用分层架构，核心抽象是 `SearchEngine` trait：
 | `ratatui` + `crossterm` | 终端 UI 框架 |
 | `calamine` | Excel 文件解析（xlsx, xls, xlsb, ods） |
 | `csv` | CSV 文件解析 |
+| `scraper` | HTML DOM 解析，提取 `<table>`（`html_table` 模块） |
+| `encoding_rs` | HTML/文本非 UTF-8 编码解码（`read_file_auto_encoding`） |
 | `duckdb` (可选) | DuckDB 数据库引擎 |
 | `rusqlite` (可选) | SQLite 数据库引擎 |
 | `rmcp` (可选) | MCP 协议服务器实现 |
@@ -68,6 +70,15 @@ grep-excel 采用分层架构，核心抽象是 `SearchEngine` trait：
 | `regex` | 正则表达式匹配 |
 | `serde` + `serde_json` | 序列化/反序列化 |
 | `schemars` (可选) | JSON Schema 生成（用于 MCP 工具描述） |
+
+### 文件导入管线（`crates/core`）
+
+| 模块 | 职责 |
+|------|------|
+| `excel.rs` | 按扩展名分发：`csv` → CSV；`html`/`htm` → `html_table`；`txt`/`md`/`markdown` → `text_table`；其余 → calamine Excel |
+| `html_table.rs` | 从 HTML 提取全部 `<table>`，表名来自 id/caption/前置标题 |
+| `text_table.rs` | Markdown 管道表、短横线分隔表、对齐启发式表 |
+| `excel::read_file_auto_encoding` | UTF-8 → HTML meta charset → CJK 常见编码 → lossy UTF-8 |
 
 ---
 
