@@ -759,9 +759,9 @@ pub fn help_full_text() -> String {
             let version = env!("CARGO_PKG_VERSION");
             format!(
                  "grep_excel {version}\n\n\
-                 基于 DuckDB 的 Excel/CSV 文件搜索 TUI 工具\n\n\
-                  用法: grep_excel [FILES...] [OPTIONS]\n\n\
-                   选项:\n\
+                 基于 DuckDB 的多格式表格文件搜索 TUI 工具\n\n\
+                   用法: grep_excel [FILES...] [OPTIONS]\n\n\
+                    选项:\n\
                                       -i, --interactive        进入交互式 SQL REPL ($ 提示符, 历史浏览, 多行)\n\
                                           --no-history         禁用跨会话 SQL 历史持久化 (默认保存)\n\
                                      -q, --query <QUERY>      搜索查询字符串\n\
@@ -782,6 +782,11 @@ pub fn help_full_text() -> String {
                                       -r, --repair             导入前尝试修复损坏的 xlsx 文件\n\
                                       -h, --help               显示帮助信息\n\
                                       -V, --version            显示版本号\n\n\
+                 支持的文件格式:\n\
+                   .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel/电子表格)\n\
+                   .csv   .tsv                          (逗号/制表符分隔)\n\
+                   .html  .htm                         (HTML 表格, 自动检测编码)\n\
+                   .txt   .md   .markdown              (文本/Markdown 表格)\n\n\
                  搜索模式:\n\n\
                  \x1b[1mfulltext\x1b[0m (默认)\n\
                  \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
@@ -802,32 +807,32 @@ pub fn help_full_text() -> String {
                  支持完整的 Rust 正则语法。\n\
                  \x1b[2m示例: --query \"张三|李四\" --mode regex  → 匹配包含任一关键词的单元格\x1b[0m\n\
                  \x1b[2m示例: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → 匹配日期格式\x1b[0m\n\n\
-                  \x1b[1m提示:\x1b[0m\n\
-                  • 使用 --column 限定搜索范围到指定列名\n\
-                  • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
-                  • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
-                  • 使用 --list-tables 查看文件到表名的映射关系\n\
-                  • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
-                   • 不带 --query 运行将启动交互式 TUI 模式\n\
-                   • 使用 --run <命令> 对每个匹配行执行 Shell 命令 (用 ${{列名}} 引用单元格)\n\
-                   • 使用 --exec 执行 MCP 工具命令: 单条 '{{\"tool\":\"search\",\"params\":{{\"query\":\"关键词\"}}}}' 或数组 '[{{...}},{{...}}]'\n\
-                   • 使用 --run --help 或 --exec --help 查看详细用法\n"
+                   \x1b[1m提示:\x1b[0m\n\
+                   • 使用 --column 限定搜索范围到指定列名\n\
+                   • 组合 --query 和 --mode 进行 CLI 一次性搜索\n\
+                   • 使用 --aggregate <列名> 对匹配结果按指定列做值分布统计\n\
+                   • 使用 --list-tables 查看文件到表名的映射关系\n\
+                   • SQL 查询支持友好表名: 文件名.工作表名 (如 employees.Sheet1)\n\
+                    • 不带 --query 运行将启动交互式 TUI 模式\n\
+                    • 使用 --run <命令> 对每个匹配行执行 Shell 命令 (用 ${{列名}} 引用单元格)\n\
+                    • 使用 --exec 执行 MCP 工具命令: 单条 '{{\"tool\":\"search\",\"params\":{{\"query\":\"关键词\"}}}}' 或数组 '[{{...}},{{...}}]'\n\
+                    • 使用 --run --help 或 --exec --help 查看详细用法\n"
             )
         }
         Lang::En => {
             let version = env!("CARGO_PKG_VERSION");
             format!(
                  "grep_excel {version}\n\n\
-                 TUI tool for searching Excel/CSV files with DuckDB-powered performance.\n\n\
-                  Usage: grep_excel [FILES...] [OPTIONS]\n\n\
-                   Options:\n\
+                 TUI tool for searching tabular data files with DuckDB-powered performance.\n\n\
+                   Usage: grep_excel [FILES...] [OPTIONS]\n\n\
+                    Options:\n\
                                       -i, --interactive        Enter interactive SQL REPL ($ prompt, history, multi-line)\n\
                                           --no-history         Disable persistent SQL history across sessions (on by default)\n\
                                      -q, --query <QUERY>      Search query string\n\
                                      -c, --column <COLUMN>    Filter to a specific column name\n\
                                      -s, --sheet <SHEET>      Filter to a specific sheet name\n\
                                      -m, --mode <MODE>        Search mode [default: fulltext]\n\
-                                              Choices: fulltext, exact, wildcard, regex\n\
+                                               Choices: fulltext, exact, wildcard, regex\n\
                                      -v, --invert             Invert match: show non-matching rows\n\
                                      -e, --export <PATH>      Export search results to a CSV file\n\
                                       -x, --sql <QUERY>        Execute a SQL SELECT query\n\
@@ -836,11 +841,16 @@ pub fn help_full_text() -> String {
                                       -g, --aggregate <COL>    Aggregate column: count distinct values in matched rows\n\
                                        -E, --exec <JSON>        Execute MCP tool command(s) as JSON\n\
                                       -X, --run <CMD>          Run a shell command for each matching row (${{col}} placeholders)\n\
-                                           --run-output-column <COL>   --run mode: write command stdout to this column\n\
-                                           --mcp              Start MCP Server mode (stdio)\n\
+                                            --run-output-column <COL>   --run mode: write command stdout to this column\n\
+                                            --mcp              Start MCP Server mode (stdio)\n\
                                       -r, --repair             Try to repair damaged xlsx files before importing\n\
                                       -h, --help               Show help information\n\
                                       -V, --version            Show version\n\n\
+                 Supported Formats:\n\
+                   .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel / Spreadsheets)\n\
+                   .csv   .tsv                         (Comma / Tab-separated)\n\
+                   .html  .htm                        (HTML tables, auto-detect encoding)\n\
+                   .txt   .md   .markdown             (Text / Markdown tables)\n\n\
                  Search Modes:\n\n\
                  \x1b[1mfulltext\x1b[0m (default)\n\
                  \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\
@@ -861,16 +871,16 @@ pub fn help_full_text() -> String {
                  keywords. Supports full Rust regex syntax.\n\
                  \x1b[2mExample: --query \"foo|bar\" --mode regex  → matches cells containing either keyword\x1b[0m\n\
                  \x1b[2mExample: --query \"\\d{{4}}-\\d{{2}}-\\d{{2}}\" --mode regex  → matches date patterns\x1b[0m\n\n\
-                  \x1b[1mTips:\x1b[0m\n\
-                  • Use --column to restrict search to a specific column name\n\
-                  • Combine --query and --mode for CLI one-shot search\n\
-                  • Use --aggregate <column> to count distinct values in matched rows\n\
-                  • Use --list-tables to see file-to-table name mapping\n\
-                  • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
-                   • Run without --query to launch interactive TUI mode\n\
-                   • Use --run <cmd> to run a shell command per matching row (use ${{col}} for cell values)\n\
-                   • Use --exec to run MCP tools: single '{{\"tool\":\"search\",\"params\":{{\"query\":\"term\"}}}}' or array '[{{...}},{{...}}]'\n\
-                   • Use --run --help or --exec --help for detailed usage\n"
+                   \x1b[1mTips:\x1b[0m\n\
+                   • Use --column to restrict search to a specific column name\n\
+                   • Combine --query and --mode for CLI one-shot search\n\
+                   • Use --aggregate <column> to count distinct values in matched rows\n\
+                   • Use --list-tables to see file-to-table name mapping\n\
+                   • SQL queries support friendly names: filename.sheetname (e.g. employees.Sheet1)\n\
+                    • Run without --query to launch interactive TUI mode\n\
+                    • Use --run <cmd> to run a shell command per matching row (use ${{col}} for cell values)\n\
+                    • Use --exec to run MCP tools: single '{{\"tool\":\"search\",\"params\":{{\"query\":\"term\"}}}}' or array '[{{...}},{{...}}]'\n\
+                    • Use --run --help or --exec --help for detailed usage\n"
             )
         }
     }
