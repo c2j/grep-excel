@@ -256,7 +256,7 @@ pub struct GrepExcelServer {
 
 #[tool_router(server_handler)]
 impl GrepExcelServer {
-    #[tool(description = "Import an Excel or CSV file for searching. Supports xlsx, xls, xlsm, xlsb, ods, and csv formats.")]
+    #[tool(description = "Import an Excel or CSV file for searching. Supports xlsx, xls, xlsm, xlsb, ods, csv, html/htm, txt, and md/markdown formats.")]
     pub async fn import_file(
         &self,
         Parameters(params): Parameters<ImportFileParams>,

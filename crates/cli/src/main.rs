@@ -87,7 +87,7 @@ struct Args {
         long,
         default_value = "markdown",
         value_parser = ["markdown", "pretty", "json", "simple"],
-        help = "Output format: markdown, pretty, json, or simple (TSV)"
+        help = "Output format: markdown (default), pretty, json, or simple (TSV)"
     )]
     format: String,
 
@@ -1073,7 +1073,7 @@ fn print_exec_help() {
             println!();
             println!("工具列表:");
             println!();
-            println!("  \x1b[1mimport_file\x1b[0m          导入 Excel/CSV 文件");
+            println!("  \x1b[1mimport_file\x1b[0m          导入表格文件 (Excel/CSV/HTML/文本/Markdown)");
             println!("                       参数: file_path (文件路径)");
             println!();
             println!("  \x1b[1mlist_files\x1b[0m           列出所有已导入文件及其 sheet 信息");
@@ -1195,7 +1195,7 @@ fn print_exec_help() {
             println!();
             println!("Tools:");
             println!();
-            println!("  \x1b[1mimport_file\x1b[0m          Import an Excel/CSV file");
+            println!("  \x1b[1mimport_file\x1b[0m          Import a tabular file (Excel/CSV/HTML/text/Markdown)");
             println!("                       Params: file_path");
             println!();
             println!(
