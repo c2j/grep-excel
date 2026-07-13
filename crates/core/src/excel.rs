@@ -3,6 +3,69 @@ use calamine::{open_workbook_auto, Data, Reader};
 use chrono::{Datelike, Duration};
 use std::path::Path;
 
+/// Read a file to String, handling non-UTF-8 encodings.
+///
+/// Strategy:
+/// 1. Try UTF-8 (most common)
+/// 2. For HTML files, detect charset from `<meta>` tags
+/// 3. Try common CJK encodings (GBK, GB18030, Big5, etc.)
+/// 4. Fall back to UTF-8 lossy
+pub fn read_file_auto_encoding(path: &Path) -> Result<String> {
+    let raw = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", path.display(), e))?;
+
+    // 1. Try UTF-8 first (recover bytes on failure to avoid a clone)
+    let bytes = match String::from_utf8(raw) {
+        Ok(s) => return Ok(s),
+        Err(e) => e.into_bytes(),
+    };
+
+    // 2. For HTML files, try to detect charset from <meta> tags
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let is_html = ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm");
+    if is_html {
+        if let Some(encoding_name) = detect_html_charset(&bytes) {
+            if let Some(encoding) = encoding_rs::Encoding::for_label(encoding_name.as_bytes()) {
+                let (cow, _, had_errors) = encoding.decode(&bytes);
+                if !had_errors {
+                    return Ok(cow.into_owned());
+                }
+            }
+        }
+    }
+
+    // 3. Try common encodings in order of likelihood
+    let fallback_labels = [
+        "gbk", "gb18030", "big5", "shift_jis", "euc-jp", "euc-kr",
+        "windows-1252", "iso-8859-1",
+    ];
+    for label in &fallback_labels {
+        if let Some(encoding) = encoding_rs::Encoding::for_label(label.as_bytes()) {
+            let (cow, _, had_errors) = encoding.decode(&bytes);
+            if !had_errors {
+                return Ok(cow.into_owned());
+            }
+        }
+    }
+
+    // 4. Last resort: lossy UTF-8
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Detect charset from HTML `<meta>` tags in raw bytes.
+/// Scans the first 4096 bytes (meta tags are in the head, ASCII-safe).
+fn detect_html_charset(bytes: &[u8]) -> Option<String> {
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r#"(?i)charset\s*=\s*["']?\s*([a-zA-Z0-9_-]+)"#).unwrap()
+    });
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+    re.captures(&head)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_lowercase())
+}
+
 pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
     let ext = path
         .extension()
@@ -24,8 +87,7 @@ pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
 fn parse_html(path: &Path) -> Result<Vec<SheetData>> {
     use crate::html_table;
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("Failed to read HTML file '{}': {}", path.display(), e))?;
+    let content = read_file_auto_encoding(path)?;
     let tables = html_table::extract_tables(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse HTML file '{}': {}", path.display(), e))?;
 
@@ -43,8 +105,7 @@ fn parse_html(path: &Path) -> Result<Vec<SheetData>> {
 fn parse_text(path: &Path) -> Result<Vec<SheetData>> {
     use crate::text_table;
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("Failed to read text file '{}': {}", path.display(), e))?;
+    let content = read_file_auto_encoding(path)?;
     let tables = text_table::extract_tables(path, &content)
         .map_err(|e| anyhow::anyhow!("Failed to parse text file '{}': {}", path.display(), e))?;
 
@@ -347,8 +408,7 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
 fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
     use crate::html_table;
 
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("Failed to read HTML file '{}': {}", path.display(), e))?;
+    let content = read_file_auto_encoding(path)?;
     let tables = html_table::extract_tables(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse HTML file '{}': {}", path.display(), e))?;
 
