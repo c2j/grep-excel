@@ -3094,6 +3094,7 @@ dependencies = [
  "chrono",
  "csv",
  "duckdb",
+ "encoding_rs",
  "parking_lot",
  "regex",
  "roxmltree",

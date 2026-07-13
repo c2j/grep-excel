@@ -21,6 +21,7 @@ csv = "1"
 unicode-width = "0.2"
 zip = "2"
 roxmltree = "0.20"
+encoding_rs = "0.8"
 
 [profile.release]
 opt-level = 3
