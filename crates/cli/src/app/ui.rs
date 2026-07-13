@@ -1216,11 +1216,8 @@ impl App {
             ),
         ];
 
-        let files = {
-            let db_guard = self.database.read();
-            db_guard.0.list_files()
-        };
-        let total_sheets = files
+        let total_sheets = self
+            .file_list
             .get(self.browse_file_index)
             .map(|f| f.sheets.len())
             .unwrap_or(0);
@@ -1254,7 +1251,17 @@ impl App {
             )
             .highlight_symbol(">> ");
 
+        let absolute_selected = self.table_state.selected().unwrap_or(0);
+        let relative_selected = absolute_selected.saturating_sub(scroll_offset);
+        let visible_len = total_rows.saturating_sub(scroll_offset).min(visible_row_count);
+        let relative_selected = if visible_len == 0 {
+            0
+        } else {
+            relative_selected.min(visible_len - 1)
+        };
+        self.table_state.select(Some(relative_selected));
         frame.render_stateful_widget(table, area, &mut self.table_state);
+        self.table_state.select(Some(absolute_selected));
 
         let scrollbar = Scrollbar::default()
             .orientation(ScrollbarOrientation::VerticalRight)
