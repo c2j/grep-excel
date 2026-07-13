@@ -84,11 +84,6 @@ impl SearchEngine for DuckDbEngine {
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)> {
         let start = Instant::now();
 
-        let mut stmt = self.conn.prepare(
-            "SELECT s.sheet_id, s.sheet_name, s.table_name, s.col_names, s.col_widths, f.file_name
-             FROM sheets s JOIN files f ON s.file_id = f.file_id",
-        )?;
-
         struct SheetMeta {
             sheet_name: String,
             table_name: String,
@@ -98,6 +93,10 @@ impl SearchEngine for DuckDbEngine {
         }
 
         let sheets_info: Vec<SheetMeta> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_id, s.sheet_name, s.table_name, s.col_names, s.col_widths, f.file_name
+                 FROM sheets s JOIN files f ON s.file_id = f.file_id",
+            )?;
             let mapped = stmt.query_map([], |row: &::duckdb::Row| {
                 let col_names_str: String = row.get(3)?;
                 let col_names: Vec<String> = if col_names_str.is_empty() {
@@ -189,13 +188,12 @@ impl SearchEngine for DuckDbEngine {
                 limit_clause
             );
 
-            let mut search_stmt = self.conn.prepare(&sql)?;
-            let param_refs: Vec<&dyn::duckdb::ToSql> = search_values
-                .iter()
-                .map(|v| v as &dyn::duckdb::ToSql)
-                .collect();
-
             let matched_rows: Vec<(i64, Vec<Option<String>>)> = {
+                let mut search_stmt = self.conn.prepare(&sql)?;
+                let param_refs: Vec<&dyn::duckdb::ToSql> = search_values
+                    .iter()
+                    .map(|v| v as &dyn::duckdb::ToSql)
+                    .collect();
                 let mapped =
                     search_stmt.query_map(param_refs.as_slice(), |row: &::duckdb::Row| {
                         let row_id: i64 = row.get(0)?;
@@ -317,23 +315,28 @@ impl SearchEngine for DuckDbEngine {
                 Err(_) => return Vec::new(),
             };
 
-        let mut files_map: HashMap<String, FileInfo> = HashMap::new();
+        let mut files: Vec<FileInfo> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
 
         for (file_name, sheet_name, row_count) in rows {
-            let entry = files_map.entry(file_name.clone()).or_insert(FileInfo {
-                name: file_name,
-                sheets: Vec::new(),
-                total_rows: 0,
-                sample: None,
+            let idx = *index.entry(file_name.clone()).or_insert_with(|| {
+                let i = files.len();
+                files.push(FileInfo {
+                    name: file_name.clone(),
+                    sheets: Vec::new(),
+                    total_rows: 0,
+                    sample: None,
+                });
+                i
             });
 
             if let (Some(name), Some(count)) = (sheet_name, row_count) {
-                entry.sheets.push((name, count as usize));
-                entry.total_rows += count as usize;
+                files[idx].sheets.push((name, count as usize));
+                files[idx].total_rows += count as usize;
             }
         }
 
-        files_map.into_values().collect()
+        files
     }
 
     fn clear(&mut self) -> Result<()> {

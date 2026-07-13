@@ -191,26 +191,29 @@ impl SearchEngine for MemEngine {
     }
 
     fn list_files(&self) -> Vec<FileInfo> {
-        let mut files_map: HashMap<String, FileInfo> = HashMap::new();
+        let mut files: Vec<FileInfo> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
 
         for sheet in &self.sheets {
-            let entry = files_map
-                .entry(sheet.file_name.clone())
-                .or_insert_with(|| FileInfo {
+            let idx = *index.entry(sheet.file_name.clone()).or_insert_with(|| {
+                let i = files.len();
+                files.push(FileInfo {
                     name: sheet.file_name.clone(),
                     sheets: Vec::new(),
                     total_rows: 0,
                     sample: None,
                 });
-            entry
+                i
+            });
+            files[idx]
                 .sheets
                 .push((sheet.sheet_name.clone(), sheet.rows.len()));
-            entry.total_rows += sheet.rows.len();
+            files[idx].total_rows += sheet.rows.len();
         }
 
         if let Some(first) = self.sheets.first() {
-            if let Some(entry) = files_map.get_mut(&first.file_name) {
-                entry.sample = Some(FileSample {
+            if let Some(&idx) = index.get(&first.file_name) {
+                files[idx].sample = Some(FileSample {
                     sheet_name: first.sheet_name.clone(),
                     headers: first.headers.clone(),
                     rows: first.rows.iter().take(3).cloned().collect(),
@@ -218,7 +221,7 @@ impl SearchEngine for MemEngine {
             }
         }
 
-        files_map.into_values().collect()
+        files
     }
 
     fn clear(&mut self) -> Result<()> {

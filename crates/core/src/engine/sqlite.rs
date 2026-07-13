@@ -772,23 +772,28 @@ impl SearchEngine for SqliteEngine {
             Err(_) => return Vec::new(),
         };
 
-        let mut files_map: HashMap<String, FileInfo> = HashMap::new();
+        let mut files: Vec<FileInfo> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
 
         for (file_name, sheet_name, row_count) in rows {
-            let entry = files_map.entry(file_name.clone()).or_insert(FileInfo {
-                name: file_name,
-                sheets: Vec::new(),
-                total_rows: 0,
-                sample: None,
+            let idx = *index.entry(file_name.clone()).or_insert_with(|| {
+                let i = files.len();
+                files.push(FileInfo {
+                    name: file_name.clone(),
+                    sheets: Vec::new(),
+                    total_rows: 0,
+                    sample: None,
+                });
+                i
             });
 
             if let (Some(name), Some(count)) = (sheet_name, row_count) {
-                entry.sheets.push((name, count as usize));
-                entry.total_rows += count as usize;
+                files[idx].sheets.push((name, count as usize));
+                files[idx].total_rows += count as usize;
             }
         }
 
-        files_map.into_values().collect()
+        files
     }
 
     fn clear(&mut self) -> Result<()> {
