@@ -11,7 +11,7 @@ use unicode_width::UnicodeWidthStr;
 #[command(name = "grep_excel", about = "", long_about = "")]
 struct Args {
     #[arg(name = "FILES")]
-    files: Vec<PathBuf>,
+    files: Vec<String>,
 
     #[arg(
         short = 'i',
@@ -112,6 +112,13 @@ struct Args {
         help = "When using --run, write command stdout to this column (creates column if it doesn't exist)"
     )]
     run_output_column: Option<String>,
+
+    #[arg(
+        long,
+        help = "Cookie for Kingsoft Docs / WPS cloud share URL downloads only. \
+                Prefer KDOCS_COOKIE env var to avoid shell history exposure."
+    )]
+    kdocs_cookie: Option<String>,
 }
 
 fn print_logo() {
@@ -158,6 +165,20 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    #[cfg(not(feature = "share-url"))]
+    if args.kdocs_cookie.is_some()
+        && args
+            .files
+            .iter()
+            .any(|f| f.starts_with("http://") || f.starts_with("https://"))
+    {
+        eprintln!(
+            "Warning: --kdocs-cookie provided but this binary was built without the 'share-url' feature.\n\
+             Cloud share URLs will be treated as local file paths.\n\
+             Rebuild with: cargo build --features share-url (or --features full)"
+        );
+    }
+
     if args.exec.is_some() {
         return run_exec(&args);
     }
@@ -199,9 +220,34 @@ fn run_tui(args: &Args) -> Result<()> {
     let (event_tx, event_rx) = create_event_channel();
     let mut app = App::new(database, event_tx, event_rx);
 
-    for file in &args.files {
-        if file.exists() {
-            app.import_file(file.clone());
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, _display_name, guard)) => {
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
+                    if path.exists() {
+                        app.import_file(path);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
+        }
+        #[cfg(not(feature = "share-url"))]
+        {
+            let path = std::path::PathBuf::from(input);
+            if path.exists() {
+                app.import_file(path);
+            }
         }
     }
 
@@ -210,7 +256,7 @@ fn run_tui(args: &Args) -> Result<()> {
 
 fn import_file_with_repair(
     db: &mut DefaultEngine,
-    file: &PathBuf,
+    file: &std::path::Path,
     repair: bool,
 ) -> Result<FileInfo> {
     match db.import_excel(file, &|_, _| {}) {
@@ -226,28 +272,96 @@ fn import_file_with_repair(
     }
 }
 
+#[cfg(feature = "share-url")]
+fn resolve_one(
+    input: &str,
+    auth: Option<&grep_excel_core::source::download::ShareAuth>,
+) -> anyhow::Result<(
+    std::path::PathBuf,
+    String,
+    Option<grep_excel_core::source::download::TempGuard>,
+)> {
+    use grep_excel_core::source::download::{resolve_source, ResolvedSource};
+
+    match resolve_source(input, auth)? {
+        ResolvedSource::Local(path) => {
+            let display = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            Ok((path, display, None))
+        }
+        ResolvedSource::Downloaded {
+            path,
+            display_name,
+            _guard,
+        } => Ok((path, display_name, Some(_guard))),
+    }
+}
+
 fn run_cli(args: &Args) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, display_name, guard)) => {
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
+                    if !path.exists() {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_file_not_found(&display_name)
+                        );
+                        continue;
+                    }
+                    match import_file_with_repair(&mut db, &path, args.repair) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                            )
+                        }
+                        Err(e) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(&display_name, &e.to_string())
+                        ),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
         }
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+        #[cfg(not(feature = "share-url"))]
+        {
+            let path = std::path::PathBuf::from(input);
+            if !path.exists() {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
-                )
+                    grep_excel::i18n::cli_file_not_found(&path.display().to_string())
+                );
+                continue;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            match import_file_with_repair(&mut db, &path, args.repair) {
+                Ok(info) => {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    )
+                }
+                Err(e) => eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_import_failed(&path.display().to_string(), &e.to_string())
+                ),
+            }
         }
     }
 
@@ -396,25 +510,66 @@ fn run_cli(args: &Args) -> Result<()> {
 fn run_sql_cli(args: &Args) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, display_name, guard)) => {
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
+                    if !path.exists() {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_file_not_found(&display_name)
+                        );
+                        continue;
+                    }
+                    match import_file_with_repair(&mut db, &path, args.repair) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                            );
+                        }
+                        Err(e) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(&display_name, &e.to_string())
+                        ),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
         }
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+        #[cfg(not(feature = "share-url"))]
+        {
+            let path = std::path::PathBuf::from(input);
+            if !path.exists() {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    grep_excel::i18n::cli_file_not_found(&path.display().to_string())
                 );
+                continue;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            match import_file_with_repair(&mut db, &path, args.repair) {
+                Ok(info) => {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    );
+                }
+                Err(e) => eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_import_failed(&path.display().to_string(), &e.to_string())
+                ),
+            }
         }
     }
 
@@ -523,95 +678,202 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
     let mut file_idx_counter: usize = 1;
     let mut repair_engine: Option<DefaultEngine> = None;
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
-        }
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
 
-        let file_stem = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let file_name = file
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        match parse_file_metadata(file) {
-            Ok(sheets) if !sheets.is_empty() => {
-                let sheet_count = sheets.len();
-                let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
-                eprintln!(
-                    "{}",
-                    grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows)
-                );
-                for (sheet_idx, meta) in sheets.into_iter().enumerate() {
-                    tables.push(TableInfo {
-                        alias: format!("{}.{}", file_stem, meta.name),
-                        table_name: format!("sheet_{}_{}", file_idx_counter, sheet_idx),
-                        row_count: meta.row_count,
-                        columns: meta.headers,
-                    });
-                }
-                file_idx_counter += 1;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                if !args.repair {
-                    eprintln!(
-                        "{}",
-                        grep_excel::i18n::cli_import_failed(
-                            &file.display().to_string(),
-                            &e.to_string()
-                        )
-                    );
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            let (path, display_name, guard) = match resolve_one(input, _share_auth.as_ref()) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
                     continue;
                 }
+            };
+            if let Some(g) = guard { _temp_guards.push(g); }
+            if !path.exists() {
                 eprintln!(
-                    "  常规读取失败: {}. 尝试修复模式...",
-                    e.to_string().lines().next().unwrap_or(&e.to_string())
+                    "{}",
+                    grep_excel::i18n::cli_file_not_found(&display_name)
                 );
-                let engine = match repair_engine.as_mut() {
-                    Some(e) => e,
-                    None => {
-                        let e = DefaultEngine::new()?;
-                        repair_engine.insert(e)
+                continue;
+            }
+            let file_stem = std::path::Path::new(&display_name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let file_name = display_name.clone();
+
+            match parse_file_metadata(&path) {
+                Ok(sheets) if !sheets.is_empty() => {
+                    let sheet_count = sheets.len();
+                    let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows)
+                    );
+                    for (sheet_idx, meta) in sheets.into_iter().enumerate() {
+                        tables.push(TableInfo {
+                            alias: format!("{}.{}", file_stem, meta.name),
+                            table_name: format!("sheet_{}_{}", file_idx_counter, sheet_idx),
+                            row_count: meta.row_count,
+                            columns: meta.headers,
+                        });
                     }
-                };
-                match engine.import_excel_repair(file, &|_, _| {}) {
-                    Ok(info) => {
+                    file_idx_counter += 1;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    if !args.repair {
                         eprintln!(
                             "{}",
-                            grep_excel::i18n::cli_imported(
-                                &info.name,
-                                info.sheets.len(),
-                                info.total_rows
+                            grep_excel::i18n::cli_import_failed(
+                                &file_name,
+                                &e.to_string()
                             )
                         );
-                        for alias in engine.list_table_aliases() {
-                            if alias.file_name == file_name {
-                                tables.push(TableInfo {
-                                    alias: alias.alias,
-                                    table_name: alias.table_name,
-                                    row_count: alias.row_count,
-                                    columns: alias.columns,
-                                });
+                        continue;
+                    }
+                    eprintln!(
+                        "  常规读取失败: {}. 尝试修复模式...",
+                        e.to_string().lines().next().unwrap_or(&e.to_string())
+                    );
+                    let engine = match repair_engine.as_mut() {
+                        Some(e) => e,
+                        None => {
+                            let e = DefaultEngine::new()?;
+                            repair_engine.insert(e)
+                        }
+                    };
+                    match engine.import_excel_repair(&path, &|_, _| {}) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
+                            );
+                            let imported_file_name = info.name.clone();
+                            for alias in engine.list_table_aliases() {
+                                if alias.file_name == imported_file_name {
+                                    tables.push(TableInfo {
+                                        alias: alias.alias,
+                                        table_name: alias.table_name,
+                                        row_count: alias.row_count,
+                                        columns: alias.columns,
+                                    });
+                                }
                             }
                         }
+                        Err(repair_err) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(
+                                &file_name,
+                                &repair_err.to_string()
+                            )
+                        ),
                     }
-                    Err(repair_err) => eprintln!(
+                }
+            }
+        }
+        #[cfg(not(feature = "share-url"))]
+        {
+            let file = std::path::PathBuf::from(input);
+            if !file.exists() {
+                eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_file_not_found(&file.display().to_string())
+                );
+                continue;
+            }
+
+            let file_stem = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let file_name = file
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            match parse_file_metadata(&file) {
+                Ok(sheets) if !sheets.is_empty() => {
+                    let sheet_count = sheets.len();
+                    let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
+                    eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_import_failed(
-                            &file.display().to_string(),
-                            &repair_err.to_string()
-                        )
-                    ),
+                        grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows)
+                    );
+                    for (sheet_idx, meta) in sheets.into_iter().enumerate() {
+                        tables.push(TableInfo {
+                            alias: format!("{}.{}", file_stem, meta.name),
+                            table_name: format!("sheet_{}_{}", file_idx_counter, sheet_idx),
+                            row_count: meta.row_count,
+                            columns: meta.headers,
+                        });
+                    }
+                    file_idx_counter += 1;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    if !args.repair {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(
+                                &file.display().to_string(),
+                                &e.to_string()
+                            )
+                        );
+                        continue;
+                    }
+                    eprintln!(
+                        "  常规读取失败: {}. 尝试修复模式...",
+                        e.to_string().lines().next().unwrap_or(&e.to_string())
+                    );
+                    let engine = match repair_engine.as_mut() {
+                        Some(e) => e,
+                        None => {
+                            let e = DefaultEngine::new()?;
+                            repair_engine.insert(e)
+                        }
+                    };
+                    match engine.import_excel_repair(&file, &|_, _| {}) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
+                            );
+                            for alias in engine.list_table_aliases() {
+                                if alias.file_name == file_name {
+                                    tables.push(TableInfo {
+                                        alias: alias.alias,
+                                        table_name: alias.table_name,
+                                        row_count: alias.row_count,
+                                        columns: alias.columns,
+                                    });
+                                }
+                            }
+                        }
+                        Err(repair_err) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(
+                                &file.display().to_string(),
+                                &repair_err.to_string()
+                            )
+                        ),
+                    }
                 }
             }
         }
@@ -648,25 +910,64 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
 fn run_interactive_cli(args: &Args) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, display_name, guard)) => {
+                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if !path.exists() {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_file_not_found(&display_name)
+                        );
+                        continue;
+                    }
+                    match import_file_with_repair(&mut db, &path, args.repair) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                            );
+                        }
+                        Err(e) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(&display_name, &e.to_string())
+                        ),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
         }
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+        #[cfg(not(feature = "share-url"))]
+        {
+            let file = std::path::PathBuf::from(input);
+            if !file.exists() {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    grep_excel::i18n::cli_file_not_found(&file.display().to_string())
                 );
+                continue;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            match import_file_with_repair(&mut db, &file, args.repair) {
+                Ok(info) => {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    );
+                }
+                Err(e) => eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                ),
+            }
         }
     }
 
@@ -677,25 +978,64 @@ fn run_exec_shell(args: &Args) -> Result<()> {
     let mut db = DefaultEngine::new()?;
     let exec_template = args.run.as_ref().unwrap();
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, display_name, guard)) => {
+                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if !path.exists() {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_file_not_found(&display_name)
+                        );
+                        continue;
+                    }
+                    match import_file_with_repair(&mut db, &path, args.repair) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                            );
+                        }
+                        Err(e) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(&display_name, &e.to_string())
+                        ),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
         }
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+        #[cfg(not(feature = "share-url"))]
+        {
+            let file = std::path::PathBuf::from(input);
+            if !file.exists() {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    grep_excel::i18n::cli_file_not_found(&file.display().to_string())
                 );
+                continue;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            match import_file_with_repair(&mut db, &file, args.repair) {
+                Ok(info) => {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    );
+                }
+                Err(e) => eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                ),
+            }
         }
     }
 
@@ -960,29 +1300,72 @@ fn run_exec(args: &Args) -> Result<()> {
     let mut import_paths: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
 
-    for file in &args.files {
-        if !file.exists() {
-            eprintln!(
-                "{}",
-                grep_excel::i18n::cli_file_not_found(&file.display().to_string())
-            );
-            continue;
+    #[cfg(feature = "share-url")]
+    let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
+    #[cfg(feature = "share-url")]
+    let mut _temp_guards: Vec<grep_excel_core::source::download::TempGuard> = Vec::new();
+
+    for input in &args.files {
+        #[cfg(feature = "share-url")]
+        {
+            match resolve_one(input, _share_auth.as_ref()) {
+                Ok((path, display_name, guard)) => {
+                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if !path.exists() {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_file_not_found(&display_name)
+                        );
+                        continue;
+                    }
+                    let canonical = std::fs::canonicalize(&path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| path.display().to_string());
+                    match import_file_with_repair(&mut db, &path, args.repair) {
+                        Ok(info) => {
+                            eprintln!(
+                                "{}",
+                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                            );
+                            import_paths.insert(info.name.clone(), canonical);
+                        }
+                        Err(e) => eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(&display_name, &e.to_string())
+                        ),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error resolving '{}': {}", input, e);
+                }
+            }
         }
-        let canonical = std::fs::canonicalize(file)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| file.display().to_string());
-        match import_file_with_repair(&mut db, file, args.repair) {
-            Ok(info) => {
+        #[cfg(not(feature = "share-url"))]
+        {
+            let file = std::path::PathBuf::from(input);
+            if !file.exists() {
                 eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    grep_excel::i18n::cli_file_not_found(&file.display().to_string())
                 );
-                import_paths.insert(info.name.clone(), canonical);
+                continue;
             }
-            Err(e) => eprintln!(
-                "{}",
-                grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
-            ),
+            let canonical = std::fs::canonicalize(&file)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| file.display().to_string());
+            match import_file_with_repair(&mut db, &file, args.repair) {
+                Ok(info) => {
+                    eprintln!(
+                        "{}",
+                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                    );
+                    import_paths.insert(info.name.clone(), canonical);
+                }
+                Err(e) => eprintln!(
+                    "{}",
+                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                ),
+            }
         }
     }
 
