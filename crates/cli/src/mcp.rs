@@ -275,7 +275,7 @@ impl GrepExcelServer {
                     drop(_guard);
                     return result;
                 }
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(format!("{:#}", e)),
             }
         }
 

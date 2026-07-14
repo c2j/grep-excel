@@ -55,12 +55,12 @@ pub const KINGSOFT_SHARE: ShareProvider = ShareProvider {
     id: "kingsoft_share",
     hosts: &["kdocs.cn"],
     share_path_prefix: "/l/",
-    office_download_template: "https://{host}/api/v3/office/file/{sid}/download",
-    drive_links_template: "https://{host}/api/v5/links/{sid}",
+    office_download_template: "{scheme}://{host}/api/v3/office/file/{sid}/download",
+    drive_links_template: "{scheme}://{host}/api/v5/links/{sid}",
     drive_download_template:
-        "https://{host}/api/v5/groups/{groupid}/files/{fileid}/download?isblocks=false&support_checksums=md5,sha1",
-    origin_template: "https://{host}",
-    referer_template: "https://{host}/l/{sid}",
+        "{scheme}://{host}/api/v5/groups/{groupid}/files/{fileid}/download?isblocks=false&support_checksums=md5,sha1",
+    origin_template: "{scheme}://{host}",
+    referer_template: "{scheme}://{host}/l/{sid}",
 };
 
 /// All built-in providers. Future: extend with user config.
@@ -382,21 +382,46 @@ pub mod download {
         auth: &ShareAuth,
     ) -> Result<ResolvedSource> {
         let host = extract_host(original_url).unwrap_or_default();
+        let scheme = if original_url.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
         let api_url = provider
             .office_download_template
+            .replace("{scheme}", scheme)
             .replace("{host}", &host)
             .replace("{sid}", sid);
-        let origin = provider.origin_template.replace("{host}", &host);
+        let origin = provider
+            .origin_template
+            .replace("{scheme}", scheme)
+            .replace("{host}", &host);
         let referer = provider
             .referer_template
+            .replace("{scheme}", scheme)
             .replace("{host}", &host)
             .replace("{sid}", sid);
 
-        // Step 1: Request download URL from API
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+        let debug = std::env::var("SHARE_DEBUG").unwrap_or_default() == "1";
+        let insecure = std::env::var("SHARE_INSECURE").unwrap_or_default() == "1";
+        if debug {
+            eprintln!("[share-url] original_url: {}", original_url);
+            eprintln!("[share-url] host: {}, scheme: {}", host, scheme);
+            eprintln!("[share-url] api_url: {}", api_url);
+            eprintln!("[share-url] origin: {}", origin);
+            eprintln!("[share-url] referer: {}", referer);
+            eprintln!("[share-url] cookie present: {} ({} chars)", !auth.cookie.is_empty(), auth.cookie.len());
+            eprintln!("[share-url] insecure (skip TLS verify): {}", insecure);
+        }
+
+        let mut client_builder = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30));
+        if insecure {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+        let client = client_builder
             .build()
-            .context("Failed to build HTTP client")?;
+            .with_context(|| format!("Failed to build HTTP client for {}", api_url))?;
 
         let resp = client
             .get(&api_url)
@@ -405,21 +430,35 @@ pub mod download {
             .header("Referer", &referer)
             .header("User-Agent", "Mozilla/5.0 (compatible; grep-excel)")
             .send()
-            .context("Failed to connect to share API")?;
+            .with_context(|| {
+                format!(
+                    "Failed to connect to share API: {}\n\
+                     Set SHARE_DEBUG=1 for details. For self-signed certs: SHARE_INSECURE=1",
+                    api_url
+                )
+            })?;
 
         let status = resp.status();
+        if debug {
+            eprintln!("[share-url] API response status: {}", status);
+        }
         if !status.is_success() {
             let body = resp.text().unwrap_or_default();
+            if debug {
+                eprintln!("[share-url] API error body: {}", truncate(&body, 500));
+            }
             if body.contains("userNotLogin") || status == reqwest::StatusCode::FORBIDDEN {
                 return Err(anyhow!(
-                    "{}\nAPI response: {}",
+                    "{}\nAPI: {} returned {}",
                     crate::i18n::share_auth_failed(),
-                    truncate(&body, 200)
+                    api_url,
+                    status
                 ));
             }
             return Err(anyhow!(
-                "Share API returned HTTP {}:\n{}",
+                "Share API returned HTTP {} for:\n  {}\nBody: {}",
                 status,
+                api_url,
                 truncate(&body, 200)
             ));
         }
@@ -441,9 +480,9 @@ pub mod download {
                 )
             })?;
 
-        if !dl_url.starts_with("https://") {
+        if !dl_url.starts_with("https://") && !dl_url.starts_with("http://") {
             return Err(anyhow!(
-                "Share API returned an unsafe download URL (expected https): {}",
+                "Share API returned an unsafe download URL (expected http/https): {}",
                 truncate(dl_url, 100)
             ));
         }
@@ -455,9 +494,14 @@ pub mod download {
             .map(String::from)
             .unwrap_or_else(|| format!("kdocs-{}.xlsx", sid));
 
+        if debug {
+            eprintln!("[share-url] download_url: {}", dl_url);
+            eprintln!("[share-url] display_name: {}", display_name);
+        }
+
         // Step 2: Download the actual file
         let file_resp = reqwest::blocking::get(dl_url)
-            .context("Failed to download file from temporary URL")?;
+            .with_context(|| format!("Failed to download file from temporary URL"))?;
 
         if !file_resp.status().is_success() {
             return Err(anyhow!(
