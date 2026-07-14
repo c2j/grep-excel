@@ -26,6 +26,10 @@ unicode-width = "0.2"
 encoding_rs.workspace = true
 scraper = "0.21"
 
+# Optional: cloud share URL download
+reqwest = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+
 # Optional engines
 duckdb = { version = "1.10501", optional = true }
 rusqlite = { version = "0.32", features = ["bundled", "functions"], optional = true }
@@ -42,3 +46,4 @@ engine-sqlite = ["dep:rusqlite"]
 duckdb-bundled = ["engine-duckdb", "duckdb/bundled", "duckdb/json"]
 rust_xlsxwriter = ["dep:rust_xlsxwriter"]
 mcp-server = ["dep:schemars"]
+share-url = ["dep:reqwest", "dep:tempfile"]
