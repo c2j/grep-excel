@@ -20,19 +20,19 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            features: file-dialog,engine-duckdb,mcp-server
+            features: file-dialog,engine-duckdb,mcp-server,share-url
             artifact_name: grep_excel-duckdb-x86_64-pc-windows-msvc
             prebuilt_duckdb: true
             build_desktop: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            features: file-dialog,duckdb-bundled,mcp-server
+            features: file-dialog,duckdb-bundled,mcp-server,share-url
             artifact_name: grep_excel-duckdb-x86_64-unknown-linux-gnu
             zigbuild: true
             build_desktop: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04-arm
-            features: file-dialog,duckdb-bundled,mcp-server
+            features: file-dialog,duckdb-bundled,mcp-server,share-url
             artifact_name: grep_excel-duckdb-aarch64-unknown-linux-gnu
             zigbuild: true
             build_desktop: true
@@ -204,7 +204,7 @@ jobs:
           $flags = (Get-ChildItem -Path $regSrc -Directory -Filter "windows_x86_64_msvc-*" -ErrorAction SilentlyContinue |
             ForEach-Object { $lib = Join-Path $_.FullName "lib"; if (Test-Path $lib) { "-L native=$lib" } }) -join " "
           if ($flags) { Write-Host "RUSTFLAGS=$flags"; $env:RUSTFLAGS = $flags }
-          cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server --target x86_64-win7-windows-msvc -Zbuild-std
+          cargo +nightly build --release -p grep-excel --no-default-features --features file-dialog,engine-duckdb,mcp-server,share-url --target x86_64-win7-windows-msvc -Zbuild-std
 
       - name: Package
         shell: pwsh
