@@ -23,6 +23,7 @@ grep-excel provides a fast, interactive terminal interface for searching across 
 - **File Editing** — Update cells, insert/delete rows, add/rename columns, save back to original or export as new file
 - **Aggregate Statistics** — Count distinct value distributions in matched rows by column
 - **Repair Damaged Files** — Recover data from corrupted `.xlsx` files at the ZIP/XML level (`--repair`)
+- **Cloud Share URL Import** — Pass Kingsoft Docs / WPS (`kdocs.cn`) share links directly; downloads via session cookie. Use `--kdocs-cookie` or `KDOCS_COOKIE` env var
 - **Excel Date Auto-Detection** — Detects Excel date serial numbers and converts them to readable `YYYYMMDD` strings, so date-based searches (`-q 0615`) work correctly
 - **Multiple Output Formats** — Markdown tables, pretty-printed, JSON, and simple TSV (`--format`)
 - **CSV Export** — Export search or SQL results to CSV files
@@ -108,6 +109,7 @@ grep_excel [FILES...] [OPTIONS]
 | `--run` | `-X` | Execute a shell command for each matching row. Use `${col_name}` for cell values |
 | `--run-output-column` | — | Write `--run` command stdout to a column (creates if not exists) |
 | `--help` | `-h` | Show help including supported formats (auto-detects Chinese or English) |
+| `--kdocs-cookie` | — | Cookie for Kingsoft Docs (kdocs.cn) share URL downloads only |
 
 ### Examples
 
@@ -154,6 +156,15 @@ grep_excel data.xlsx employees.xlsx -t
 Repair and import corrupted xlsx:
 ```bash
 grep_excel corrupted.xlsx -q "data" -r
+```
+
+Import from a WPS cloud share link:
+```bash
+export KDOCS_COOKIE='wps_sid=...; ...'
+grep_excel 'https://www.kdocs.cn/l/xxxx' -q "search term"
+
+# Or pass cookie directly
+grep_excel --kdocs-cookie "$KDOCS_COOKIE" 'https://www.kdocs.cn/l/xxxx' -t
 ```
 
 Export results with specific format:
@@ -433,6 +444,7 @@ grep-excel 提供快速的交互式终端界面，用于在多个电子表格与
 - **文件编辑** — 更新单元格、插入/删除行、添加/重命名列、保存回原文件或导出为新文件
 - **聚合统计** — 对匹配结果按列统计不同值的分布
 - **修复损坏文件** — 在 ZIP/XML 层面从损坏的 `.xlsx` 文件中恢复数据（`--repair`）
+- **云文档链接导入** — 直接传入金山文档 (kdocs.cn) 分享链接；通过登录 Cookie 下载。使用 `--kdocs-cookie` 或 `KDOCS_COOKIE` 环境变量
 - **Excel 日期自动识别** — 自动检测 Excel 日期序列号并转换为可读的 `YYYYMMDD` 字符串，确保基于日期的搜索（`-q 0615`）能正确命中
 - **多种输出格式** — Markdown 表格、美化打印、JSON 和简单 TSV（`--format`）
 - **CSV 导出** — 将搜索或 SQL 结果导出为 CSV 文件
@@ -518,6 +530,7 @@ grep_excel [文件...] [选项]
 | `--run` | `-X` | 对每个匹配行执行 Shell 命令，`${列名}` 引用单元格值 |
 | `--run-output-column` | — | 将 `--run` 命令 stdout 写入指定列（列不存在则自动创建） |
 | `--help` | `-h` | 显示帮助（含支持的文件格式；自动检测中/英文） |
+| `--kdocs-cookie` | — | 金山文档 (kdocs.cn) 分享链接下载专用 Cookie |
 
 ### 示例
 
@@ -564,6 +577,15 @@ grep_excel data.xlsx employees.xlsx -t
 修复并导入损坏的 xlsx：
 ```bash
 grep_excel corrupted.xlsx -q "数据" -r
+```
+
+从金山文档分享链接导入：
+```bash
+export KDOCS_COOKIE='wps_sid=...; ...'
+grep_excel 'https://www.kdocs.cn/l/xxxx' -q "关键词"
+
+# 或直接传入 Cookie
+grep_excel --kdocs-cookie "$KDOCS_COOKIE" 'https://www.kdocs.cn/l/xxxx' -t
 ```
 
 指定格式导出：

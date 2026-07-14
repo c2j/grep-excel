@@ -261,25 +261,55 @@ impl GrepExcelServer {
         &self,
         Parameters(params): Parameters<ImportFileParams>,
     ) -> Result<String, String> {
-        let path = std::path::PathBuf::from(&params.file_path);
-        let file_path = params.file_path.clone();
+        let file_path_str = params.file_path.clone();
+
+        #[cfg(feature = "share-url")]
+        {
+            let auth = crate::resolve_share_auth(None);
+            match grep_excel_core::source::download::resolve_source(&file_path_str, auth.as_ref()) {
+                Ok(grep_excel_core::source::download::ResolvedSource::Local(path)) => {
+                    return self.do_import(&path, &file_path_str).await;
+                }
+                Ok(grep_excel_core::source::download::ResolvedSource::Downloaded { path, display_name, _guard }) => {
+                    let result = self.do_import(&path, &display_name).await;
+                    drop(_guard);
+                    return result;
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+
+        #[cfg(not(feature = "share-url"))]
+        {
+            let path = std::path::PathBuf::from(&file_path_str);
+            self.do_import(&path, &file_path_str).await
+        }
+    }
+
+    async fn do_import(
+        &self,
+        path: &std::path::Path,
+        display_name: &str,
+    ) -> Result<String, String> {
+        let path_buf = path.to_path_buf();
+        let display_name_owned = display_name.to_string();
         let db = Arc::clone(&self.db);
         let import_paths = Arc::clone(&self.import_paths);
-        let canonical = std::fs::canonicalize(&path)
+        let canonical = std::fs::canonicalize(&path_buf)
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or(file_path.clone());
+            .unwrap_or_else(|_| display_name_owned.clone());
         tokio::task::spawn_blocking(move || {
             let mut guard = db.lock();
             guard
                 .0
-                .import_excel(&path, &|_, _| {})
+                .import_excel(&path_buf, &|_, _| {})
                 .map(|info| {
                     import_paths.write().insert(info.name.clone(), canonical);
                     let mcp_info: McpFileInfo = info.into();
                     serde_json::to_string_pretty(&mcp_info)
                         .unwrap_or_else(|_| "Import successful".to_string())
                 })
-                .map_err(|e| format!("Failed to import '{}': {}", file_path, e))
+                .map_err(|e| format!("Failed to import '{}': {}", display_name_owned, e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?

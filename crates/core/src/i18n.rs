@@ -753,7 +753,29 @@ pub fn cli_export_failed() -> &'static str {
 // Full help text (--help)
 // ─────────────────────────────────────────────────────────────
 
+#[cfg(feature = "share-url")]
+fn kdocs_help_line_zh() -> String {
+    "    --kdocs-cookie <COOKIE>  金山文档 (kdocs.cn) 分享链接下载专用 Cookie\n".to_string()
+}
+
+#[cfg(not(feature = "share-url"))]
+fn kdocs_help_line_zh() -> String {
+    String::new()
+}
+
+#[cfg(feature = "share-url")]
+fn kdocs_help_line_en() -> String {
+    "    --kdocs-cookie <COOKIE>  Cookie for Kingsoft Docs (kdocs.cn) share URL downloads\n".to_string()
+}
+
+#[cfg(not(feature = "share-url"))]
+fn kdocs_help_line_en() -> String {
+    String::new()
+}
+
 pub fn help_full_text() -> String {
+    let kdocs_line_zh = kdocs_help_line_zh();
+    let kdocs_line_en = kdocs_help_line_en();
     match current() {
         Lang::Zh => {
             let version = env!("CARGO_PKG_VERSION");
@@ -779,8 +801,9 @@ pub fn help_full_text() -> String {
                                        -X, --run <CMD>          对每个匹配行执行 Shell 命令 (${{列名}} 占位符)\n\
                                              --run-output-column <COL>    --run 模式: 命令 stdout 写入该列\n\
                                              --mcp              启动 MCP Server 模式 (stdio)\n\
-                                       -r, --repair             导入前尝试修复损坏的 xlsx 文件\n\
-                                       -h, --help               显示帮助信息\n\
+                                        -r, --repair             导入前尝试修复损坏的 xlsx 文件\n\
+{kdocs_line_zh}\
+                                        -h, --help               显示帮助信息\n\
                                        -V, --version            显示版本号\n\n\
                   支持的文件格式:\n\
                     .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel/电子表格)\n\
@@ -846,8 +869,9 @@ pub fn help_full_text() -> String {
                                        -X, --run <CMD>          Run a shell command for each matching row (${{col}} placeholders)\n\
                                              --run-output-column <COL>   --run mode: write command stdout to this column\n\
                                              --mcp              Start MCP Server mode (stdio)\n\
-                                       -r, --repair             Try to repair damaged xlsx files before importing\n\
-                                       -h, --help               Show help information\n\
+                                        -r, --repair             Try to repair damaged xlsx files before importing\n\
+{kdocs_line_en}\
+                                        -h, --help               Show help information\n\
                                        -V, --version            Show version\n\n\
                   Supported Formats:\n\
                     .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel / Spreadsheets)\n\
@@ -1240,8 +1264,41 @@ pub fn repl_help() -> String {
              • \x1b[1mCtrl-K\x1b[0m            Delete to end of line\n\
              • \x1b[1mCtrl-L\x1b[0m            Clear screen\n\
              • \x1b[1mCtrl-C\x1b[0m            Abort current input (clears multi-line SQL buffer)\n\
-             • \x1b[1mCtrl-D\x1b[0m            Exit on empty line; delete char at cursor otherwise"
+              • \x1b[1mCtrl-D\x1b[0m            Exit on empty line; delete char at cursor otherwise"
                 .to_string()
         }
+    }
+}
+
+pub fn share_needs_auth(url: &str) -> String {
+    match current() {
+        Lang::Zh => format!(
+            "云文档链接需要登录凭证: {}\n请设置 KDOCS_COOKIE 环境变量，或使用 --kdocs-cookie 参数。\n获取方式：浏览器登录 kdocs.cn → F12 → Network → 复制 Cookie",
+            url
+        ),
+        Lang::En => format!(
+            "Cloud share URL requires authentication: {}\nSet KDOCS_COOKIE env var or use --kdocs-cookie flag.\nTo get cookie: login to kdocs.cn → F12 → Network → copy Cookie header",
+            url
+        ),
+    }
+}
+
+pub fn share_unsupported_url(url: &str) -> String {
+    match current() {
+        Lang::Zh => format!(
+            "不支持的远程链接: {}\n支持: kdocs.cn / *.kdocs.cn 分享链接 (/l/...)。",
+            url
+        ),
+        Lang::En => format!(
+            "Unsupported remote URL: {}\nSupported: kdocs.cn / *.kdocs.cn share links (/l/...).",
+            url
+        ),
+    }
+}
+
+pub fn share_auth_failed() -> String {
+    match current() {
+        Lang::Zh => "认证失败: 会话已过期或权限不足，请重新登录 kdocs.cn 并更新 Cookie。".to_string(),
+        Lang::En => "Authentication failed: session expired or insufficient permissions. Re-login and update cookie.".to_string(),
     }
 }
