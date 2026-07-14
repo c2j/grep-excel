@@ -47,15 +47,18 @@ pub struct ShareProvider {
 }
 
 /// Default Kingsoft Docs / WPS share provider.
+///
+/// Uses `{host}` in API templates so enterprise deployments on custom domains
+/// work automatically. For host matching, `kdocs.cn` covers the public service.
+/// Add enterprise domains via `SHARE_HOSTS` env var (comma-separated).
 pub const KINGSOFT_SHARE: ShareProvider = ShareProvider {
     id: "kingsoft_share",
-    // Match kdocs.cn and *.kdocs.cn subdomains.
     hosts: &["kdocs.cn"],
     share_path_prefix: "/l/",
-    office_download_template: "https://www.kdocs.cn/api/v3/office/file/{sid}/download",
-    drive_links_template: "https://drive.kdocs.cn/api/v5/links/{sid}",
+    office_download_template: "https://{host}/api/v3/office/file/{sid}/download",
+    drive_links_template: "https://{host}/api/v5/links/{sid}",
     drive_download_template:
-        "https://drive.kdocs.cn/api/v5/groups/{groupid}/files/{fileid}/download?isblocks=false&support_checksums=md5,sha1",
+        "https://{host}/api/v5/groups/{groupid}/files/{fileid}/download?isblocks=false&support_checksums=md5,sha1",
     origin_template: "https://{host}",
     referer_template: "https://{host}/l/{sid}",
 };
@@ -69,7 +72,50 @@ pub const BUILTIN_PROVIDERS: &[ShareProvider] = &[KINGSOFT_SHARE];
 /// - `http://` or `https://` inputs are matched against providers.
 /// - Unmatched URLs become [`SourceKind::UnsupportedRemote`].
 pub fn classify_source(input: &str) -> SourceKind {
-    classify_with_providers(input, BUILTIN_PROVIDERS)
+    let result = classify_with_providers(input, BUILTIN_PROVIDERS);
+    if matches!(result, SourceKind::UnsupportedRemote { .. }) {
+        if let Some(extra) = classify_extra_hosts(input) {
+            return extra;
+        }
+    }
+    result
+}
+
+/// Check if input matches a `SHARE_HOSTS` env var host with the same `/l/{sid}` pattern.
+fn classify_extra_hosts(input: &str) -> Option<SourceKind> {
+    #[cfg(feature = "share-url")]
+    {
+        let extra = std::env::var("SHARE_HOSTS").ok()?;
+        let lower = input.to_ascii_lowercase();
+        if !lower.starts_with("http://") && !lower.starts_with("https://") {
+            return None;
+        }
+        let after_scheme = input.splitn(2, "://").nth(1)?;
+        let (host_port, path_query) = match after_scheme.find('/') {
+            Some(idx) => (&after_scheme[..idx], &after_scheme[idx..]),
+            None => return None,
+        };
+        let host = host_port.split(':').next()?;
+        let path = path_query.split(['?', '#']).next().unwrap_or(path_query);
+
+        for entry in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if host_matches(host, &[entry]) {
+                if let Some(sid) = extract_sid(path, KINGSOFT_SHARE.share_path_prefix) {
+                    return Some(SourceKind::CloudShare {
+                        provider: KINGSOFT_SHARE,
+                        sid,
+                        original_url: input.to_string(),
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(not(feature = "share-url"))]
+    {
+        None
+    }
 }
 
 /// Classification with explicit provider list (for testing).
@@ -124,10 +170,11 @@ fn host_matches(host: &str, allowed: &[&str]) -> bool {
     })
 }
 
-/// Extract share id from path like `/l/{sid}` or `/l/{sid}/`.
+/// Extract share id from paths like `/l/{sid}`, `/l/{sid}/`, `/weboffice/l/{sid}`.
 fn extract_sid(path: &str, prefix: &str) -> Option<String> {
     let path = path.trim_end_matches('/');
-    let after = path.strip_prefix(prefix)?;
+    let idx = path.find(prefix)?;
+    let after = &path[idx + prefix.len()..];
     let sid = after.split('/').next()?;
     if sid.is_empty() {
         return None;
@@ -335,7 +382,10 @@ pub mod download {
         auth: &ShareAuth,
     ) -> Result<ResolvedSource> {
         let host = extract_host(original_url).unwrap_or_default();
-        let api_url = provider.office_download_template.replace("{sid}", sid);
+        let api_url = provider
+            .office_download_template
+            .replace("{host}", &host)
+            .replace("{sid}", sid);
         let origin = provider.origin_template.replace("{host}", &host);
         let referer = provider
             .referer_template
