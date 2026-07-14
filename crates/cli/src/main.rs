@@ -119,6 +119,13 @@ struct Args {
                 Prefer KDOCS_COOKIE env var to avoid shell history exposure."
     )]
     kdocs_cookie: Option<String>,
+
+    #[arg(
+        long,
+        help = "Additional comma-separated hosts for cloud share URL matching (e.g. 'docs.example.com'). \
+                Also settable via SHARE_HOSTS env var."
+    )]
+    share_hosts: Option<String>,
 }
 
 fn print_logo() {
@@ -164,6 +171,12 @@ fn main() -> Result<()> {
     }
 
     let args = Args::parse();
+
+    if let Some(ref hosts) = args.share_hosts {
+        if !hosts.is_empty() {
+            std::env::set_var("SHARE_HOSTS", hosts);
+        }
+    }
 
     #[cfg(not(feature = "share-url"))]
     if args.kdocs_cookie.is_some()
