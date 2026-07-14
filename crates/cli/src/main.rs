@@ -251,7 +251,7 @@ fn run_tui(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
@@ -349,7 +349,7 @@ fn run_cli(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
@@ -557,7 +557,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
@@ -702,7 +702,7 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
             let (path, display_name, guard) = match resolve_one(input, _share_auth.as_ref()) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                     continue;
                 }
             };
@@ -955,7 +955,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
@@ -1023,7 +1023,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
@@ -1349,7 +1349,7 @@ fn run_exec(args: &Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error resolving '{}': {}", input, e);
+                    eprintln!("Error resolving '{}': {:#}", input, e);
                 }
             }
         }
