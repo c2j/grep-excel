@@ -755,7 +755,8 @@ pub fn cli_export_failed() -> &'static str {
 
 #[cfg(feature = "share-url")]
 fn kdocs_help_line_zh() -> String {
-    "    --kdocs-cookie <COOKIE>  金山文档 (kdocs.cn) 分享链接下载专用 Cookie\n".to_string()
+    "    --kdocs-cookie <COOKIE>  金山文档 (kdocs.cn) 分享链接下载专用 Cookie\n\
+     --share-hosts <HOSTS>   额外域名 (逗号分隔)，用于企业版云文档链接\n".to_string()
 }
 
 #[cfg(not(feature = "share-url"))]
@@ -765,7 +766,8 @@ fn kdocs_help_line_zh() -> String {
 
 #[cfg(feature = "share-url")]
 fn kdocs_help_line_en() -> String {
-    "    --kdocs-cookie <COOKIE>  Cookie for Kingsoft Docs (kdocs.cn) share URL downloads\n".to_string()
+    "    --kdocs-cookie <COOKIE>  Cookie for Kingsoft Docs (kdocs.cn) share URL downloads\n\
+         --share-hosts <HOSTS>   Additional comma-separated hosts for enterprise share URLs\n".to_string()
 }
 
 #[cfg(not(feature = "share-url"))]
@@ -1286,11 +1288,11 @@ pub fn share_needs_auth(url: &str) -> String {
 pub fn share_unsupported_url(url: &str) -> String {
     match current() {
         Lang::Zh => format!(
-            "不支持的远程链接: {}\n支持: kdocs.cn / *.kdocs.cn 分享链接 (/l/...)。",
+            "不支持的远程链接: {}\n支持: kdocs.cn / *.kdocs.cn 分享链接 (/l/...)。\n如使用企业版域名，请设置 SHARE_HOSTS 环境变量 (逗号分隔)。",
             url
         ),
         Lang::En => format!(
-            "Unsupported remote URL: {}\nSupported: kdocs.cn / *.kdocs.cn share links (/l/...).",
+            "Unsupported remote URL: {}\nSupported: kdocs.cn / *.kdocs.cn share links (/l/...).\nFor enterprise domains, set SHARE_HOSTS env var (comma-separated).",
             url
         ),
     }
