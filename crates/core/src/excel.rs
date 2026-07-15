@@ -1,6 +1,7 @@
 use anyhow::Result;
-use calamine::{open_workbook_auto, Data, Reader};
+use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
 use chrono::{Datelike, Duration};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Read a file to String, handling non-UTF-8 encodings.
@@ -178,6 +179,165 @@ fn data_to_string(data: &Data) -> String {
     }
 }
 
+fn worksheet_merge_cells_auto<RS>(workbook: &mut Sheets<RS>, name: &str) -> Vec<Dimensions>
+where
+    RS: std::io::Read + std::io::Seek,
+{
+    match workbook {
+        Sheets::Xlsx(xlsx) => match xlsx.worksheet_merge_cells(name) {
+            Some(Ok(dims)) => dims,
+            _ => Vec::new(),
+        },
+        Sheets::Xls(xls) => xls.worksheet_merge_cells(name).unwrap_or_default(),
+        Sheets::Xlsb(_) | Sheets::Ods(_) => Vec::new(),
+    }
+}
+
+/// `range_start` is absolute sheet coords; `raw_rows[i]` is relative to that origin.
+/// Relative row 0 is the header and is never overwritten.
+fn apply_merged_cells_data(
+    raw_rows: &mut [Vec<Data>],
+    merged: &[Dimensions],
+    range_start: (u32, u32),
+) {
+    if raw_rows.is_empty() || merged.is_empty() {
+        return;
+    }
+
+    for dim in merged {
+        if dim.start.0 < range_start.0 || dim.start.1 < range_start.1 {
+            continue;
+        }
+        let rel_ar = (dim.start.0 - range_start.0) as usize;
+        let rel_ac = (dim.start.1 - range_start.1) as usize;
+        if rel_ar >= raw_rows.len() {
+            continue;
+        }
+        if rel_ac >= raw_rows[rel_ar].len() {
+            raw_rows[rel_ar].resize(rel_ac + 1, Data::Empty);
+        }
+        let anchor = raw_rows[rel_ar][rel_ac].clone();
+
+        for r in dim.start.0..=dim.end.0 {
+            for c in dim.start.1..=dim.end.1 {
+                if (r, c) == (dim.start.0, dim.start.1) {
+                    continue;
+                }
+                if r < range_start.0 || c < range_start.1 {
+                    continue;
+                }
+                let rr = (r - range_start.0) as usize;
+                let cc = (c - range_start.1) as usize;
+                if rr == 0 {
+                    continue;
+                }
+                if rr >= raw_rows.len() {
+                    continue;
+                }
+                if cc >= raw_rows[rr].len() {
+                    raw_rows[rr].resize(cc + 1, Data::Empty);
+                }
+                raw_rows[rr][cc] = anchor.clone();
+            }
+        }
+    }
+}
+
+/// Absolute 0-based sheet coords; row 0 (header) is never overwritten.
+fn apply_merged_cells_strings(rows: &mut [Vec<String>], merged: &[(u32, u32, u32, u32)]) {
+    if rows.is_empty() || merged.is_empty() {
+        return;
+    }
+
+    for &(sr, sc, er, ec) in merged {
+        let ar = sr as usize;
+        let ac = sc as usize;
+        if ar >= rows.len() {
+            continue;
+        }
+        if ac >= rows[ar].len() {
+            rows[ar].resize(ac + 1, String::new());
+        }
+        let anchor = rows[ar][ac].clone();
+
+        for r in sr..=er {
+            for c in sc..=ec {
+                if (r, c) == (sr, sc) {
+                    continue;
+                }
+                let rr = r as usize;
+                let cc = c as usize;
+                if rr == 0 {
+                    continue;
+                }
+                if rr >= rows.len() {
+                    continue;
+                }
+                if cc >= rows[rr].len() {
+                    rows[rr].resize(cc + 1, String::new());
+                }
+                rows[rr][cc] = anchor.clone();
+            }
+        }
+    }
+}
+
+fn parse_cell_ref_abs(cell: &str) -> Option<(u32, u32)> {
+    let col_letters = extract_col_letters(cell);
+    if col_letters.is_empty() || !col_letters.chars().all(|c| c.is_ascii_uppercase()) {
+        return None;
+    }
+    let row_str = &cell[col_letters.len()..];
+    if row_str.is_empty() {
+        return None;
+    }
+    let row_1based: u32 = row_str.parse().ok()?;
+    if row_1based == 0 {
+        return None;
+    }
+    Some((row_1based - 1, col_letter_to_index(col_letters) as u32))
+}
+
+fn parse_merge_cell_ref(ref_str: &str) -> Option<(u32, u32, u32, u32)> {
+    let ref_str = ref_str.trim();
+    if ref_str.is_empty() {
+        return None;
+    }
+    if let Some((start, end)) = ref_str.split_once(':') {
+        let (sr, sc) = parse_cell_ref_abs(start)?;
+        let (er, ec) = parse_cell_ref_abs(end)?;
+        Some((sr, sc, er, ec))
+    } else {
+        let (r, c) = parse_cell_ref_abs(ref_str)?;
+        Some((r, c, r, c))
+    }
+}
+
+fn parse_merge_cells_from_xml(doc: &roxmltree::Document) -> Vec<(u32, u32, u32, u32)> {
+    doc.descendants()
+        .filter(|n| n.has_tag_name("mergeCell"))
+        .filter_map(|n| n.attribute("ref").and_then(parse_merge_cell_ref))
+        .collect()
+}
+
+/// Excel max rows is 1_048_576. Cap densify so a corrupted `r` attribute cannot
+/// force multi-million empty-row allocations on the repair path.
+const MAX_REPAIR_DENSE_ROWS: usize = 1_048_576;
+
+fn densify_repair_rows(mut row_map: BTreeMap<usize, Vec<String>>) -> Vec<Vec<String>> {
+    let Some(&max_row) = row_map.keys().next_back() else {
+        return Vec::new();
+    };
+    if max_row >= MAX_REPAIR_DENSE_ROWS {
+        return row_map.into_values().collect();
+    }
+    let mut dense = Vec::with_capacity(max_row + 1);
+    for i in 0..=max_row {
+        dense.push(row_map.remove(&i).unwrap_or_default());
+    }
+    dense
+}
+
 // ── Date column detection helpers ────────────────────────────────────────────
 
 /// Keywords that suggest a column contains date values.
@@ -325,7 +485,7 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
             Err(_) => continue,
         };
 
-        let raw_rows: Vec<Vec<Data>> = range
+        let mut raw_rows: Vec<Vec<Data>> = range
             .rows()
             .map(|row| row.iter().cloned().collect())
             .collect();
@@ -333,6 +493,10 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
         if raw_rows.len() < 2 {
             continue;
         }
+
+        let range_start = range.start().unwrap_or((0, 0));
+        let merged = worksheet_merge_cells_auto(&mut workbook, sheet_name);
+        apply_merged_cells_data(&mut raw_rows, &merged, range_start);
 
         let headers_for_detection: Vec<String> = raw_rows[0].iter().map(data_to_string).collect();
         let date_cols = detect_date_columns_from_data(&raw_rows, &headers_for_detection);
@@ -554,7 +718,7 @@ where
             Err(_) => continue,
         };
 
-        let raw_rows: Vec<Vec<Data>> = range
+        let mut raw_rows: Vec<Vec<Data>> = range
             .rows()
             .map(|row| row.iter().cloned().collect())
             .collect();
@@ -562,6 +726,10 @@ where
         if raw_rows.len() < 2 {
             continue;
         }
+
+        let range_start = range.start().unwrap_or((0, 0));
+        let merged = worksheet_merge_cells_auto(&mut workbook, sheet_name);
+        apply_merged_cells_data(&mut raw_rows, &merged, range_start);
 
         let headers_for_detection: Vec<String> = raw_rows[0].iter().map(data_to_string).collect();
         let date_cols = detect_date_columns_from_data(&raw_rows, &headers_for_detection);
@@ -1003,7 +1171,8 @@ fn read_sheet_xml(
     let doc = roxmltree::Document::parse(&xml)
         .map_err(|e| anyhow::anyhow!("{} 解析失败: {}", sheet_path, e))?;
 
-    let mut all_rows: Vec<Vec<String>> = Vec::new();
+    let mut row_map: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    let mut next_seq = 0usize;
 
     for row_node in doc
         .root_element()
@@ -1068,9 +1237,23 @@ fn read_sheet_xml(
             for (col_idx, value) in cells {
                 full_row[col_idx] = value;
             }
-            all_rows.push(full_row);
+            let abs_row = if let Some(r) = row_node
+                .attribute("r")
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                let idx = r.saturating_sub(1);
+                next_seq = next_seq.max(idx + 1);
+                idx
+            } else {
+                let idx = next_seq;
+                next_seq += 1;
+                idx
+            };
+            row_map.insert(abs_row, full_row);
         }
     }
+
+    let mut all_rows = densify_repair_rows(row_map);
 
     if all_rows.len() < 2 {
         return Ok(SheetData {
@@ -1080,6 +1263,9 @@ fn read_sheet_xml(
             col_widths: Vec::new(),
         });
     }
+
+    let merged = parse_merge_cells_from_xml(&doc);
+    apply_merged_cells_strings(&mut all_rows, &merged);
 
     let headers = all_rows.remove(0);
     convert_date_columns_in_place(&headers, &mut all_rows);
@@ -1109,4 +1295,142 @@ fn extract_col_letters(cell_ref: &str) -> &str {
         .find(|c: char| c.is_ascii_digit())
         .unwrap_or(cell_ref.len());
     &cell_ref[..end]
+}
+
+#[cfg(test)]
+mod merged_cell_tests {
+    use super::*;
+
+    fn s(v: &str) -> Data {
+        Data::String(v.to_string())
+    }
+
+    fn empty_grid(rows: usize, cols: usize) -> Vec<Vec<Data>> {
+        vec![vec![Data::Empty; cols]; rows]
+    }
+
+    #[test]
+    fn parse_merge_ref_range_and_single() {
+        assert_eq!(parse_merge_cell_ref("A1:B2"), Some((0, 0, 1, 1)));
+        assert_eq!(parse_merge_cell_ref("C5"), Some((4, 2, 4, 2)));
+        assert_eq!(parse_merge_cell_ref("AA10:AB12"), Some((9, 26, 11, 27)));
+        assert_eq!(parse_merge_cell_ref(""), None);
+        assert_eq!(parse_merge_cell_ref("1A"), None);
+        assert_eq!(parse_merge_cell_ref("A"), None);
+    }
+
+    #[test]
+    fn vertical_merge_fills_data_rows() {
+        let mut grid = empty_grid(5, 2);
+        grid[0][0] = s("Region");
+        grid[0][1] = s("City");
+        grid[1][0] = s("华北");
+        grid[1][1] = s("北京");
+        grid[2][1] = s("天津");
+        grid[3][1] = s("石家庄");
+        grid[4][1] = s("唐山");
+
+        let merged = [Dimensions::new((1, 0), (4, 0))];
+        apply_merged_cells_data(&mut grid, &merged, (0, 0));
+
+        assert_eq!(grid[1][0], s("华北"));
+        assert_eq!(grid[2][0], s("华北"));
+        assert_eq!(grid[3][0], s("华北"));
+        assert_eq!(grid[4][0], s("华北"));
+        assert_eq!(grid[2][1], s("天津"));
+    }
+
+    #[test]
+    fn horizontal_and_2d_merge() {
+        let mut grid = empty_grid(4, 4);
+        grid[0][0] = s("H");
+        grid[1][1] = s("X");
+        apply_merged_cells_data(
+            &mut grid,
+            &[
+                Dimensions::new((1, 1), (1, 3)),
+                Dimensions::new((2, 1), (3, 2)),
+            ],
+            (0, 0),
+        );
+        assert_eq!(grid[1][2], s("X"));
+        assert_eq!(grid[1][3], s("X"));
+        grid[2][1] = s("Y");
+        apply_merged_cells_data(&mut grid, &[Dimensions::new((2, 1), (3, 2))], (0, 0));
+        assert_eq!(grid[2][2], s("Y"));
+        assert_eq!(grid[3][1], s("Y"));
+        assert_eq!(grid[3][2], s("Y"));
+    }
+
+    #[test]
+    fn header_row_never_overwritten() {
+        let mut grid = empty_grid(3, 3);
+        grid[0][0] = s("keep");
+        grid[1][0] = s("val");
+        apply_merged_cells_data(&mut grid, &[Dimensions::new((0, 0), (0, 2))], (0, 0));
+        assert_eq!(grid[0][1], Data::Empty);
+        assert_eq!(grid[0][2], Data::Empty);
+
+        apply_merged_cells_data(&mut grid, &[Dimensions::new((0, 0), (2, 0))], (0, 0));
+        assert_eq!(grid[0][0], s("keep"));
+        assert_eq!(grid[1][0], s("keep"));
+        assert_eq!(grid[2][0], s("keep"));
+    }
+
+    #[test]
+    fn empty_merged_and_oob_safe() {
+        let mut grid = empty_grid(2, 2);
+        grid[1][0] = s("a");
+        let before = grid.clone();
+        apply_merged_cells_data(&mut grid, &[], (0, 0));
+        assert_eq!(grid, before);
+        apply_merged_cells_data(&mut grid, &[Dimensions::new((10, 10), (12, 12))], (0, 0));
+        assert_eq!(grid[1][0], s("a"));
+    }
+
+    #[test]
+    fn range_start_offset() {
+        let mut grid = empty_grid(3, 2);
+        grid[0][0] = s("H");
+        grid[1][0] = s("V");
+        apply_merged_cells_data(&mut grid, &[Dimensions::new((6, 3), (7, 3))], (5, 3));
+        assert_eq!(grid[1][0], s("V"));
+        assert_eq!(grid[2][0], s("V"));
+    }
+
+    #[test]
+    fn strings_fill_skips_header() {
+        let mut rows = vec![
+            vec!["H".into(), "C".into()],
+            vec!["华北".into(), "北京".into()],
+            vec![String::new(), "天津".into()],
+            vec![String::new(), "石家庄".into()],
+        ];
+        apply_merged_cells_strings(&mut rows, &[(1, 0, 3, 0)]);
+        assert_eq!(rows[2][0], "华北");
+        assert_eq!(rows[3][0], "华北");
+        assert_eq!(rows[0][0], "H");
+    }
+
+    #[test]
+    fn densify_fills_gaps_within_cap() {
+        let mut map = BTreeMap::new();
+        map.insert(0, vec!["h".into()]);
+        map.insert(2, vec!["r2".into()]);
+        let rows = densify_repair_rows(map);
+        assert_eq!(rows.len(), 3);
+        assert!(rows[1].is_empty());
+        assert_eq!(rows[2], vec!["r2".to_string()]);
+    }
+
+    #[test]
+    fn densify_pathological_r_packs_without_allocating_millions() {
+        let mut map = BTreeMap::new();
+        map.insert(0, vec!["h".into()]);
+        map.insert(MAX_REPAIR_DENSE_ROWS, vec!["far".into()]);
+        let rows = densify_repair_rows(map);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["h".to_string()]);
+        assert_eq!(rows[1], vec!["far".to_string()]);
+    }
 }
