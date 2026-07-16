@@ -12,6 +12,18 @@ pub struct TableData {
     pub rows: Vec<Vec<String>>,
 }
 
+/// Lightweight table metadata — no row data materialized.
+/// Used by `-t` mode for fast schema discovery on large text/markdown files.
+#[derive(Debug, Clone)]
+pub struct TextTableMetadata {
+    /// Table name derived from a preceding heading, section title, or index
+    pub name: String,
+    /// Column headers
+    pub headers: Vec<String>,
+    /// Number of data rows (excluding header)
+    pub row_count: usize,
+}
+
 // ── GFM Pipe Table Parser ────────────────────────────────────────────────────
 
 /// Extract all GFM pipe tables from a markdown string.
@@ -598,6 +610,398 @@ pub fn extract_tables(path: &Path, content: &str) -> Result<Vec<TableData>, Stri
     }
 }
 
+// ── Lightweight Metadata Extraction (no row data) ────────────────────────────
+
+/// Extract table metadata (name, headers, row_count) from markdown pipe tables
+/// without storing row data. Mirrors `extract_tables_md` logic.
+fn extract_tables_metadata_md(text: &str) -> Vec<TextTableMetadata> {
+    let mut tables = Vec::new();
+    let mut in_code_block = false;
+    let mut current_heading: Option<String> = None;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Track code blocks (``` fences)
+        if line.trim_start().starts_with("```") {
+            in_code_block = !in_code_block;
+            i += 1;
+            continue;
+        }
+        if in_code_block {
+            i += 1;
+            continue;
+        }
+
+        // Track headings for sheet naming
+        if let Some(heading) = extract_heading(line) {
+            if !heading.is_empty() {
+                current_heading = Some(heading);
+            }
+            i += 1;
+            continue;
+        }
+
+        // Check for pipe table start: current line has pipe, next line is separator
+        if is_pipe_line(line) && i + 1 < lines.len() && is_pipe_separator(lines[i + 1]) {
+            let headers = parse_pipe_row(line);
+
+            // Skip separator line
+            i += 2;
+
+            // Count data rows — continue until blank line or non-pipe line
+            let mut row_count = 0;
+            while i < lines.len() {
+                let data_line = lines[i];
+                if data_line.trim().is_empty() || !is_pipe_line(data_line) {
+                    break;
+                }
+                row_count += 1;
+                i += 1;
+            }
+
+            let name = current_heading
+                .clone()
+                .unwrap_or_else(|| format!("Table_{}", tables.len() + 1));
+
+            tables.push(TextTableMetadata {
+                name,
+                headers,
+                row_count,
+            });
+            continue;
+        }
+
+        // Fallback: consecutive pipe lines without separator — treat as
+        // header-first table (first row = headers, rest = data rows).
+        if is_pipe_line(line)
+            && i + 1 < lines.len()
+            && is_pipe_line(lines[i + 1])
+            && !is_pipe_separator(lines[i + 1])
+        {
+            let headers = parse_pipe_row(line);
+            i += 1;
+
+            // Count remaining pipe lines as data rows
+            let mut row_count = 0;
+            while i < lines.len() {
+                let data_line = lines[i];
+                if data_line.trim().is_empty() || !is_pipe_line(data_line) {
+                    break;
+                }
+                row_count += 1;
+                i += 1;
+            }
+
+            let name = current_heading
+                .clone()
+                .unwrap_or_else(|| format!("Table_{}", tables.len() + 1));
+
+            tables.push(TextTableMetadata {
+                name,
+                headers,
+                row_count,
+            });
+            continue;
+        }
+
+        i += 1;
+    }
+
+    tables
+}
+
+/// Extract table metadata from a section that contains a dash-separator line.
+/// Mirrors `extract_table_from_section` but counts rows instead of storing them.
+fn extract_table_metadata_from_section(section: &Section) -> Option<TextTableMetadata> {
+    let body_lines: Vec<&str> = section.body.iter().map(|s| s.as_str()).collect();
+    if body_lines.len() < MIN_TABLE_ROWS {
+        return None;
+    }
+
+    // Find the dash-separator line
+    let mut separator_idx = None;
+    for (idx, line) in body_lines.iter().enumerate() {
+        if is_dash_separator(line) {
+            separator_idx = Some(idx);
+            break;
+        }
+    }
+
+    let separator_idx = separator_idx?;
+
+    // We need at least one row below the separator
+    if separator_idx + 1 >= body_lines.len() {
+        return None;
+    }
+
+    let separator_line = body_lines[separator_idx];
+    let boundaries = detect_column_boundaries(separator_line);
+
+    if boundaries.is_empty() || boundaries.len() < 2 {
+        return None;
+    }
+
+    // Collect header lines (above separator, walking upward)
+    let mut header_lines: Vec<&str> = Vec::new();
+    let mut hi = separator_idx;
+    while hi > 0 {
+        hi -= 1;
+        let line = body_lines[hi];
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || is_tilde_line(line)
+            || is_dash_separator(line)
+        {
+            break;
+        }
+        // Check if this line looks like a section title (short, no overlap with boundaries)
+        let first_content_pos = line.find(|c: char| !c.is_whitespace());
+        let first_col_start = boundaries.first().map(|&(s, _)| s).unwrap_or(0);
+        match first_content_pos {
+            Some(pos) if pos < first_col_start.saturating_sub(2) => {
+                // Content starts well before first column — likely a title, stop
+                break;
+            }
+            None => break,
+            _ => {}
+        }
+        header_lines.push(line);
+    }
+    header_lines.reverse();
+
+    // If no header lines found, use the line immediately before separator
+    if header_lines.is_empty() && separator_idx > 0 {
+        header_lines.push(body_lines[separator_idx - 1]);
+    }
+
+    // Parse headers (handle multi-line merge)
+    let headers = if header_lines.len() == 1 {
+        split_by_boundaries(header_lines[0], &boundaries)
+    } else if header_lines.is_empty() {
+        vec![String::new(); boundaries.len()]
+    } else {
+        // Multi-line header merge
+        let mut merged = vec![String::new(); boundaries.len()];
+        for hline in &header_lines {
+            let cells = split_by_boundaries(hline, &boundaries);
+            for (i, cell) in cells.iter().enumerate() {
+                if i < merged.len() {
+                    if merged[i].is_empty() {
+                        merged[i] = cell.clone();
+                    } else if !cell.is_empty() {
+                        merged[i] = format!("{} {}", merged[i], cell);
+                    }
+                }
+            }
+        }
+        merged
+    };
+
+    // Count data rows (lines below separator until blank/tilde/next separator)
+    let mut row_count = 0;
+    for data_line in body_lines.iter().skip(separator_idx + 1) {
+        let trimmed = data_line.trim();
+        if trimmed.is_empty() || is_tilde_line(data_line) || is_dash_separator(data_line) {
+            break;
+        }
+        let cells = split_by_boundaries(data_line, &boundaries);
+        if !cells.iter().all(|c| c.is_empty()) {
+            row_count += 1;
+        }
+    }
+
+    if row_count == 0 {
+        return None;
+    }
+
+    Some(TextTableMetadata {
+        name: section.title.clone(),
+        headers,
+        row_count,
+    })
+}
+
+/// Attempt to detect table metadata in a section by analyzing column alignment,
+/// for sections that have a tilde underline but NO dash-separator line.
+/// Mirrors `detect_table_by_alignment` but counts rows instead of storing them.
+fn detect_table_metadata_by_alignment(section: &Section) -> Option<TextTableMetadata> {
+    let body_lines: Vec<&str> = section.body.iter().map(|s| s.as_str()).collect();
+    if body_lines.len() < 2 {
+        return None;
+    }
+
+    // Filter out blank lines
+    let non_blank: Vec<&str> = body_lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .copied()
+        .collect();
+
+    if non_blank.len() < 3 {
+        return None;
+    }
+
+    // Parse each line into (token_count, token_start_positions)
+    struct LineTokens {
+        count: usize,
+        positions: Vec<usize>,
+    }
+
+    let parsed: Vec<LineTokens> = non_blank
+        .iter()
+        .map(|line| {
+            let mut tokens = Vec::new();
+            let mut chars = line.char_indices().peekable();
+            while let Some(&(pos, c)) = chars.peek() {
+                if c.is_whitespace() {
+                    chars.next();
+                } else {
+                    tokens.push(pos);
+                    // Skip to end of this token
+                    while let Some(&(_, c2)) = chars.peek() {
+                        if c2.is_whitespace() {
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+            }
+            LineTokens {
+                count: tokens.len(),
+                positions: tokens,
+            }
+        })
+        .collect();
+
+    if parsed.is_empty() {
+        return None;
+    }
+
+    // Find the most common token count (mode)
+    let mut counts = std::collections::HashMap::new();
+    for pt in &parsed {
+        *counts.entry(pt.count).or_insert(0) += 1;
+    }
+    let best_count = counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
+        .map(|(col, _)| col)
+        .unwrap_or(0);
+
+    if best_count < 2 {
+        return None;
+    }
+
+    // Filter lines matching the best token count
+    let matching: Vec<&LineTokens> = parsed.iter().filter(|pt| pt.count == best_count).collect();
+    if matching.len() < 3 {
+        return None;
+    }
+
+    // Compute median start position for each column index
+    let mut boundaries: Vec<(usize, usize)> = Vec::new();
+    for col in 0..best_count {
+        let mut positions: Vec<usize> =
+            matching.iter().filter_map(|pt| pt.positions.get(col)).copied().collect();
+        if positions.is_empty() {
+            return None;
+        }
+        positions.sort();
+        let median = positions[positions.len() / 2];
+        let end = if col + 1 < best_count {
+            let mut next_positions: Vec<usize> = matching
+                .iter()
+                .filter_map(|pt| pt.positions.get(col + 1))
+                .copied()
+                .collect();
+            if next_positions.is_empty() {
+                non_blank.iter().map(|l| l.len()).max().unwrap_or(80)
+            } else {
+                next_positions.sort();
+                next_positions[next_positions.len() / 2]
+            }
+        } else {
+            non_blank.iter().map(|l| l.len()).max().unwrap_or(80)
+        };
+        boundaries.push((median, end));
+    }
+
+    if boundaries.len() < 2 {
+        return None;
+    }
+
+    // First line = header, rest = data rows
+    let header = split_by_boundaries(non_blank[0], &boundaries);
+    let row_count = non_blank[1..].len();
+
+    if row_count == 0 {
+        return None;
+    }
+
+    // Reject tables where the "header" line contains numeric values — these
+    // are key-value pair layouts being misidentified as multi-column tables.
+    if header.iter().any(|c| c.trim().parse::<f64>().is_ok()) {
+        return None;
+    }
+
+    Some(TextTableMetadata {
+        name: section.title.clone(),
+        headers: header,
+        row_count,
+    })
+}
+
+/// Extract table metadata from a plain text file using section segmentation and
+/// dash-separator detection, with alignment-based fallback.
+/// Mirrors `extract_tables_txt` but returns metadata without row data.
+fn extract_tables_metadata_txt(text: &str) -> Vec<TextTableMetadata> {
+    let (_preamble, sections) = collect_sections(text);
+    let mut tables = Vec::new();
+
+    for section in &sections {
+        // Primary: try dash-separator detection
+        if let Some(meta) = extract_table_metadata_from_section(section) {
+            tables.push(meta);
+        } else if let Some(meta) = detect_table_metadata_by_alignment(section) {
+            // Fallback: try alignment-based detection (Pattern C)
+            tables.push(meta);
+        }
+    }
+
+    tables
+}
+
+/// Public entry point: detect file type by extension and dispatch to the
+/// appropriate metadata parser. For .md files with no pipe tables, falls back
+/// to the TXT parser to handle markdown files with aligned text tables.
+///
+/// Returns table metadata (name, headers, row_count) without materializing
+/// row data — suitable for fast schema discovery on large files.
+pub fn extract_tables_metadata(path: &Path, content: &str) -> Result<Vec<TextTableMetadata>, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "md" || ext == "markdown" {
+        let tables = extract_tables_metadata_md(content);
+        if tables.is_empty() {
+            // Fallback: try TXT parser — some .md files have aligned text tables
+            let txt_tables = extract_tables_metadata_txt(content);
+            if !txt_tables.is_empty() {
+                return Ok(txt_tables);
+            }
+        }
+        Ok(tables)
+    } else {
+        Ok(extract_tables_metadata_txt(content))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,5 +1339,174 @@ Nothing tabular.
 "#;
         let tables = extract_tables_txt(txt);
         assert!(tables.is_empty(), "section without table should yield nothing");
+    }
+
+    #[test]
+    fn test_extract_tables_metadata_lightweight() {
+        // ── MD pipe tables ────────────────────────────────────────────────
+        let md = r#"| Name | Age | City |
+|---|---|---|
+| Alice | 30 | NYC |
+| Bob | 25 | SF |
+| Carol | 28 | LA |
+"#;
+        let path = std::path::Path::new("test.md");
+        let meta = extract_tables_metadata(path, md).unwrap();
+        assert_eq!(meta.len(), 1, "should detect one pipe table");
+        assert_eq!(meta[0].name, "Table_1");
+        assert_eq!(meta[0].headers, vec!["Name", "Age", "City"]);
+        assert_eq!(meta[0].row_count, 3, "should have 3 data rows");
+
+        // ── MD with heading ──────────────────────────────────────────────
+        let md2 = r#"## Team Roster
+
+| Player | Position |
+|--------|----------|
+| Alice | PG |
+| Bob | SG |
+| Carol | SF |
+"#;
+        let meta2 = extract_tables_metadata(path, md2).unwrap();
+        assert_eq!(meta2.len(), 1);
+        assert_eq!(meta2[0].name, "Team Roster");
+        assert_eq!(meta2[0].headers, vec!["Player", "Position"]);
+        assert_eq!(meta2[0].row_count, 3);
+
+        // ── MD code blocks should be skipped ─────────────────────────────
+        let md3 = r#"```markdown
+| Hidden | Table |
+|---|---|
+| a | b |
+```
+
+| Visible | Col |
+|---------|-----|
+| 1 | 2 |
+"#;
+        let meta3 = extract_tables_metadata(path, md3).unwrap();
+        assert_eq!(meta3.len(), 1, "tables inside code blocks should be skipped");
+        assert_eq!(meta3[0].headers, vec!["Visible", "Col"]);
+        assert_eq!(meta3[0].row_count, 1);
+
+        // ── MD multiple tables ───────────────────────────────────────────
+        let md4 = r#"## Table A
+
+| X | Y |
+|---|---|
+| 1 | 2 |
+
+## Table B
+
+| M | N |
+|---|---|
+| 3 | 4 |
+| 5 | 6 |
+"#;
+        let meta4 = extract_tables_metadata(path, md4).unwrap();
+        assert_eq!(meta4.len(), 2);
+        assert_eq!(meta4[0].name, "Table A");
+        assert_eq!(meta4[0].row_count, 1);
+        assert_eq!(meta4[1].name, "Table B");
+        assert_eq!(meta4[1].row_count, 2);
+
+        // ── MD no separator line (first pipe line = header) ──────────────
+        let md5 = r#"| H1 | H2 |
+| A | B |
+| C | D |
+"#;
+        let meta5 = extract_tables_metadata(path, md5).unwrap();
+        assert_eq!(meta5.len(), 1);
+        assert_eq!(meta5[0].headers, vec!["H1", "H2"]);
+        assert_eq!(meta5[0].row_count, 2);
+
+        // ── TXT dash-separator tables ────────────────────────────────────
+        let txt = r#"Load Profile
+~~~~~~~~~~~~
+Metric         Value
+------         -----
+DB Time(s)     4.1
+CPU Time(s)    2.3
+IO Time(s)     1.1
+"#;
+        let txt_path = std::path::Path::new("report.txt");
+        let meta_txt = extract_tables_metadata(txt_path, txt).unwrap();
+        assert_eq!(meta_txt.len(), 1);
+        assert_eq!(meta_txt[0].name, "Load Profile");
+        assert_eq!(meta_txt[0].headers, vec!["Metric", "Value"]);
+        assert_eq!(meta_txt[0].row_count, 3);
+
+        // ── TXT multi-section ────────────────────────────────────────────
+        let txt2 = r#"Section One
+~~~~~~~~~~~
+ColA    ColB
+----    ----
+1       2
+3       4
+
+Section Two
+~~~~~~~~~~~
+X        Y        Z
+-        -        -
+a        b        c
+"#;
+        let meta_txt2 = extract_tables_metadata(txt_path, txt2).unwrap();
+        assert_eq!(meta_txt2.len(), 2);
+        assert_eq!(meta_txt2[0].name, "Section One");
+        assert_eq!(meta_txt2[0].row_count, 2);
+        assert_eq!(meta_txt2[1].name, "Section Two");
+        assert_eq!(meta_txt2[1].row_count, 1);
+
+        // ── TXT alignment-based (Pattern C) ──────────────────────────────
+        // NOTE: header values are not asserted here — the alignment heuristic
+        // may split on token boundaries differently; the original test
+        // (test_detect_table_by_alignment_pattern_c) only checks name and
+        // row_count, so we follow the same convention.
+        let txt3 = r#"Host CPU
+~~~~~~~~
+%User  %System  %Idle
+ 45.2    12.3    32.1
+ 67.8     8.9    23.3
+ 12.5     4.2    83.3
+"#;
+        let meta_txt3 = extract_tables_metadata(txt_path, txt3).unwrap();
+        assert_eq!(meta_txt3.len(), 1, "should detect Pattern C table");
+        assert_eq!(meta_txt3[0].name, "Host CPU");
+        assert_eq!(meta_txt3[0].row_count, 3);
+
+        // ── MD with no tables (should be empty) ──────────────────────────
+        let meta_empty = extract_tables_metadata(path, "Just prose.\nNo tables.").unwrap();
+        assert!(meta_empty.is_empty());
+
+        // ── Empty content (should be empty) ──────────────────────────────
+        let meta_empty2 = extract_tables_metadata(path, "").unwrap();
+        assert!(meta_empty2.is_empty());
+
+        // ── TXT file with no tables (should be empty) ────────────────────
+        let meta_empty3 = extract_tables_metadata(txt_path, "Just prose.\nNo sections.").unwrap();
+        assert!(meta_empty3.is_empty());
+
+        // ── .markdown extension ──────────────────────────────────────────
+        let md_path = std::path::Path::new("doc.markdown");
+        let md6 = r#"| A | B |
+|---|---|
+| 1 | 2 |
+| 3 | 4 |
+"#;
+        let meta_md = extract_tables_metadata(md_path, md6).unwrap();
+        assert_eq!(meta_md.len(), 1);
+        assert_eq!(meta_md[0].row_count, 2);
+
+        // ── Verify metadata matches full extraction results ──────────────
+        // Same MD table: row_count should match rows.len()
+        let full = extract_tables(path, md).unwrap();
+        assert_eq!(meta[0].headers, full[0].headers);
+        assert_eq!(meta[0].row_count, full[0].rows.len());
+        assert_eq!(meta[0].name, full[0].name);
+
+        // Same TXT table
+        let full_txt = extract_tables(txt_path, txt).unwrap();
+        assert_eq!(meta_txt[0].headers, full_txt[0].headers);
+        assert_eq!(meta_txt[0].row_count, full_txt[0].rows.len());
+        assert_eq!(meta_txt[0].name, full_txt[0].name);
     }
 }

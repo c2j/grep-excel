@@ -20,32 +20,59 @@ pub struct DuckDbEngine {
     conn: Connection,
 }
 
+fn init_schema(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE SEQUENCE IF NOT EXISTS file_id_seq START 1;
+        CREATE SEQUENCE IF NOT EXISTS sheet_id_seq START 1;
+        CREATE TABLE IF NOT EXISTS files (
+            file_id INTEGER DEFAULT nextval('file_id_seq') PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            imported_at TIMESTAMP DEFAULT current_timestamp
+        );
+        CREATE TABLE IF NOT EXISTS sheets (
+            sheet_id INTEGER DEFAULT nextval('sheet_id_seq') PRIMARY KEY,
+            file_id INTEGER NOT NULL REFERENCES files(file_id),
+            sheet_name TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            row_count INTEGER DEFAULT 0,
+            col_names TEXT DEFAULT '',
+            col_widths TEXT DEFAULT '',
+            state TEXT DEFAULT 'materialized',
+            source_path TEXT DEFAULT ''
+        );
+        SET preserve_insertion_order = false;
+        SET enable_progress_bar = false;",
+    )?;
+    let _ = conn.execute(
+        "ALTER TABLE sheets ADD COLUMN IF NOT EXISTS state TEXT DEFAULT 'materialized'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE sheets ADD COLUMN IF NOT EXISTS source_path TEXT DEFAULT ''",
+        [],
+    );
+    Ok(())
+}
+
 impl SearchEngine for DuckDbEngine {
     fn new() -> Result<Self>
     where
         Self: Sized,
     {
         let conn = Connection::open_in_memory()?;
+        init_schema(&conn)?;
+        Ok(DuckDbEngine { conn })
+    }
 
-        conn.execute_batch(
-            "CREATE SEQUENCE IF NOT EXISTS file_id_seq START 1;
-            CREATE SEQUENCE IF NOT EXISTS sheet_id_seq START 1;
-            CREATE TABLE IF NOT EXISTS files (
-                file_id INTEGER DEFAULT nextval('file_id_seq') PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                imported_at TIMESTAMP DEFAULT current_timestamp
-            );
-            CREATE TABLE IF NOT EXISTS sheets (
-                sheet_id INTEGER DEFAULT nextval('sheet_id_seq') PRIMARY KEY,
-                file_id INTEGER NOT NULL REFERENCES files(file_id),
-                sheet_name TEXT NOT NULL,
-                table_name TEXT NOT NULL,
-                row_count INTEGER DEFAULT 0,
-                col_names TEXT DEFAULT '',
-                col_widths TEXT DEFAULT ''
-            );",
-        )?;
-
+    fn with_path(path: &Path) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let conn = Connection::open(path)?;
+        init_schema(&conn)?;
         Ok(DuckDbEngine { conn })
     }
 
@@ -670,6 +697,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let col_idx = meta.col_names.iter().position(|h| h == column)
                 .ok_or_else(|| anyhow::anyhow!(
@@ -686,6 +714,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let mut count = 0usize;
             for (row, column, value) in updates {
@@ -701,6 +730,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let total = meta.row_count;
             let start = start_row.min(total);
@@ -747,6 +777,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             if start_row >= meta.row_count {
                 return Ok(0);
@@ -768,6 +799,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             if meta.col_names.iter().any(|h| h == column_name) {
                 anyhow::bail!("Column '{}' already exists in sheet '{}'", column_name, sheet_name);
@@ -795,6 +827,7 @@ impl SearchEngine for DuckDbEngine {
         }
 
         fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+            self.ensure_materialized(file_name)?;
             let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
             let col_idx = meta.col_names.iter().position(|h| h == old_name)
                 .ok_or_else(|| anyhow::anyhow!(
@@ -872,9 +905,526 @@ impl SearchEngine for DuckDbEngine {
                 columns,
             })
         }
+
+        fn register_virtual(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+
+            if ext == "csv" {
+                self.register_csv_virtual(path, progress)
+            } else {
+                self.register_lazy_virtual(path, progress)
+            }
+        }
+
+        fn materialize(&mut self, file_name: &str, progress: &dyn Fn(usize, usize)) -> Result<()> {
+            self.materialize_impl(file_name, progress)
+        }
+
+        fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState> {
+            let state: String = self
+                .conn
+                .query_row(
+                    "SELECT s.state FROM sheets s
+                     JOIN files f ON s.file_id = f.file_id
+                     WHERE f.file_name = ? AND s.sheet_name = ?",
+                    params![file_name, sheet_name],
+                    |row| row.get(0),
+                )
+                .ok()?;
+            match state.as_str() {
+                "virtual" => Some(SheetState::Virtual),
+                "materializing" => Some(SheetState::Materializing),
+                "materialized" => Some(SheetState::Materialized),
+                _ => Some(SheetState::Materialized),
+            }
+        }
 }
 
 impl DuckDbEngine {
+    fn get_view_columns(&self, table_name: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position"
+        )?;
+        let mapped = stmt.query_map(params![table_name], |row: &::duckdb::Row| {
+            row.get::<_, String>(0)
+        })?;
+        Ok(mapped.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn sheet_aggregate_state(&self, file_name: &str) -> String {
+        // Prefer materializing > virtual > materialized when mixed
+        let states: Vec<String> = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT s.state FROM sheets s
+                 JOIN files f ON s.file_id = f.file_id
+                 WHERE f.file_name = ?",
+            )
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map(params![file_name], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|mapped| {
+                        mapped
+                            .filter_map(|r: std::result::Result<String, ::duckdb::Error>| r.ok())
+                            .collect()
+                    })
+            })
+            .unwrap_or_default();
+
+        if states.iter().any(|s| s == "materializing") {
+            "materializing".to_string()
+        } else if states.iter().any(|s| s == "virtual") {
+            "virtual".to_string()
+        } else {
+            "materialized".to_string()
+        }
+    }
+
+    fn ensure_materialized(&mut self, file_name: &str) -> Result<()> {
+        // Wait if another connection is already materializing (up to ~10 min)
+        for attempt in 0..6000u32 {
+            match self.sheet_aggregate_state(file_name).as_str() {
+                "materialized" => return Ok(()),
+                "materializing" => {
+                    if attempt == 5999 {
+                        anyhow::bail!(
+                            "File '{}' is still being imported. Please try again shortly.",
+                            file_name
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                "virtual" => {
+                    // Claim + materialize (safe under concurrent claim in materialize_impl)
+                    return self.materialize_impl(file_name, &|_, _| {});
+                }
+                _ => return Ok(()),
+            }
+        }
+        Ok(())
+    }
+
+    fn create_friendly_aliases(
+        &self,
+        path: &Path,
+        sheet_name: &str,
+        table_name: &str,
+    ) -> Result<()> {
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let safe_schema = sanitize_schema_name(&file_stem);
+        let _ = self.conn.execute(
+            &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+            [],
+        );
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                quote_ident(&safe_schema),
+                quote_ident(sheet_name),
+                quote_ident(table_name),
+            ),
+            [],
+        );
+        let dotted_alias = format!("{}.{}", file_stem, sheet_name);
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                quote_ident(&dotted_alias),
+                quote_ident(table_name),
+            ),
+            [],
+        );
+        Ok(())
+    }
+
+    fn register_csv_virtual(
+        &mut self,
+        path: &Path,
+        progress_callback: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let sheet_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("csv")
+            .to_string();
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid path encoding"))?;
+        let escaped_path = path_str.replace('\'', "''");
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![&file_name],
+        )?;
+        let file_id: i64 = self.conn.query_row(
+            "SELECT currval('file_id_seq')",
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let table_name = format!("sheet_{}_0", file_id);
+
+        let create_view = format!(
+            "CREATE VIEW {} AS SELECT * FROM read_csv_auto('{}', header=true, all_varchar=true)",
+            quote_ident(&table_name),
+            escaped_path
+        );
+        self.conn.execute(&create_view, [])?;
+
+        let row_count: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM {}", quote_ident(&table_name)),
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+        progress_callback(row_count as usize, row_count as usize);
+
+        let col_names = self.get_view_columns(&table_name)?;
+        let col_names_str = col_names.join("\x1f");
+        self.conn.execute(
+            "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths, state, source_path) \
+             VALUES (?, ?, ?, ?, ?, '', 'virtual', '')",
+            params![file_id, &sheet_name, &table_name, row_count as i32, &col_names_str],
+        )?;
+
+        self.create_friendly_aliases(path, &sheet_name, &table_name)?;
+
+        let sample_rows = self.get_sample_rows(&table_name, &col_names, 3)?;
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: vec![(sheet_name.clone(), row_count as usize)],
+            total_rows: row_count as usize,
+            sample: if sample_rows.is_empty() {
+                None
+            } else {
+                Some(FileSample {
+                    sheet_name,
+                    headers: col_names,
+                    rows: sample_rows,
+                })
+            },
+        })
+    }
+
+    fn register_lazy_virtual(
+        &mut self,
+        path: &Path,
+        progress_callback: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        use crate::excel::parse_file_metadata;
+
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid path encoding"))?;
+
+        let sheets_meta = parse_file_metadata(path)?;
+        if sheets_meta.is_empty() {
+            anyhow::bail!("No data found in file: {}", file_name);
+        }
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![&file_name],
+        )?;
+        let file_id: i64 = self.conn.query_row(
+            "SELECT currval('file_id_seq')",
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let mut total_rows: usize = 0;
+        let mut sheet_info: Vec<(String, usize)> = Vec::new();
+        let mut sample: Option<FileSample> = None;
+
+        for (sheet_idx, meta) in sheets_meta.iter().enumerate() {
+            let table_name = format!("sheet_{}_{}", file_id, sheet_idx);
+            let col_names = sanitize_col_names(&meta.headers);
+
+            let col_defs: Vec<String> = col_names
+                .iter()
+                .map(|c| format!("{} TEXT", quote_ident(c)))
+                .collect();
+            self.conn.execute(
+                &format!(
+                    "CREATE TABLE {} ({})",
+                    quote_ident(&table_name),
+                    col_defs.join(", ")
+                ),
+                [],
+            )?;
+
+            let col_names_str = col_names.join("\x1f");
+            self.conn.execute(
+                "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths, state, source_path) \
+                 VALUES (?, ?, ?, ?, ?, '', 'virtual', ?)",
+                params![
+                    file_id,
+                    &meta.name,
+                    &table_name,
+                    meta.row_count as i32,
+                    &col_names_str,
+                    path_str
+                ],
+            )?;
+
+            self.create_friendly_aliases(path, &meta.name, &table_name)?;
+
+            total_rows += meta.row_count;
+            sheet_info.push((meta.name.clone(), meta.row_count));
+
+            if sample.is_none() {
+                sample = Some(FileSample {
+                    sheet_name: meta.name.clone(),
+                    headers: meta.headers.clone(),
+                    rows: Vec::new(),
+                });
+            }
+        }
+
+        progress_callback(total_rows, total_rows);
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
+    fn materialize_impl(
+        &mut self,
+        file_name: &str,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<()> {
+        let candidates: Vec<(String, String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_name, s.table_name, COALESCE(s.source_path, '')
+                 FROM sheets s
+                 JOIN files f ON s.file_id = f.file_id
+                 WHERE f.file_name = ? AND s.state = 'virtual'",
+            )?;
+            let mapped = stmt.query_map(params![file_name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?;
+            mapped.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        // Non-CSV: source_path is set — drop virtual shells and full-import
+        let source_path = candidates
+            .iter()
+            .find(|(_, _, p)| !p.is_empty())
+            .map(|(_, _, p)| p.clone());
+
+        if let Some(src) = source_path {
+            // Claim all virtual sheets for this file first
+            let claimed = self.conn.execute(
+                "UPDATE sheets SET state = 'materializing'
+                 WHERE file_id IN (SELECT file_id FROM files WHERE file_name = ?)
+                   AND state = 'virtual'",
+                params![file_name],
+            )?;
+            if claimed == 0 {
+                return Ok(());
+            }
+            return match (|| -> Result<()> {
+                self.drop_virtual_registration(file_name)?;
+                self.import_excel(Path::new(&src), progress)?;
+                Ok(())
+            })() {
+                Ok(()) => Ok(()),
+                Err(e) => Err(e),
+            };
+        }
+
+        // CSV: claim each sheet individually so concurrent connections don't double-work
+        let sheet_count = candidates.len().max(1);
+        let per_sheet = 100 / sheet_count;
+        let mut claimed_any = false;
+
+        for (idx, (_sheet_name, table_name, _)) in candidates.iter().enumerate() {
+            let claimed = self.conn.execute(
+                "UPDATE sheets SET state = 'materializing'
+                 WHERE table_name = ? AND state = 'virtual'",
+                params![table_name],
+            )?;
+            if claimed == 0 {
+                continue;
+            }
+            claimed_any = true;
+
+            let base = idx * per_sheet;
+            progress(base, 100);
+
+            let temp_name = format!("{}_mat", table_name);
+            if let Err(e) =
+                self.materialize_csv_sheet(table_name, &temp_name, base, per_sheet, progress)
+            {
+                let _ = self.conn.execute(
+                    &format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_name)),
+                    [],
+                );
+                let _ = self.conn.execute(
+                    "UPDATE sheets SET state = 'virtual' WHERE table_name = ?",
+                    params![table_name],
+                );
+                return Err(e);
+            }
+
+            progress(base + per_sheet, 100);
+        }
+
+        if claimed_any {
+            progress(100, 100);
+        }
+        Ok(())
+    }
+
+    fn materialize_csv_sheet(
+        &mut self,
+        table_name: &str,
+        temp_name: &str,
+        base: usize,
+        per_sheet: usize,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<()> {
+        let _ = self.conn.execute(
+            &format!("DROP TABLE IF EXISTS {}", quote_ident(temp_name)),
+            [],
+        );
+
+        progress(base + per_sheet * 10 / 100, 100);
+        self.conn.execute(
+            &format!(
+                "CREATE TABLE {} AS SELECT * FROM {}",
+                quote_ident(temp_name),
+                quote_ident(table_name)
+            ),
+            [],
+        )?;
+        progress(base + per_sheet * 70 / 100, 100);
+
+        self.conn.execute(
+            &format!("DROP VIEW IF EXISTS {}", quote_ident(table_name)),
+            [],
+        )?;
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} RENAME TO {}",
+                quote_ident(temp_name),
+                quote_ident(table_name)
+            ),
+            [],
+        )?;
+        progress(base + per_sheet * 80 / 100, 100);
+
+        if let Ok(col_names) = self.get_view_columns(table_name) {
+            let col_total = col_names.len().max(1);
+            for (ci, col_name) in col_names.iter().enumerate() {
+                let safe_name =
+                    col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                let index_name = format!("idx_{}_{}", table_name, safe_name);
+                let _ = self.conn.execute(
+                    &format!(
+                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
+                        index_name,
+                        quote_ident(table_name),
+                        quote_ident(col_name)
+                    ),
+                    [],
+                );
+                let idx_pct = 80 + (20 * (ci + 1) / col_total);
+                progress(base + per_sheet * idx_pct / 100, 100);
+            }
+        }
+
+        self.conn.execute(
+            "UPDATE sheets SET state = 'materialized' WHERE table_name = ?",
+            params![table_name],
+        )?;
+        Ok(())
+    }
+
+    fn drop_virtual_registration(&mut self, file_name: &str) -> Result<()> {
+        let sheets: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT s.table_name, s.sheet_name FROM sheets s
+                 JOIN files f ON s.file_id = f.file_id
+                 WHERE f.file_name = ?",
+            )?;
+            let mapped = stmt.query_map(params![file_name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            mapped.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+
+        let file_stem = std::path::Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let safe_schema = sanitize_schema_name(&file_stem);
+
+        for (table_name, sheet_name) in &sheets {
+            let _ = self.conn.execute(
+                &format!("DROP VIEW IF EXISTS {}", quote_ident(table_name)),
+                [],
+            );
+            let _ = self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", quote_ident(table_name)),
+                [],
+            );
+            let dotted_alias = format!("{}.{}", file_stem, sheet_name);
+            let _ = self.conn.execute(
+                &format!("DROP VIEW IF EXISTS {}", quote_ident(&dotted_alias)),
+                [],
+            );
+            let _ = self.conn.execute(
+                &format!(
+                    "DROP VIEW IF EXISTS {}.{}",
+                    quote_ident(&safe_schema),
+                    quote_ident(sheet_name)
+                ),
+                [],
+            );
+        }
+
+        self.conn.execute(
+            "DELETE FROM sheets WHERE file_id IN (SELECT file_id FROM files WHERE file_name = ?)",
+            params![file_name],
+        )?;
+        self.conn
+            .execute("DELETE FROM files WHERE file_name = ?", params![file_name])?;
+
+        Ok(())
+    }
+
     fn import_csv_direct(
         &mut self,
         path: &Path,
@@ -907,12 +1457,32 @@ impl DuckDbEngine {
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid file path encoding"))?;
 
-        let create_sql = format!(
-            "CREATE TABLE {} AS SELECT * FROM read_csv_auto('{}', header=true, all_varchar=true, ignore_errors=true)",
+        let base_args = "header=true, all_varchar=true";
+        let create_sql_try = format!(
+            "CREATE TABLE {} AS SELECT * FROM read_csv_auto('{}', {})",
             quote_ident(&table_name),
-            path_str.replace('\'', "''")
+            path_str.replace('\'', "''"),
+            base_args
         );
-        self.conn.execute(&create_sql, [])?;
+        if let Err(first_err) = self.conn.execute(&create_sql_try, []) {
+            let _ = self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", quote_ident(&table_name)),
+                [],
+            );
+            let create_sql_fallback = format!(
+                "CREATE TABLE {} AS SELECT * FROM read_csv_auto('{}', {}, ignore_errors=true)",
+                quote_ident(&table_name),
+                path_str.replace('\'', "''"),
+                base_args
+            );
+            self.conn.execute(&create_sql_fallback, []).map_err(|e2| {
+                anyhow::anyhow!(
+                    "CSV import failed: {}; fallback also failed: {}",
+                    first_err,
+                    e2
+                )
+            })?;
+        }
 
         let row_count: i64 = self.conn.query_row(
             &format!("SELECT COUNT(*) FROM {}", quote_ident(&table_name)),
@@ -920,15 +1490,7 @@ impl DuckDbEngine {
             |row: &::duckdb::Row| row.get::<_, i64>(0),
         )?;
 
-        let col_names: Vec<String> = {
-            let mut stmt = self.conn.prepare(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position"
-            )?;
-            let mapped = stmt.query_map(params![&table_name], |row: &::duckdb::Row| {
-                row.get::<_, String>(0)
-            })?;
-            mapped.collect::<Result<Vec<_>, _>>()?
-        };
+        let col_names: Vec<String> = self.get_view_columns(&table_name)?;
 
         let sample_rows = self.get_sample_rows(&table_name, &col_names, 3)?;
 

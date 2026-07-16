@@ -526,6 +526,18 @@ impl SearchEngine for MemEngine {
         Ok(())
     }
 
+    fn register_virtual(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
+        self.import_excel(path, progress) // fall back to full import
+    }
+
+    fn materialize(&mut self, _file_name: &str, _progress: &dyn Fn(usize, usize)) -> Result<()> {
+        Ok(()) // already materialized via register_virtual fallback
+    }
+
+    fn sheet_state(&self, _file_name: &str, _sheet_name: &str) -> Option<SheetState> {
+        Some(SheetState::Materialized)
+    }
+
     fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
         let sheet = self.sheets.iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)

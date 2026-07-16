@@ -229,9 +229,14 @@ fn main() -> Result<()> {
 }
 
 fn run_tui(args: &Args) -> Result<()> {
-    let database = DefaultEngine::new()?;
+    // File-backed DuckDB enables concurrent materialize without blocking queries
+    let db_path = std::env::temp_dir().join(format!(
+        "grep_excel_tui_{}.duckdb",
+        std::process::id()
+    ));
+    let database = DefaultEngine::with_path(&db_path).or_else(|_| DefaultEngine::new())?;
     let (event_tx, event_rx) = create_event_channel();
-    let mut app = App::new(database, event_tx, event_rx);
+    let mut app = App::new_with_db_path(database, event_tx, event_rx, Some(db_path.clone()));
 
     #[cfg(feature = "share-url")]
     let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
@@ -264,7 +269,10 @@ fn run_tui(args: &Args) -> Result<()> {
         }
     }
 
-    app.run()
+    let result = app.run();
+    let _ = std::fs::remove_file(&db_path);
+    let _ = std::fs::remove_file(format!("{}.wal", db_path.display()));
+    result
 }
 
 fn import_file_with_repair(
@@ -282,6 +290,24 @@ fn import_file_with_repair(
             db.import_excel_repair(file, &|_, _| {})
         }
         Err(e) => Err(e),
+    }
+}
+
+/// Fast path for one-shot CLI modes: CSV uses virtual registration (no full import).
+fn quick_register(
+    db: &mut DefaultEngine,
+    file: &std::path::Path,
+    repair: bool,
+) -> Result<FileInfo> {
+    let ext = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "csv" && !repair {
+        db.register_virtual(file, &|_, _| {})
+    } else {
+        import_file_with_repair(db, file, repair)
     }
 }
 
@@ -335,7 +361,7 @@ fn run_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match import_file_with_repair(&mut db, &path, args.repair) {
+                    match quick_register(&mut db, &path, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -363,7 +389,7 @@ fn run_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match import_file_with_repair(&mut db, &path, args.repair) {
+            match quick_register(&mut db, &path, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -543,7 +569,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match import_file_with_repair(&mut db, &path, args.repair) {
+                    match quick_register(&mut db, &path, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -571,7 +597,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match import_file_with_repair(&mut db, &path, args.repair) {
+            match quick_register(&mut db, &path, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -816,6 +842,43 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
+            let ext = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+
+            // CSV: DuckDB parallel COUNT via register_virtual (faster than sequential csv crate scan)
+            if ext == "csv" {
+                let mut engine = DefaultEngine::new()?;
+                match engine.register_virtual(&file, &|_, _| {}) {
+                    Ok(info) => {
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_imported(
+                                &info.name,
+                                info.sheets.len(),
+                                info.total_rows
+                            )
+                        );
+                        for alias in engine.list_table_aliases() {
+                            if alias.file_name == file_name {
+                                tables.push(TableInfo {
+                                    alias: alias.alias,
+                                    table_name: alias.table_name,
+                                    row_count: alias.row_count,
+                                    columns: alias.columns,
+                                });
+                            }
+                        }
+                        file_idx_counter += 1;
+                        continue;
+                    }
+                    Err(_) => {
+                        // Fall through to parse_file_metadata
+                    }
+                }
+            }
 
             match parse_file_metadata(&file) {
                 Ok(sheets) if !sheets.is_empty() => {
@@ -921,7 +984,13 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
 }
 
 fn run_interactive_cli(args: &Args) -> Result<()> {
-    let mut db = DefaultEngine::new()?;
+    // File-backed DB so background materialize can use a second connection
+    let db_path = std::env::temp_dir().join(format!(
+        "grep_excel_repl_{}.duckdb",
+        std::process::id()
+    ));
+    let mut db = DefaultEngine::with_path(&db_path).or_else(|_| DefaultEngine::new())?;
+    let mut virtual_files: Vec<String> = Vec::new();
 
     #[cfg(feature = "share-url")]
     let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
@@ -941,12 +1010,13 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match import_file_with_repair(&mut db, &path, args.repair) {
+                    match quick_register(&mut db, &path, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
                                 grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                             );
+                            virtual_files.push(info.name);
                         }
                         Err(e) => eprintln!(
                             "{}",
@@ -969,12 +1039,13 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match import_file_with_repair(&mut db, &file, args.repair) {
+            match quick_register(&mut db, &file, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
                         grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                     );
+                    virtual_files.push(info.name);
                 }
                 Err(e) => eprintln!(
                     "{}",
@@ -984,7 +1055,48 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
         }
     }
 
-    grep_excel::interactive::run(&mut db, args.no_history)
+    // Background eager materialize with live progress bar on stderr
+    if !virtual_files.is_empty() {
+        let mat_path = db_path.clone();
+        let files = virtual_files.clone();
+        std::thread::spawn(move || {
+            let mut mat_engine = match DefaultEngine::with_path(&mat_path) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            for file_name in &files {
+                let name = file_name.clone();
+                match mat_engine.materialize(file_name, &|current, total| {
+                    eprint!(
+                        "\r{}",
+                        grep_excel::i18n::status_materializing(&name, current, total)
+                    );
+                    let _ = std::io::Write::flush(&mut std::io::stderr());
+                }) {
+                    Ok(()) => {
+                        eprintln!(
+                            "\r{}",
+                            grep_excel::i18n::status_materialize_done(file_name)
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "\r{}",
+                            grep_excel::i18n::status_materialize_error(
+                                file_name,
+                                &e.to_string()
+                            )
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    let result = grep_excel::interactive::run(&mut db, args.no_history);
+    let _ = std::fs::remove_file(&db_path);
+    let _ = std::fs::remove_file(format!("{}.wal", db_path.display()));
+    result
 }
 
 fn run_exec_shell(args: &Args) -> Result<()> {
@@ -1009,7 +1121,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match import_file_with_repair(&mut db, &path, args.repair) {
+                    match quick_register(&mut db, &path, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -1037,7 +1149,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match import_file_with_repair(&mut db, &file, args.repair) {
+            match quick_register(&mut db, &file, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -1334,7 +1446,7 @@ fn run_exec(args: &Args) -> Result<()> {
                     let canonical = std::fs::canonicalize(&path)
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| path.display().to_string());
-                    match import_file_with_repair(&mut db, &path, args.repair) {
+                    match quick_register(&mut db, &path, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -1366,7 +1478,7 @@ fn run_exec(args: &Args) -> Result<()> {
             let canonical = std::fs::canonicalize(&file)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| file.display().to_string());
-            match import_file_with_repair(&mut db, &file, args.repair) {
+            match quick_register(&mut db, &file, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",

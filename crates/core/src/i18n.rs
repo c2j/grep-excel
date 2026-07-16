@@ -348,6 +348,32 @@ pub fn status_progress(cur: usize, tot: usize) -> String {
     }
 }
 
+/// Progress bar for background materialization: `物化中 file [████░░░░] 40%`
+pub fn status_materializing(name: &str, cur: usize, tot: usize) -> String {
+    let pct = if tot > 0 { (cur * 100 / tot).min(100) } else { 0 };
+    let width = 20usize;
+    let filled = (pct * width / 100).min(width);
+    let bar: String = "█".repeat(filled) + &"░".repeat(width - filled);
+    match current() {
+        Lang::Zh => format!("物化中 {}: [{}] {:>3}%", name, bar, pct),
+        Lang::En => format!("Materializing {}: [{}] {:>3}%", name, bar, pct),
+    }
+}
+
+pub fn status_materialize_done(name: &str) -> String {
+    match current() {
+        Lang::Zh => format!("物化完成: {}", name),
+        Lang::En => format!("Materialize complete: {}", name),
+    }
+}
+
+pub fn status_materialize_error(name: &str, e: &str) -> String {
+    match current() {
+        Lang::Zh => format!("物化失败 {}: {}", name, e),
+        Lang::En => format!("Materialize failed {}: {}", name, e),
+    }
+}
+
 pub fn status_loading() -> &'static str {
     match current() { Lang::Zh => "加载中...", Lang::En => "Loading..." }
 }
