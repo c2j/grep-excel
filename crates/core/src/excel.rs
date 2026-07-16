@@ -573,7 +573,7 @@ fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
     use crate::html_table;
 
     let content = read_file_auto_encoding(path)?;
-    let tables = html_table::extract_tables(&content)
+    let tables = html_table::extract_table_metadata(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse HTML file '{}': {}", path.display(), e))?;
 
     Ok(tables
@@ -581,19 +581,24 @@ fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         .map(|t| SheetMetadata {
             name: t.name,
             headers: t.headers,
-            row_count: t.rows.len(),
+            row_count: t.row_count,
         })
         .collect())
 }
 
 fn parse_text_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
-    let sheets = parse_text(path)?;
-    Ok(sheets
+    use crate::text_table;
+
+    let content = read_file_auto_encoding(path)?;
+    let tables = text_table::extract_tables_metadata(path, &content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse text file '{}': {}", path.display(), e))?;
+
+    Ok(tables
         .into_iter()
-        .map(|s| SheetMetadata {
-            name: s.name,
-            headers: s.headers,
-            row_count: s.rows.len(),
+        .map(|t| SheetMetadata {
+            name: t.name,
+            headers: t.headers,
+            row_count: t.row_count,
         })
         .collect())
 }

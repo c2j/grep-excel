@@ -300,9 +300,17 @@ impl GrepExcelServer {
             .unwrap_or_else(|_| display_name_owned.clone());
         tokio::task::spawn_blocking(move || {
             let mut guard = db.lock();
-            guard
-                .0
-                .import_excel(&path_buf, &|_, _| {})
+            let ext = path_buf
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let result = if ext == "csv" {
+                guard.0.register_virtual(&path_buf, &|_, _| {})
+            } else {
+                guard.0.import_excel(&path_buf, &|_, _| {})
+            };
+            result
                 .map(|info| {
                     import_paths.write().insert(info.name.clone(), canonical);
                     let mcp_info: McpFileInfo = info.into();

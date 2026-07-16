@@ -2,10 +2,29 @@ pub use crate::types::*;
 use anyhow::Result;
 use std::path::Path;
 
+/// Materialization state of a sheet in the engine.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SheetState {
+    Virtual,       // VIEW on source file, no data materialized
+    Materializing, // Background import in progress
+    Materialized,  // TABLE with all data loaded
+}
+
 pub trait SearchEngine: Send {
     fn new() -> Result<Self>
     where
         Self: Sized;
+
+    /// Open engine backed by a database file (for shared concurrent access).
+    /// Default: ignore path and use in-memory (`new()`).
+    fn with_path(path: &Path) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let _ = path;
+        Self::new()
+    }
+
     fn import_excel(
         &mut self,
         path: &Path,
@@ -45,6 +64,23 @@ pub trait SearchEngine: Send {
     fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()>;
     fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()>;
     fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics>;
+
+    /// Register a file as a virtual source (metadata only, no data loaded).
+    fn register_virtual(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo>;
+
+    /// Materialize a previously registered virtual file into a fully-loaded table.
+    fn materialize(
+        &mut self,
+        file_name: &str,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<()>;
+
+    /// Check materialization state of a sheet. Returns None if sheet not found.
+    fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState>;
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
