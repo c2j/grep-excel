@@ -206,8 +206,30 @@ impl App {
         let path_clone = path.clone();
         let db_path = self.db_path.clone();
 
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        // Only CSV can be a true virtual VIEW (queryable without materialize).
+        // Excel/HTML/Text empty shells have no rows — search would return 0 until
+        // materialize finishes, so import them fully on the main connection.
+        let is_csv = ext == "csv";
+
         std::thread::spawn(move || {
-            // Phase 1: fast virtual registration (brief lock)
+            if !is_csv {
+                let result = {
+                    let mut db_guard = db.lock();
+                    let progress_cb = |current, total| {
+                        let _ = tx.send(AppEvent::Progress(current, total));
+                    };
+                    db_guard.0.import_excel(&path_clone, &progress_cb)
+                };
+                let _ = tx.send(AppEvent::FileImported(result));
+                return;
+            }
+
+            // CSV: virtual VIEW first (queryable immediately), then background materialize
             let register_result = {
                 let mut db_guard = db.lock();
                 db_guard.0.register_virtual(&path_clone, &|_, _| {})
@@ -218,8 +240,6 @@ impl App {
                     let file_name = info.name.clone();
                     let _ = tx.send(AppEvent::FileImported(Ok(info)));
 
-                    // Phase 2: materialize on a separate connection when file-backed
-                    // so the main TUI connection stays free for queries
                     let mat_result = if let Some(ref shared_path) = db_path {
                         match DefaultEngine::with_path(shared_path) {
                             Ok(mut mat_engine) => {
@@ -234,7 +254,6 @@ impl App {
                             Err(e) => Err(e),
                         }
                     } else {
-                        // In-memory fallback: same connection (blocks queries during mat)
                         let mut db_guard = db.lock();
                         db_guard.0.materialize(&file_name, &|current, total| {
                             let _ = tx.send(AppEvent::MaterializeProgress(
