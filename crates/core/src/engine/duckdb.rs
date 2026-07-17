@@ -8,6 +8,7 @@ use ::duckdb::{params, Connection};
 use ::duckdb::types::ValueRef;
 use std::collections::HashMap;
 use std::path::Path;
+use std::thread::available_parallelism;
 use std::time::Instant;
 
 struct SheetQueryMeta {
@@ -43,6 +44,24 @@ fn init_schema(conn: &Connection) -> Result<()> {
         SET preserve_insertion_order = false;
         SET enable_progress_bar = false;",
     )?;
+
+    let threads = available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4)
+        .min(8);
+    let memory = std::env::var("GREP_EXCEL_DUCKDB_MEMORY")
+        .unwrap_or_else(|_| "4GB".to_string());
+    let memory_ok = memory.len() <= 16
+        && memory
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
+    let memory = if memory_ok { memory } else { "4GB".to_string() };
+    let _ = conn.execute_batch(&format!(
+        "SET threads = {};
+        SET memory_limit = '{}';",
+        threads, memory
+    ));
+
     let _ = conn.execute(
         "ALTER TABLE sheets ADD COLUMN IF NOT EXISTS state TEXT DEFAULT 'materialized'",
         [],
@@ -1349,32 +1368,13 @@ impl DuckDbEngine {
             ),
             [],
         )?;
-        progress(base + per_sheet * 80 / 100, 100);
-
-        if let Ok(col_names) = self.get_view_columns(table_name) {
-            let col_total = col_names.len().max(1);
-            for (ci, col_name) in col_names.iter().enumerate() {
-                let safe_name =
-                    col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
-                let index_name = format!("idx_{}_{}", table_name, safe_name);
-                let _ = self.conn.execute(
-                    &format!(
-                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
-                        index_name,
-                        quote_ident(table_name),
-                        quote_ident(col_name)
-                    ),
-                    [],
-                );
-                let idx_pct = 80 + (20 * (ci + 1) / col_total);
-                progress(base + per_sheet * idx_pct / 100, 100);
-            }
-        }
+        progress(base + per_sheet * 90 / 100, 100);
 
         self.conn.execute(
             "UPDATE sheets SET state = 'materialized' WHERE table_name = ?",
             params![table_name],
         )?;
+        progress(base + per_sheet, 100);
         Ok(())
     }
 
@@ -1671,20 +1671,6 @@ impl DuckDbEngine {
                 params![file_id_capture, &sheet_data.name, &table_name, row_count as i32, &col_names_str, &col_widths_str],
             )?;
 
-            for col_name in &col_names {
-                let safe_name = col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
-                let index_name = format!("idx_{}_{}", table_name, safe_name);
-                let _ = conn.execute(
-                    &format!(
-                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
-                        index_name,
-                        quote_ident(&table_name),
-                        quote_ident(col_name)
-                    ),
-                    [],
-                );
-            }
-
             let file_stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -1820,20 +1806,6 @@ impl DuckDbEngine {
                 "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
                 params![file_id_capture, &sheet_data.name, &table_name, row_count as i32, &col_names_str, &col_widths_str],
             )?;
-
-            for col_name in &col_names {
-                let safe_name = col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
-                let index_name = format!("idx_{}_{}", table_name, safe_name);
-                let _ = conn.execute(
-                    &format!(
-                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
-                        index_name,
-                        quote_ident(&table_name),
-                        quote_ident(col_name)
-                    ),
-                    [],
-                );
-            }
 
             let file_stem = path
                 .file_stem()
@@ -2018,21 +1990,7 @@ impl DuckDbEngine {
                 params![file_id_capture, &sheet_data.name, &table_name, row_count as i32, &col_names_str, &col_widths_str],
             )?;
 
-            for col_name in &col_names {
-                let safe_name = col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
-                let index_name = format!("idx_{}_{}", table_name, safe_name);
-                let _ = conn.execute(
-                    &format!(
-                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
-                        index_name,
-                        quote_ident(&table_name),
-                        quote_ident(col_name)
-                    ),
-                    [],
-                );
-            }
-
-            let file_stem = Path::new(display_name)
+            let file_stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
