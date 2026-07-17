@@ -80,13 +80,7 @@ pub struct App {
     pub(crate) browse_col_offset: usize,
     pub(crate) browse_loading: bool,
     pub(crate) browse_visible_rows: usize,
-    /// Path to file-backed DuckDB for shared concurrent materialize (None = in-memory)
     pub(crate) db_path: Option<PathBuf>,
-    /// Background materialization in progress
-    pub(crate) materializing: bool,
-    pub(crate) mat_file_name: String,
-    pub(crate) mat_current: usize,
-    pub(crate) mat_total: usize,
 }
 
 impl App {
@@ -153,10 +147,6 @@ impl App {
             browse_loading: false,
             browse_visible_rows: 15,
             db_path,
-            materializing: false,
-            mat_file_name: String::new(),
-            mat_current: 0,
-            mat_total: 0,
         }
     }
 
@@ -204,71 +194,16 @@ impl App {
         let db = Arc::clone(&self.database);
         let tx = self.event_tx.clone();
         let path_clone = path.clone();
-        let db_path = self.db_path.clone();
-
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        // Only CSV can be a true virtual VIEW (queryable without materialize).
-        // Excel/HTML/Text empty shells have no rows — search would return 0 until
-        // materialize finishes, so import them fully on the main connection.
-        let is_csv = ext == "csv";
 
         std::thread::spawn(move || {
-            if !is_csv {
-                let result = {
-                    let mut db_guard = db.lock();
-                    let progress_cb = |current, total| {
-                        let _ = tx.send(AppEvent::Progress(current, total));
-                    };
-                    db_guard.0.import_excel(&path_clone, &progress_cb)
-                };
-                let _ = tx.send(AppEvent::FileImported(result));
-                return;
-            }
-
-            // CSV: virtual VIEW first (queryable immediately), then background materialize
-            let register_result = {
+            let result = {
                 let mut db_guard = db.lock();
-                db_guard.0.register_virtual(&path_clone, &|_, _| {})
+                let progress_cb = |current, total| {
+                    let _ = tx.send(AppEvent::Progress(current, total));
+                };
+                db_guard.0.import_excel(&path_clone, &progress_cb)
             };
-
-            match register_result {
-                Ok(info) => {
-                    let file_name = info.name.clone();
-                    let _ = tx.send(AppEvent::FileImported(Ok(info)));
-
-                    let mat_result = if let Some(ref shared_path) = db_path {
-                        match DefaultEngine::with_path(shared_path) {
-                            Ok(mut mat_engine) => {
-                                mat_engine.materialize(&file_name, &|current, total| {
-                                    let _ = tx.send(AppEvent::MaterializeProgress(
-                                        file_name.clone(),
-                                        current,
-                                        total,
-                                    ));
-                                })
-                            }
-                            Err(e) => Err(e),
-                        }
-                    } else {
-                        let mut db_guard = db.lock();
-                        db_guard.0.materialize(&file_name, &|current, total| {
-                            let _ = tx.send(AppEvent::MaterializeProgress(
-                                file_name.clone(),
-                                current,
-                                total,
-                            ));
-                        })
-                    };
-                    let _ = tx.send(AppEvent::MaterializeComplete(file_name, mat_result));
-                }
-                Err(e) => {
-                    let _ = tx.send(AppEvent::FileImported(Err(e)));
-                }
-            }
+            let _ = tx.send(AppEvent::FileImported(result));
         });
     }
 
@@ -414,30 +349,6 @@ impl App {
             }
             AppEvent::Progress(current, total) => {
                 self.status_message = crate::i18n::status_progress(current, total);
-            }
-            AppEvent::MaterializeProgress(file_name, current, total) => {
-                self.materializing = true;
-                self.mat_file_name = file_name.clone();
-                self.mat_current = current;
-                self.mat_total = total;
-                self.status_message =
-                    crate::i18n::status_materializing(&file_name, current, total);
-            }
-            AppEvent::MaterializeComplete(file_name, result) => {
-                self.materializing = false;
-                self.mat_current = 0;
-                self.mat_total = 0;
-                match result {
-                    Ok(()) => {
-                        self.status_message = crate::i18n::status_materialize_done(&file_name);
-                    }
-                    Err(e) => {
-                        self.error_message =
-                            Some(crate::i18n::status_materialize_error(&file_name, &e.to_string()));
-                        self.status_message =
-                            crate::i18n::status_materialize_error(&file_name, &e.to_string());
-                    }
-                }
             }
             AppEvent::BrowseDataLoaded(result) => {
                 self.browse_loading = false;

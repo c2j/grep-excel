@@ -11,10 +11,6 @@ pub enum AppEvent {
     SqlCompleted(Result<SqlResult>),
     BrowseDataLoaded(Result<SheetDataResult>),
     Progress(usize, usize),
-    /// Background materialization progress: (file_name, current, total)
-    MaterializeProgress(String, usize, usize),
-    /// Background materialization finished: (file_name, result)
-    MaterializeComplete(String, Result<()>),
 }
 
 pub type EventSender = mpsc::Sender<AppEvent>;
