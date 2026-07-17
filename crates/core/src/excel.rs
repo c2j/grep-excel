@@ -68,6 +68,13 @@ fn detect_html_charset(bytes: &[u8]) -> Option<String> {
 }
 
 pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
+    #[cfg(feature = "archive-support")]
+    {
+        if let Some(format) = crate::archive::detect_archive(path) {
+            return parse_archive(path, format);
+        }
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -552,6 +559,13 @@ pub struct SheetMetadata {
 /// Read sheet metadata (names, headers, row counts) without materializing row data.
 /// Used by `--list-tables` for large files where full import is wasteful.
 pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
+    #[cfg(feature = "archive-support")]
+    {
+        if let Some(format) = crate::archive::detect_archive(path) {
+            return parse_archive_metadata(path, format);
+        }
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -976,6 +990,97 @@ fn parse_xlsx_repair(path: &Path) -> Result<Vec<SheetData>> {
     }
 
     Ok(result)
+}
+
+#[cfg(feature = "archive-support")]
+fn parse_archive(path: &Path, format: crate::archive::ArchiveFormat) -> Result<Vec<SheetData>> {
+    use crate::archive::{is_table_entry, list_entries, extract_entry};
+
+    let entries = list_entries(path, format)?;
+    let table_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| e.is_file && is_table_entry(&e.path))
+        .collect();
+
+    if table_entries.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Archive '{}' contains no recognizable table files (supported: {:?})",
+            path.display(),
+            crate::archive::TABLE_EXTENSIONS
+        ));
+    }
+
+    let mut all_sheets = Vec::new();
+    for entry in &table_entries {
+        let tmp_path = extract_entry(path, &entry.path, format)?;
+        match parse_file(&tmp_path) {
+            Ok(mut sheets) => {
+                for sheet in &mut sheets {
+                    sheet.name = format!("{}::{}", entry.path, sheet.name);
+                }
+                all_sheets.extend(sheets);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to parse '{}' from archive: {}",
+                    entry.path, e
+                );
+            }
+        }
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    if all_sheets.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No table files could be parsed from archive '{}'",
+            path.display()
+        ));
+    }
+
+    Ok(all_sheets)
+}
+
+#[cfg(feature = "archive-support")]
+fn parse_archive_metadata(
+    path: &Path,
+    format: crate::archive::ArchiveFormat,
+) -> Result<Vec<SheetMetadata>> {
+    use crate::archive::{is_table_entry, list_entries, extract_entry};
+
+    let entries = list_entries(path, format)?;
+    let table_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| e.is_file && is_table_entry(&e.path))
+        .collect();
+
+    if table_entries.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Archive '{}' contains no recognizable table files",
+            path.display()
+        ));
+    }
+
+    let mut all_metadata = Vec::new();
+    for entry in &table_entries {
+        let tmp_path = extract_entry(path, &entry.path, format)?;
+        match parse_file_metadata(&tmp_path) {
+            Ok(mut metas) => {
+                for meta in &mut metas {
+                    meta.name = format!("{}::{}", entry.path, meta.name);
+                }
+                all_metadata.extend(metas);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to read metadata for '{}' from archive: {}",
+                    entry.path, e
+                );
+            }
+        }
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    Ok(all_metadata)
 }
 
 fn for_each_xlsx_repair<F>(path: &Path, mut handler: F) -> Result<Vec<(String, usize)>>

@@ -24,6 +24,13 @@ impl SearchEngine for MemEngine {
     }
 
     fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
+        #[cfg(feature = "archive-support")]
+        {
+            if let Some(format) = crate::archive::detect_archive(path) {
+                return self.import_archive_from_format(path, format, progress);
+            }
+        }
+
         let sheets = parse_file(path)?;
         let file_name = path
             .file_name()
@@ -585,6 +592,72 @@ impl SearchEngine for MemEngine {
             row_count: total_rows,
             column_count: columns.len(),
             columns,
+        })
+    }
+}
+
+#[cfg(feature = "archive-support")]
+impl MemEngine {
+    fn import_archive_from_format(
+        &mut self,
+        archive_path: &Path,
+        format: crate::archive::ArchiveFormat,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        use crate::archive::{is_table_entry, list_entries, extract_entry};
+
+        let entries = list_entries(archive_path, format)?;
+        let table_entries: Vec<_> = entries
+            .iter()
+            .filter(|e| e.is_file && is_table_entry(&e.path))
+            .collect();
+
+        if table_entries.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Archive '{}' contains no recognizable table files",
+                archive_path.display()
+            ));
+        }
+
+        let archive_name = archive_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("archive")
+            .to_string();
+
+        let mut all_sheets_info: Vec<(String, usize)> = Vec::new();
+        let mut total_rows: usize = 0;
+
+        for entry in &table_entries {
+            let tmp_path = extract_entry(archive_path, &entry.path, format)?;
+            let virtual_name = format!("{}::{}", archive_name, entry.path);
+            let result = parse_file(&tmp_path);
+            let _ = std::fs::remove_file(&tmp_path);
+            let sheets = result?;
+
+            for sheet in sheets {
+                let row_count = sheet.rows.len();
+                all_sheets_info.push((sheet.name.clone(), row_count));
+                total_rows += row_count;
+                self.sheets.push(MemSheet {
+                    file_name: virtual_name.clone(),
+                    sheet_name: sheet.name,
+                    headers: sheet.headers,
+                    rows: sheet.rows,
+                    col_widths: sheet.col_widths,
+                });
+            }
+
+            let _ = std::fs::remove_file(&tmp_path);
+        }
+
+        progress(total_rows, total_rows);
+
+        Ok(FileInfo {
+            name: archive_name,
+            sheets: all_sheets_info,
+            total_rows,
+            sample: None,
         })
     }
 }

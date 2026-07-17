@@ -5,3 +5,4 @@ pub mod html_table;
 pub mod text_table;
 pub mod i18n;
 pub mod source;
+pub mod archive;
