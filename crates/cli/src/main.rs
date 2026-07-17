@@ -293,7 +293,11 @@ fn import_file_with_repair(
     }
 }
 
-/// Fast path for one-shot CLI modes: CSV uses virtual registration (no full import).
+/// CLI import helper.
+/// - CSV: always eager TABLE import via `import_excel` → `import_csv_direct`.
+///   VIEW registration lacks native `rowid` (breaks search) and re-scans the file
+///   on every query (catastrophic for multi-GB CSVs).
+/// - Other formats: full import with optional `--repair` fallback.
 fn quick_register(
     db: &mut DefaultEngine,
     file: &std::path::Path,
@@ -304,8 +308,8 @@ fn quick_register(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext == "csv" && !repair {
-        db.register_virtual(file, &|_, _| {})
+    if ext == "csv" {
+        db.import_excel(file, &|_, _| {})
     } else {
         import_file_with_repair(db, file, repair)
     }
@@ -984,13 +988,7 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
 }
 
 fn run_interactive_cli(args: &Args) -> Result<()> {
-    // File-backed DB so background materialize can use a second connection
-    let db_path = std::env::temp_dir().join(format!(
-        "grep_excel_repl_{}.duckdb",
-        std::process::id()
-    ));
-    let mut db = DefaultEngine::with_path(&db_path).or_else(|_| DefaultEngine::new())?;
-    let mut virtual_files: Vec<String> = Vec::new();
+    let mut db = DefaultEngine::new()?;
 
     #[cfg(feature = "share-url")]
     let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
@@ -1016,7 +1014,6 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                                 "{}",
                                 grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                             );
-                            virtual_files.push(info.name);
                         }
                         Err(e) => eprintln!(
                             "{}",
@@ -1045,7 +1042,6 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                         "{}",
                         grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
                     );
-                    virtual_files.push(info.name);
                 }
                 Err(e) => eprintln!(
                     "{}",
@@ -1055,48 +1051,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
         }
     }
 
-    // Background eager materialize with live progress bar on stderr
-    if !virtual_files.is_empty() {
-        let mat_path = db_path.clone();
-        let files = virtual_files.clone();
-        std::thread::spawn(move || {
-            let mut mat_engine = match DefaultEngine::with_path(&mat_path) {
-                Ok(e) => e,
-                Err(_) => return,
-            };
-            for file_name in &files {
-                let name = file_name.clone();
-                match mat_engine.materialize(file_name, &|current, total| {
-                    eprint!(
-                        "\r{}",
-                        grep_excel::i18n::status_materializing(&name, current, total)
-                    );
-                    let _ = std::io::Write::flush(&mut std::io::stderr());
-                }) {
-                    Ok(()) => {
-                        eprintln!(
-                            "\r{}",
-                            grep_excel::i18n::status_materialize_done(file_name)
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "\r{}",
-                            grep_excel::i18n::status_materialize_error(
-                                file_name,
-                                &e.to_string()
-                            )
-                        );
-                    }
-                }
-            }
-        });
-    }
-
-    let result = grep_excel::interactive::run(&mut db, args.no_history);
-    let _ = std::fs::remove_file(&db_path);
-    let _ = std::fs::remove_file(format!("{}.wal", db_path.display()));
-    result
+    grep_excel::interactive::run(&mut db, args.no_history)
 }
 
 fn run_exec_shell(args: &Args) -> Result<()> {
