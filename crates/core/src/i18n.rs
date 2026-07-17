@@ -834,10 +834,13 @@ pub fn help_full_text() -> String {
                                         -h, --help               显示帮助信息\n\
                                        -V, --version            显示版本号\n\n\
                   支持的文件格式:\n\
-                    .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel/电子表格)\n\
-                    .csv                                (逗号分隔)\n\
-                    .html  .htm                         (HTML 表格, 自动检测编码)\n\
-                    .txt   .md   .markdown              (文本/Markdown 表格)\n\n\
+                     .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel/电子表格)\n\
+                     .csv                                (逗号分隔)\n\
+                     .html  .htm                         (HTML 表格, 自动检测编码)\n\
+                     .txt   .md   .markdown              (文本/Markdown 表格)\n\
+                     .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
+                                                        (归档文件, 自动提取内部表格)\n\
+                     .zip.001                            (分卷 ZIP)\n\n\
                  搜索模式:\n\n\
                  \x1b[1mfulltext\x1b[0m (默认)\n\
                  \x1b[3m不区分大小写的子串匹配。\x1b[0m 匹配所有包含查询文本的单元格，\n\
@@ -902,10 +905,13 @@ pub fn help_full_text() -> String {
                                         -h, --help               Show help information\n\
                                        -V, --version            Show version\n\n\
                   Supported Formats:\n\
-                    .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel / Spreadsheets)\n\
-                    .csv                               (Comma-separated)\n\
-                    .html  .htm                        (HTML tables, auto-detect encoding)\n\
-                    .txt   .md   .markdown             (Text / Markdown tables)\n\n\
+                     .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel / Spreadsheets)\n\
+                     .csv                               (Comma-separated)\n\
+                     .html  .htm                        (HTML tables, auto-detect encoding)\n\
+                     .txt   .md   .markdown             (Text / Markdown tables)\n\
+                     .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
+                                                        (Archives, table files extracted automatically)\n\
+                     .zip.001                           (Split ZIP volumes)\n\n\
                  Search Modes:\n\n\
                  \x1b[1mfulltext\x1b[0m (default)\n\
                  \x1b[3mCase-insensitive substring match.\x1b[0m Matches any cell containing the query\n\

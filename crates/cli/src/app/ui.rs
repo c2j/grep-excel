@@ -1954,8 +1954,8 @@ impl App {
 
         let files = rfd::FileDialog::new()
             .add_filter(
-                "Spreadsheet Files",
-                &["xlsx", "xls", "xlsm", "xlsb", "ods", "csv"],
+                "Table & Archive Files",
+                &["xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "zip", "tar", "gz", "tgz", "bz2", "xz", "zst"],
             )
             .set_title("Open Excel Files")
             .pick_files();
