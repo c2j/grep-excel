@@ -30,6 +30,13 @@ scraper = "0.21"
 reqwest = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
+# Optional: archive support (zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst)
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
+bzip2 = { version = "0.4", optional = true }
+xz2 = { version = "0.1", optional = true }
+zstd = { version = "0.13", optional = true }
+
 # Optional engines
 duckdb = { version = "1.10501", optional = true }
 rusqlite = { version = "0.32", features = ["bundled", "functions"], optional = true }
@@ -47,3 +54,4 @@ duckdb-bundled = ["engine-duckdb", "duckdb/bundled", "duckdb/json"]
 rust_xlsxwriter = ["dep:rust_xlsxwriter"]
 mcp-server = ["dep:schemars"]
 share-url = ["dep:reqwest", "dep:tempfile"]
+archive-support = ["dep:tar", "dep:flate2", "dep:bzip2", "dep:xz2", "dep:zstd", "dep:tempfile"]
