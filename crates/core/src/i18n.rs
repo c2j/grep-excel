@@ -836,8 +836,11 @@ pub fn help_full_text() -> String {
                   支持的文件格式:\n\
                      .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel/电子表格)\n\
                      .csv                                (逗号分隔)\n\
+                     .tsv  .tab                          (制表符分隔)\n\
                      .html  .htm                         (HTML 表格, 自动检测编码)\n\
                      .txt   .md   .markdown              (文本/Markdown 表格)\n\
+                     .dbf                                (dBase 数据库)\n\
+                     .xml                                (XML 数据)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (归档文件, 自动提取内部表格)\n\
                      .zip.001                            (分卷 ZIP)\n\n\
@@ -907,8 +910,11 @@ pub fn help_full_text() -> String {
                   Supported Formats:\n\
                      .xlsx  .xls  .xlsm  .xlsb  .ods  (Excel / Spreadsheets)\n\
                      .csv                               (Comma-separated)\n\
+                     .tsv  .tab                         (Tab-separated)\n\
                      .html  .htm                        (HTML tables, auto-detect encoding)\n\
                      .txt   .md   .markdown             (Text / Markdown tables)\n\
+                     .dbf                               (dBase database)\n\
+                     .xml                               (XML data)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (Archives, table files extracted automatically)\n\
                      .zip.001                           (Split ZIP volumes)\n\n\

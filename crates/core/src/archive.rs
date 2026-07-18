@@ -14,9 +14,7 @@ pub enum ArchiveFormat {
 }
 
 /// Table file extensions that grep-excel can parse.
-pub const TABLE_EXTENSIONS: &[&str] = &[
-    "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "html", "htm", "txt", "md", "markdown",
-];
+pub const TABLE_EXTENSIONS: &[&str] = crate::format::FileFormat::TABLE_EXTENSIONS;
 
 /// An entry within an archive.
 #[derive(Debug, Clone)]
