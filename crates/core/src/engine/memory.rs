@@ -416,7 +416,6 @@ impl SearchEngine for MemEngine {
 
     fn save_as(&self, file_name: &str, _output_path: &Path) -> Result<()> {
         check_not_readonly(file_name)?;
-        check_not_readonly(file_name)?;
         #[cfg(feature = "mcp-server")]
         {
             use crate::engine::write_xlsx;
