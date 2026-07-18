@@ -834,7 +834,17 @@ where
             }
             Ok(info)
         }
-        _ => for_each_excel_sheet(path, handler),
+        Some(FileFormat::Excel) | None => for_each_excel_sheet(path, handler),
+        _ => {
+            let sheets = parse_file(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("sheet_{}", idx), row_count));
+            }
+            Ok(info)
+        }
     }
 }
 
@@ -1022,7 +1032,7 @@ where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
     match FileFormat::from_path(path) {
-        Some(FileFormat::Csv) | Some(FileFormat::Tsv) => {
+        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) => {
             let sheets = parse_file(path)?;
             let mut info = Vec::new();
             for (idx, sheet) in sheets.into_iter().enumerate() {

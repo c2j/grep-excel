@@ -30,19 +30,31 @@ impl FileFormat {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+            .unwrap_or("");
 
-        match ext.as_str() {
-            "csv" => Some(Self::Csv),
-            "tsv" | "tab" => Some(Self::Tsv),
-            "html" | "htm" => Some(Self::Html),
-            "txt" => Some(Self::Text),
-            "md" | "markdown" => Some(Self::Markdown),
-            "dbf" => Some(Self::Dbf),
-            "xml" => Some(Self::Xml),
-            "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" => Some(Self::Excel),
-            _ => None,
+        if ext.eq_ignore_ascii_case("csv") {
+            Some(Self::Csv)
+        } else if ext.eq_ignore_ascii_case("tsv") || ext.eq_ignore_ascii_case("tab") {
+            Some(Self::Tsv)
+        } else if ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm") {
+            Some(Self::Html)
+        } else if ext.eq_ignore_ascii_case("txt") {
+            Some(Self::Text)
+        } else if ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown") {
+            Some(Self::Markdown)
+        } else if ext.eq_ignore_ascii_case("dbf") {
+            Some(Self::Dbf)
+        } else if ext.eq_ignore_ascii_case("xml") {
+            Some(Self::Xml)
+        } else if ext.eq_ignore_ascii_case("xlsx")
+            || ext.eq_ignore_ascii_case("xls")
+            || ext.eq_ignore_ascii_case("xlsm")
+            || ext.eq_ignore_ascii_case("xlsb")
+            || ext.eq_ignore_ascii_case("ods")
+        {
+            Some(Self::Excel)
+        } else {
+            None
         }
     }
 
