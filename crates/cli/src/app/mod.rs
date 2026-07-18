@@ -9,6 +9,7 @@ use crate::engine::{
 use crate::event::{AppEvent, EventReceiver, EventSender};
 use crate::types::SheetDataResult;
 use anyhow::Result;
+use grep_excel_core::format::FileFormat;
 use crossterm::event::{self, Event, KeyEventKind};
 use parking_lot::Mutex;
 use ratatui::widgets::{ScrollbarState, TableState};
@@ -202,6 +203,42 @@ impl App {
                     let _ = tx.send(AppEvent::Progress(current, total));
                 };
                 db_guard.0.import_excel(&path_clone, &progress_cb)
+            };
+            let _ = tx.send(AppEvent::FileImported(result));
+        });
+    }
+
+    /// Import a file with an explicit format override, bypassing auto-detection.
+    /// Uses `parse_file_as` + `import_sheets` instead of `import_excel`.
+    pub fn import_file_with_format(&mut self, path: PathBuf, fmt: FileFormat) {
+        self.loading = true;
+        self.status_message = crate::i18n::status_importing(&path);
+        let db = Arc::clone(&self.database);
+        let tx = self.event_tx.clone();
+        let path_clone = path.clone();
+
+        std::thread::spawn(move || {
+            let result = {
+                let mut db_guard = db.lock();
+                let file_name = path_clone
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                match grep_excel_core::excel::parse_file_as(&path_clone, Some(fmt)) {
+                    Ok(sheets) => {
+                        let sheet_count = sheets.len();
+                        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
+                        match db_guard.0.import_sheets(&file_name, sheets, &|_, _| {}) {
+                            Ok(info) => {
+                                let _ = tx.send(AppEvent::Progress(sheet_count, sheet_count));
+                                Ok(info)
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                    Err(e) => Err(e.into()),
+                }
             };
             let _ = tx.send(AppEvent::FileImported(result));
         });
