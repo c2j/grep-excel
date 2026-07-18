@@ -716,9 +716,22 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         Some(FileFormat::Tsv) => parse_delimited_metadata(path, b'\t'),
         Some(FileFormat::Html) => parse_html_metadata(path),
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text_metadata(path),
+        Some(FileFormat::Dbf) | Some(FileFormat::Xml) => metadata_from_full_parse(path),
         Some(FileFormat::Excel) => parse_excel_metadata(path),
-        _ => parse_excel_metadata(path),
+        None => parse_excel_metadata(path),
     }
+}
+
+fn metadata_from_full_parse(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let sheets = parse_file(path)?;
+    Ok(sheets
+        .into_iter()
+        .map(|s| SheetMetadata {
+            name: s.name,
+            headers: s.headers,
+            row_count: s.rows.len(),
+        })
+        .collect())
 }
 
 fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
