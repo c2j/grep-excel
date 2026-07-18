@@ -206,6 +206,25 @@ fn docx_table_default_name_when_no_heading() {
 }
 
 #[test]
+fn docx_paragraph_before_table_not_duplicated() {
+    let body = r#"<w:p><w:r><w:t>Intro paragraph before the table.</w:t></w:r></w:p>"#.to_string()
+        + &table(&[&["Col1", "Col2"], &["v1", "v2"]]);
+    let xml = wrap_docx_body(&body);
+    let path = build_docx(&xml);
+
+    let sheets = parse_file(&path).expect("parse");
+    assert_eq!(
+        sheets.len(),
+        1,
+        "should have 1 sheet, got {}: {:?}",
+        sheets.len(),
+        sheets.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn docx_cell_with_multiple_paragraphs_joined_with_newline() {
     let single_cell = "<w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc>";
     let multi_para_cell = "<w:tc>\
