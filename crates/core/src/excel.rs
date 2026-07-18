@@ -206,8 +206,103 @@ fn parse_delimited_metadata(path: &Path, delimiter: u8) -> Result<Vec<SheetMetad
     Ok(vec![SheetMetadata { name, headers, row_count }])
 }
 
-fn parse_dbf(_path: &Path) -> Result<Vec<SheetData>> {
-    anyhow::bail!("DBF format support is not yet implemented");
+fn parse_dbf(path: &Path) -> Result<Vec<SheetData>> {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("dbf")
+        .to_string();
+
+    let mut reader = dbase::Reader::from_path(path)
+        .map_err(|e| anyhow::anyhow!("Failed to open DBF file '{}': {}", path.display(), e))?;
+
+    // Get field definitions in file order before reading records
+    // (reader.fields() borrows, so clone before calling read())
+    let field_infos: Vec<dbase::FieldInfo> = reader.fields().to_vec();
+    let headers: Vec<String> = field_infos
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect();
+
+    if headers.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let records: Vec<dbase::Record> = reader
+        .read()
+        .map_err(|e| anyhow::anyhow!("Failed to read DBF records from '{}': {}", path.display(), e))?;
+
+    // Convert each record to Vec<String> using header order for lookup.
+    // Record uses an unordered map internally, so we look up by field name
+    // rather than relying on iteration order.
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(records.len());
+    for record in &records {
+        let mut row: Vec<String> = Vec::with_capacity(headers.len());
+        for header in &headers {
+            match record.get(header) {
+                Some(value) => row.push(dbf_value_to_string(value)),
+                None => row.push(String::new()),
+            }
+        }
+        if !row.iter().all(|c| c.is_empty()) {
+            rows.push(row);
+        }
+    }
+
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(vec![SheetData {
+        name,
+        headers,
+        rows,
+        col_widths: Vec::new(),
+    }])
+}
+
+/// Convert a dBase FieldValue to a display string.
+fn dbf_value_to_string(value: &dbase::FieldValue) -> String {
+    use dbase::FieldValue;
+    match value {
+        FieldValue::Character(opt) => opt.clone().unwrap_or_default(),
+        FieldValue::Numeric(opt) => opt
+            .map(|n| {
+                // Show as integer if it's a whole number, else as float
+                if n.fract() == 0.0 && n.abs() < 1e15 {
+                    format!("{}", n as i64)
+                } else {
+                    n.to_string()
+                }
+            })
+            .unwrap_or_default(),
+        FieldValue::Float(opt) => opt
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+        FieldValue::Integer(i) => i.to_string(),
+        FieldValue::Double(f) => f.to_string(),
+        FieldValue::Currency(f) => format!("{:.2}", f),
+        FieldValue::Logical(opt) => opt
+            .map(|b| if b { "TRUE".to_string() } else { "FALSE".to_string() })
+            .unwrap_or_default(),
+        FieldValue::Date(opt) => opt
+            .map(|d| format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
+            .unwrap_or_default(),
+        FieldValue::DateTime(dt) => {
+            let date = dt.date();
+            let time = dt.time();
+            format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                date.year(),
+                date.month(),
+                date.day(),
+                time.hours(),
+                time.minutes(),
+                time.seconds()
+            )
+        }
+        FieldValue::Memo(s) => s.clone(),
+    }
 }
 
 fn parse_xml(_path: &Path) -> Result<Vec<SheetData>> {
