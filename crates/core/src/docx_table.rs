@@ -34,14 +34,26 @@ fn extract_tables(doc: &roxmltree::Document) -> Vec<SheetData> {
     let root = doc.root_element();
     let mut tables = Vec::new();
     let mut table_idx = 0usize;
+    let mut last_heading: Option<String> = None;
 
-    for tbl in root.descendants().filter(|n| n.has_tag_name("tbl")) {
-        if !is_top_level_table(tbl) {
+    for node in root.descendants() {
+        if !node.is_element() {
             continue;
         }
-        table_idx += 1;
-        if let Some(sheet) = parse_table(tbl, table_idx) {
-            tables.push(sheet);
+        if node.has_tag_name("p") && is_heading_paragraph(node) {
+            let raw = p_text(node);
+            if !raw.is_empty() {
+                last_heading = Some(sanitize_name(&raw));
+            }
+        }
+        if node.has_tag_name("tbl") && is_top_level_table(node) {
+            table_idx += 1;
+            let name = last_heading
+                .take()
+                .unwrap_or_else(|| format!("Table_{}", table_idx));
+            if let Some(sheet) = parse_table(node, name) {
+                tables.push(sheet);
+            }
         }
     }
     tables
@@ -65,7 +77,7 @@ struct CellMeta {
     v_merge_continue: bool,
 }
 
-fn parse_table(tbl: roxmltree::Node, idx: usize) -> Option<SheetData> {
+fn parse_table(tbl: roxmltree::Node, name: String) -> Option<SheetData> {
     let mut raw_rows: Vec<Vec<CellMeta>> = Vec::new();
 
     for tr in tbl.children().filter(|n| n.is_element() && n.has_tag_name("tr")) {
@@ -103,7 +115,7 @@ fn parse_table(tbl: roxmltree::Node, idx: usize) -> Option<SheetData> {
     let headers = all_rows.remove(0);
 
     Some(SheetData {
-        name: format!("Table_{}", idx),
+        name,
         headers,
         rows: all_rows,
         col_widths: Vec::new(),
@@ -166,6 +178,39 @@ fn find_attr<'a>(el: roxmltree::Node<'a, 'a>, local_name: &str) -> Option<&'a st
             n == local_name || n.ends_with(&format!(":{}", local_name))
         })
         .map(|a| a.value())
+}
+
+fn is_heading_paragraph(p: roxmltree::Node) -> bool {
+    p.children()
+        .find(|n| n.is_element() && n.has_tag_name("pPr"))
+        .map(|p_pr| {
+            p_pr
+                .children()
+                .find(|n| n.is_element() && n.has_tag_name("pStyle"))
+                .and_then(|style| find_attr(style, "val"))
+                .map(|v| v.starts_with("Heading") || v == "Title")
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+fn p_text(p: roxmltree::Node) -> String {
+    p.descendants()
+        .filter(|n| n.is_element() && n.has_tag_name("t"))
+        .filter_map(|n| n.text())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn sanitize_name(raw: &str) -> String {
+    let mut s: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ' { c } else { '_' })
+        .take(80)
+        .collect();
+    s.truncate(s.trim_end().len());
+    s
 }
 
 fn extract_cell_text(tc: roxmltree::Node) -> String {

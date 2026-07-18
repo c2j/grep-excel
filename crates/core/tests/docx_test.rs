@@ -176,6 +176,36 @@ fn docx_vertical_merge_vmerge() {
 }
 
 #[test]
+fn docx_table_named_from_preceding_heading() {
+    let body = r#"<w:p>
+  <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+  <w:r><w:t>Quarterly Results</w:t></w:r>
+</w:p>"#
+        .to_string()
+        + &table(&[&["A", "B"], &["1", "2"]]);
+    let xml = wrap_docx_body(&body);
+    let path = build_docx(&xml);
+
+    let sheets = parse_file(&path).expect("parse");
+    assert_eq!(sheets.len(), 1);
+    assert_eq!(sheets[0].name, "Quarterly Results");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn docx_table_default_name_when_no_heading() {
+    let body = table(&[&["X", "Y"], &["x", "y"]]);
+    let xml = wrap_docx_body(&body);
+    let path = build_docx(&xml);
+
+    let sheets = parse_file(&path).expect("parse");
+    assert_eq!(sheets[0].name, "Table_1");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn docx_cell_with_multiple_paragraphs_joined_with_newline() {
     let single_cell = "<w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc>";
     let multi_para_cell = "<w:tc>\
