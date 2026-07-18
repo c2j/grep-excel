@@ -8,7 +8,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     Terminal,
 };
@@ -209,13 +209,13 @@ pub fn format_sample_preview(sample: &FileSample, max_width: u16) -> Vec<Line<'s
 
     for row in sample.rows.iter().take(MAX_ROWS) {
         let mut row_spans = vec![Span::styled(INDENT.to_string(), Style::default())];
-        for i in 0..visible {
+        for (i, &width) in widths.iter().take(visible).enumerate() {
             if i > 0 {
                 row_spans.push(Span::styled(SEP, Style::default().fg(theme().text_dim)));
             }
             let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
             row_spans.push(Span::styled(
-                pad_to(cell, widths[i]),
+                pad_to(cell, width),
                 Style::default().fg(theme().text_dim),
             ));
         }

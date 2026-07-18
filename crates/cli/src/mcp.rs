@@ -366,7 +366,7 @@ impl GrepExcelServer {
                             None
                         } else {
                             let mut sorted: Vec<_> = counts.into_iter().collect();
-                            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+                            sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
                             Some(McpAggregateStats {
                                 column: col,
                                 counts: sorted.into_iter().map(|(value, count)| McpAggregateCount { value, count }).collect(),
