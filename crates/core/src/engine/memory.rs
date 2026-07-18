@@ -18,6 +18,43 @@ pub struct MemEngine {
     sheets: Vec<MemSheet>,
 }
 
+impl MemEngine {
+    fn do_import_sheets(
+        &mut self,
+        file_name: &str,
+        sheets: Vec<crate::excel::SheetData>,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
+        let sample = sheets.first().map(|s| FileSample {
+            sheet_name: s.name.clone(),
+            headers: s.headers.clone(),
+            rows: s.rows.iter().take(3).cloned().collect(),
+        });
+
+        let mut sheet_info = Vec::new();
+        for sheet in sheets {
+            sheet_info.push((sheet.name.clone(), sheet.rows.len()));
+            self.sheets.push(MemSheet {
+                file_name: file_name.to_string(),
+                sheet_name: sheet.name,
+                headers: sheet.headers,
+                rows: sheet.rows,
+                col_widths: sheet.col_widths,
+            });
+        }
+
+        progress(total_rows, total_rows);
+
+        Ok(FileInfo {
+            name: file_name.to_string(),
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+}
+
 impl SearchEngine for MemEngine {
     fn new() -> Result<Self> {
         Ok(MemEngine { sheets: Vec::new() })
@@ -38,33 +75,16 @@ impl SearchEngine for MemEngine {
             .unwrap_or("unknown")
             .to_string();
 
-        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
-        let sample = sheets.first().map(|s| FileSample {
-            sheet_name: s.name.clone(),
-            headers: s.headers.clone(),
-            rows: s.rows.iter().take(3).cloned().collect(),
-        });
+        self.do_import_sheets(&file_name, sheets, progress)
+    }
 
-        let mut sheet_info = Vec::new();
-        for sheet in sheets {
-            sheet_info.push((sheet.name.clone(), sheet.rows.len()));
-            self.sheets.push(MemSheet {
-                file_name: file_name.clone(),
-                sheet_name: sheet.name,
-                headers: sheet.headers,
-                rows: sheet.rows,
-                col_widths: sheet.col_widths,
-            });
-        }
-
-        progress(total_rows, total_rows);
-
-        Ok(FileInfo {
-            name: file_name,
-            sheets: sheet_info,
-            total_rows,
-            sample,
-        })
+    fn import_sheets(
+        &mut self,
+        file_name: &str,
+        sheets: Vec<crate::excel::SheetData>,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        self.do_import_sheets(file_name, sheets, progress)
     }
 
     fn import_excel_repair(

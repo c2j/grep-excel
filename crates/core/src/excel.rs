@@ -68,24 +68,35 @@ fn detect_html_charset(bytes: &[u8]) -> Option<String> {
         .map(|m| m.as_str().to_lowercase())
 }
 
-pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
+/// Parse a file with an optional explicit format override.
+/// When `format` is None, auto-detects from extension (same as `parse_file`).
+pub fn parse_file_as(path: &Path, format: Option<FileFormat>) -> Result<Vec<SheetData>> {
     #[cfg(feature = "archive-support")]
     {
-        if let Some(format) = crate::archive::detect_archive(path) {
-            return parse_archive(path, format);
+        if format.is_none() {
+            if let Some(archive_format) = crate::archive::detect_archive(path) {
+                return parse_archive(path, archive_format);
+            }
         }
     }
 
-    match FileFormat::from_path(path) {
-        Some(FileFormat::Csv) => parse_csv(path),
-        Some(FileFormat::Tsv) => parse_tsv(path),
-        Some(FileFormat::Html) => parse_html(path),
-        Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text(path),
-        Some(FileFormat::Dbf) => parse_dbf(path),
-        Some(FileFormat::Xml) => parse_xml(path),
-        Some(FileFormat::Excel) => parse_excel(path),
-        None => parse_excel(path),
+    let fmt = format.unwrap_or_else(|| {
+        FileFormat::from_path(path).unwrap_or(FileFormat::Excel)
+    });
+
+    match fmt {
+        FileFormat::Csv => parse_delimited(path, b','),
+        FileFormat::Tsv => parse_delimited(path, b'\t'),
+        FileFormat::Html => parse_html(path),
+        FileFormat::Text | FileFormat::Markdown => parse_text(path),
+        FileFormat::Dbf => parse_dbf(path),
+        FileFormat::Xml => parse_xml(path),
+        FileFormat::Excel => parse_excel(path),
     }
+}
+
+pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
+    parse_file_as(path, None)
 }
 
 fn parse_html(path: &Path) -> Result<Vec<SheetData>> {

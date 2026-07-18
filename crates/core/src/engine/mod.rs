@@ -30,6 +30,16 @@ pub trait SearchEngine: Send {
         path: &Path,
         progress: &dyn Fn(usize, usize),
     ) -> Result<FileInfo>;
+
+    /// Import pre-parsed sheets into the engine.
+    /// Used when format override (`--as` flag) bypasses auto-detection.
+    fn import_sheets(
+        &mut self,
+        file_name: &str,
+        sheets: Vec<crate::excel::SheetData>,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo>;
+
     fn import_excel_repair(
         &mut self,
         path: &Path,
