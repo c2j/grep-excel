@@ -25,6 +25,7 @@ parking_lot.workspace = true
 unicode-width = "0.2"
 encoding_rs.workspace = true
 scraper = "0.21"
+dbase = "0.8"
 
 # Optional: cloud share URL download
 reqwest = { workspace = true, optional = true }

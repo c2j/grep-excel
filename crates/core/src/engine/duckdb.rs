@@ -134,6 +134,126 @@ impl SearchEngine for DuckDbEngine {
         self.import_excel_sheets_repair(path, progress)
     }
 
+    fn import_sheets(
+        &mut self,
+        file_name: &str,
+        sheets: Vec<crate::excel::SheetData>,
+        progress_callback: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![file_name],
+        )?;
+        let file_id: i64 = self.conn.query_row(
+            "SELECT currval('file_id_seq')",
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let mut sheet_info: Vec<(String, usize)> = Vec::new();
+        let mut sample: Option<FileSample> = None;
+        let mut processed_rows: usize = 0;
+        let mut total_rows: usize = 0;
+
+        for (sheet_idx, sheet_data) in sheets.into_iter().enumerate() {
+            let row_count = sheet_data.rows.len();
+            let col_names = sanitize_col_names(&sheet_data.headers);
+            let table_name = format!("sheet_{}_{}", file_id, sheet_idx);
+
+            let col_defs: Vec<String> = col_names
+                .iter()
+                .map(|c| format!("{} TEXT", quote_ident(c)))
+                .collect();
+            let create_sql = format!(
+                "CREATE TABLE {} ({})",
+                quote_ident(&table_name),
+                col_defs.join(", ")
+            );
+            self.conn.execute(&create_sql, [])?;
+
+            total_rows += row_count;
+
+            let tx = self.conn.transaction()?;
+            {
+                let mut appender = tx.appender(&table_name)?;
+                for row in &sheet_data.rows {
+                    let mut padded_row = row.clone();
+                    padded_row.resize(col_names.len(), String::new());
+                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                        .iter()
+                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .collect();
+                    appender.append_row(param_refs.as_slice())?;
+                    processed_rows += 1;
+                    progress_callback(processed_rows, total_rows);
+                }
+            }
+            tx.commit()?;
+
+            let col_names_str = col_names.join("\x1f");
+            let col_widths_str = sheet_data
+                .col_widths
+                .iter()
+                .map(|w| format!("{}", w))
+                .collect::<Vec<_>>()
+                .join("\x1f");
+            self.conn.execute(
+                "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
+                params![file_id, &sheet_data.name, &table_name, row_count as i32, &col_names_str, &col_widths_str],
+            )?;
+
+            let file_stem = std::path::Path::new(file_name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let safe_schema = sanitize_schema_name(&file_stem);
+            let _ = self.conn.execute(
+                &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+                [],
+            );
+            let _ = self.conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                    quote_ident(&safe_schema),
+                    quote_ident(&sheet_data.name),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+            let dotted_alias = format!("{}.{}", file_stem, sheet_data.name);
+            let _ = self.conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+
+            if sample.is_none() {
+                sample = Some(FileSample {
+                    sheet_name: sheet_data.name.clone(),
+                    headers: sheet_data.headers.clone(),
+                    rows: sheet_data.rows.iter().take(3).cloned().collect(),
+                });
+            }
+
+            sheet_info.push((sheet_data.name, row_count));
+        }
+
+        if total_rows > 0 {
+            progress_callback(processed_rows, total_rows);
+        }
+
+        Ok(FileInfo {
+            name: file_name.to_string(),
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)> {
         let start = Instant::now();
 

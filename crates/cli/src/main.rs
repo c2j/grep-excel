@@ -4,8 +4,93 @@ use grep_excel::app::App;
 use grep_excel::engine::{DefaultEngine, SearchEngine};
 use grep_excel::event::create_event_channel;
 use grep_excel::types::{ContextRows, FileInfo, SearchMode, SearchQuery, SearchResult};
+use grep_excel_core::excel::parse_file_as;
+use grep_excel_core::format::FileFormat;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
+
+/// A file with an optional format override (from sticky --as).
+struct FileArg {
+    path: PathBuf,
+    format_override: Option<FileFormat>,
+}
+
+/// Parse raw args to extract files with their sticky --as format overrides.
+///
+/// Rules:
+/// - `--as <format>` sets the format for all subsequent files until next `--as`
+/// - Files with no preceding `--as` get None (auto-detect)
+/// - Other flags are skipped
+fn parse_file_args(raw_args: &[String]) -> Vec<FileArg> {
+    let mut files = Vec::new();
+    let mut current_format: Option<FileFormat> = None;
+    let mut i = 1; // skip program name
+
+    while i < raw_args.len() {
+        let arg = &raw_args[i];
+        if arg == "--as" {
+            i += 1;
+            if i < raw_args.len() {
+                match FileFormat::from_name(&raw_args[i]) {
+                    Some(fmt) => current_format = Some(fmt),
+                    None => {
+                        eprintln!(
+                            "Warning: unrecognized format '{}', ignoring --as. Valid: {:?}",
+                            raw_args[i],
+                            FileFormat::ALL_NAMES
+                        );
+                        current_format = None;
+                    }
+                }
+                i += 1;
+            }
+        } else if !arg.starts_with('-') {
+            files.push(FileArg {
+                path: PathBuf::from(arg),
+                format_override: current_format,
+            });
+            i += 1;
+        } else {
+            // Known value-taking flags
+            let value_taking = [
+                "-q", "--query",
+                "-c", "--column",
+                "-s", "--sheet",
+                "-m", "--mode",
+                "-x", "--sql",
+                "-e", "--export",
+                "-E", "--exec",
+                "-g", "--aggregate",
+                "-f", "--format",
+                "-r", "--repair",
+                "-X", "--run",
+                "--run-output-column",
+                "--kdocs-cookie",
+            ];
+            let takes_value = value_taking.contains(&arg.as_str())
+                || (arg.starts_with("--") && arg.contains('='));
+            i += if takes_value && i + 1 < raw_args.len() && !raw_args[i + 1].starts_with('-') {
+                2
+            } else {
+                1
+            };
+        }
+    }
+
+    files
+}
+
+/// Build a lookup map from each positional file path to its format override.
+fn build_format_map(file_args: &[FileArg]) -> HashMap<String, FileFormat> {
+    let mut map = HashMap::new();
+    for fa in file_args {
+        if let Some(fmt) = fa.format_override {
+            map.insert(fa.path.to_string_lossy().to_string(), fmt);
+        }
+    }
+    map
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "grep_excel", about = "", long_about = "")]
@@ -145,14 +230,14 @@ fn print_logo() {
 fn main() -> Result<()> {
     grep_excel::i18n::init();
 
-    let args: Vec<String> = std::env::args().collect();
+    let raw_args: Vec<String> = std::env::args().collect();
 
     // Intercept --exec --help / --mcp --help BEFORE general --help
     let show_exec_help = {
-        let has_exec = args.iter().any(|a| a == "--exec" || a == "-E");
-        let has_run = args.iter().any(|a| a == "--run" || a == "-X");
-        let has_mcp = args.iter().any(|a| a == "--mcp");
-        let has_help = args.iter().any(|a| a == "--help" || a == "-h");
+        let has_exec = raw_args.iter().any(|a| a == "--exec" || a == "-E");
+        let has_run = raw_args.iter().any(|a| a == "--run" || a == "-X");
+        let has_mcp = raw_args.iter().any(|a| a == "--mcp");
+        let has_help = raw_args.iter().any(|a| a == "--help" || a == "-h");
         (has_exec || has_run || has_mcp) && has_help
     };
     if show_exec_help {
@@ -160,17 +245,36 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if args.iter().any(|a| a == "--help" || a == "-h") {
+    if raw_args.iter().any(|a| a == "--help" || a == "-h") {
         print_logo();
         print!("{}", grep_excel::i18n::help_full_text());
         return Ok(());
     }
-    if args.iter().any(|a| a == "--version" || a == "-V") {
+    if raw_args.iter().any(|a| a == "--version" || a == "-V") {
         println!("grep_excel {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
-    let args = Args::parse();
+    // Parse --as from raw args and build format override map
+    let file_args = parse_file_args(&raw_args);
+    let format_overrides: HashMap<String, FileFormat> = build_format_map(&file_args);
+
+    // Filter --as <format> from raw args so clap doesn't choke on them
+    let clap_args: Vec<String> = {
+        let mut filtered = Vec::new();
+        let mut i = 0;
+        while i < raw_args.len() {
+            if raw_args[i] == "--as" {
+                i += 2;
+            } else {
+                filtered.push(raw_args[i].clone());
+                i += 1;
+            }
+        }
+        filtered
+    };
+
+    let args = Args::parse_from(&clap_args);
 
     if let Some(ref hosts) = args.share_hosts {
         if !hosts.is_empty() {
@@ -193,11 +297,11 @@ fn main() -> Result<()> {
     }
 
     if args.exec.is_some() {
-        return run_exec(&args);
+        return run_exec(&args, &format_overrides);
     }
 
     if args.run.is_some() {
-        return run_exec_shell(&args);
+        return run_exec_shell(&args, &format_overrides);
     }
 
     #[cfg(feature = "mcp-server")]
@@ -208,27 +312,27 @@ fn main() -> Result<()> {
     }
 
     if args.list_tables {
-        return run_list_tables_cli(&args);
+        return run_list_tables_cli(&args, &format_overrides);
     }
 
     if args.interactive {
-        return run_interactive_cli(&args);
+        return run_interactive_cli(&args, &format_overrides);
     }
 
     if args.sql.is_some() {
-        return run_sql_cli(&args);
+        return run_sql_cli(&args, &format_overrides);
     }
 
     if args.query.is_some() {
-        return run_cli(&args);
+        return run_cli(&args, &format_overrides);
     }
 
     print_logo();
 
-    run_tui(&args)
+    run_tui(&args, &format_overrides)
 }
 
-fn run_tui(args: &Args) -> Result<()> {
+fn run_tui(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     // File-backed DuckDB enables concurrent materialize without blocking queries
     let db_path = std::env::temp_dir().join(format!(
         "grep_excel_tui_{}.duckdb",
@@ -252,7 +356,11 @@ fn run_tui(args: &Args) -> Result<()> {
                         _temp_guards.push(g);
                     }
                     if path.exists() {
-                        app.import_file(path);
+                        if let Some(&fmt) = format_overrides.get(input) {
+                            app.import_file_with_format(path, fmt);
+                        } else {
+                            app.import_file(path);
+                        }
                     }
                 }
                 Err(e) => {
@@ -264,7 +372,11 @@ fn run_tui(args: &Args) -> Result<()> {
         {
             let path = std::path::PathBuf::from(input);
             if path.exists() {
-                app.import_file(path);
+                if let Some(&fmt) = format_overrides.get(input) {
+                    app.import_file_with_format(path, fmt);
+                } else {
+                    app.import_file(path);
+                }
             }
         }
     }
@@ -293,28 +405,34 @@ fn import_file_with_repair(
     }
 }
 
+/// Import a file, respecting the optional format override from --as.
+/// When a format override is present, parses with `parse_file_as` and imports
+/// via `import_sheets`, bypassing the engine's auto-detection.
+fn import_file_with_format_override(
+    db: &mut DefaultEngine,
+    input: &str,
+    format_overrides: &HashMap<String, FileFormat>,
+    repair: bool,
+) -> Result<FileInfo> {
+    let path = std::path::PathBuf::from(input);
+    if let Some(&fmt) = format_overrides.get(input) {
+        let sheets = parse_file_as(&path, Some(fmt))?;
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        db.import_sheets(&file_name, sheets, &|_, _| {})
+    } else {
+        import_file_with_repair(db, &path, repair)
+    }
+}
+
 /// CLI import helper.
 /// - CSV: always eager TABLE import via `import_excel` → `import_csv_direct`.
 ///   VIEW registration lacks native `rowid` (breaks search) and re-scans the file
 ///   on every query (catastrophic for multi-GB CSVs).
 /// - Other formats: full import with optional `--repair` fallback.
-fn quick_register(
-    db: &mut DefaultEngine,
-    file: &std::path::Path,
-    repair: bool,
-) -> Result<FileInfo> {
-    let ext = file
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if ext == "csv" {
-        db.import_excel(file, &|_, _| {})
-    } else {
-        import_file_with_repair(db, file, repair)
-    }
-}
-
 #[cfg(feature = "share-url")]
 fn resolve_one(
     input: &str,
@@ -342,7 +460,7 @@ fn resolve_one(
     }
 }
 
-fn run_cli(args: &Args) -> Result<()> {
+fn run_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
     #[cfg(feature = "share-url")]
@@ -365,7 +483,7 @@ fn run_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match quick_register(&mut db, &path, args.repair) {
+                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -393,7 +511,7 @@ fn run_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match quick_register(&mut db, &path, args.repair) {
+            match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -550,7 +668,7 @@ fn run_cli(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn run_sql_cli(args: &Args) -> Result<()> {
+fn run_sql_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
     #[cfg(feature = "share-url")]
@@ -573,7 +691,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match quick_register(&mut db, &path, args.repair) {
+                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -601,7 +719,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match quick_register(&mut db, &path, args.repair) {
+            match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -707,7 +825,7 @@ fn run_sql_cli(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn run_list_tables_cli(args: &Args) -> Result<()> {
+fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     use grep_excel::excel::parse_file_metadata;
 
     struct TableInfo {
@@ -751,7 +869,19 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
                 .to_string();
             let file_name = display_name.clone();
 
-            match parse_file_metadata(&path) {
+            let result = if let Some(&fmt) = format_overrides.get(input) {
+                use grep_excel_core::excel::parse_file_as;
+                parse_file_as(&path, Some(fmt)).map(|sheets| {
+                    sheets.into_iter().map(|s| grep_excel_core::excel::SheetMetadata {
+                        name: s.name,
+                        row_count: s.rows.len(),
+                        headers: s.headers,
+                    }).collect::<Vec<_>>()
+                })
+            } else {
+                parse_file_metadata(&path)
+            };
+            match result {
                 Ok(sheets) if !sheets.is_empty() => {
                     let sheet_count = sheets.len();
                     let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
@@ -846,6 +976,39 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
+
+            if let Some(&fmt) = format_overrides.get(input) {
+                use grep_excel_core::excel::parse_file_as;
+                let result = parse_file_as(&file, Some(fmt)).map(|sheets| {
+                    sheets.into_iter().map(|s| grep_excel_core::excel::SheetMetadata {
+                        name: s.name,
+                        row_count: s.rows.len(),
+                        headers: s.headers,
+                    }).collect::<Vec<_>>()
+                });
+                match result {
+                    Ok(sheets) if !sheets.is_empty() => {
+                        let sheet_count = sheets.len();
+                        let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
+                        eprintln!("{}", grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows));
+                        for (sheet_idx, meta) in sheets.into_iter().enumerate() {
+                            tables.push(TableInfo {
+                                alias: format!("{}.{}", file_stem, meta.name),
+                                table_name: format!("sheet_{}_{}", file_idx_counter, sheet_idx),
+                                row_count: meta.row_count,
+                                columns: meta.headers,
+                            });
+                        }
+                        file_idx_counter += 1;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("{}", grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string()));
+                    }
+                }
+                continue;
+            }
+
             let ext = file
                 .extension()
                 .and_then(|e| e.to_str())
@@ -987,7 +1150,7 @@ fn run_list_tables_cli(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn run_interactive_cli(args: &Args) -> Result<()> {
+fn run_interactive_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     let mut db = DefaultEngine::new()?;
 
     #[cfg(feature = "share-url")]
@@ -1008,7 +1171,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match quick_register(&mut db, &path, args.repair) {
+                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -1036,7 +1199,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match quick_register(&mut db, &file, args.repair) {
+            match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -1054,7 +1217,7 @@ fn run_interactive_cli(args: &Args) -> Result<()> {
     grep_excel::interactive::run(&mut db, args.no_history)
 }
 
-fn run_exec_shell(args: &Args) -> Result<()> {
+fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     let mut db = DefaultEngine::new()?;
     let exec_template = args.run.as_ref().unwrap();
 
@@ -1076,7 +1239,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                         );
                         continue;
                     }
-                    match quick_register(&mut db, &path, args.repair) {
+                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -1104,7 +1267,7 @@ fn run_exec_shell(args: &Args) -> Result<()> {
                 );
                 continue;
             }
-            match quick_register(&mut db, &file, args.repair) {
+            match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",
@@ -1346,7 +1509,7 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
-fn run_exec(args: &Args) -> Result<()> {
+fn run_exec(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     let exec_json = args.exec.as_ref().unwrap();
 
     if exec_json == "help" {
@@ -1401,7 +1564,7 @@ fn run_exec(args: &Args) -> Result<()> {
                     let canonical = std::fs::canonicalize(&path)
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| path.display().to_string());
-                    match quick_register(&mut db, &path, args.repair) {
+                        match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
@@ -1433,7 +1596,7 @@ fn run_exec(args: &Args) -> Result<()> {
             let canonical = std::fs::canonicalize(&file)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| file.display().to_string());
-            match quick_register(&mut db, &file, args.repair) {
+            match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
                 Ok(info) => {
                     eprintln!(
                         "{}",

@@ -1,3 +1,4 @@
+use crate::format::FileFormat;
 use anyhow::Result;
 use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
 use chrono::{Datelike, Duration};
@@ -67,29 +68,35 @@ fn detect_html_charset(bytes: &[u8]) -> Option<String> {
         .map(|m| m.as_str().to_lowercase())
 }
 
-pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
+/// Parse a file with an optional explicit format override.
+/// When `format` is None, auto-detects from extension (same as `parse_file`).
+pub fn parse_file_as(path: &Path, format: Option<FileFormat>) -> Result<Vec<SheetData>> {
     #[cfg(feature = "archive-support")]
     {
-        if let Some(format) = crate::archive::detect_archive(path) {
-            return parse_archive(path, format);
+        if format.is_none() {
+            if let Some(archive_format) = crate::archive::detect_archive(path) {
+                return parse_archive(path, archive_format);
+            }
         }
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let fmt = format.unwrap_or_else(|| {
+        FileFormat::from_path(path).unwrap_or(FileFormat::Excel)
+    });
 
-    if ext == "csv" {
-        parse_csv(path)
-    } else if ext == "html" || ext == "htm" {
-        parse_html(path)
-    } else if ext == "txt" || ext == "md" || ext == "markdown" {
-        parse_text(path)
-    } else {
-        parse_excel(path)
+    match fmt {
+        FileFormat::Csv => parse_delimited(path, b','),
+        FileFormat::Tsv => parse_delimited(path, b'\t'),
+        FileFormat::Html => parse_html(path),
+        FileFormat::Text | FileFormat::Markdown => parse_text(path),
+        FileFormat::Dbf => parse_dbf(path),
+        FileFormat::Xml => parse_xml(path),
+        FileFormat::Excel => parse_excel(path),
     }
+}
+
+pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
+    parse_file_as(path, None)
 }
 
 fn parse_html(path: &Path) -> Result<Vec<SheetData>> {
@@ -128,15 +135,17 @@ fn parse_text(path: &Path) -> Result<Vec<SheetData>> {
         .collect())
 }
 
-fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
+/// Parse a delimiter-separated file (CSV, TSV, etc.)
+fn parse_delimited(path: &Path, delimiter: u8) -> Result<Vec<SheetData>> {
     let name = path
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("csv")
+        .unwrap_or("data")
         .to_string();
 
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
+        .delimiter(delimiter)
         .from_path(path)?;
 
     let mut all_rows: Vec<Vec<String>> = Vec::new();
@@ -145,23 +154,159 @@ fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
         all_rows.push(record.iter().map(|s| s.to_string()).collect());
     }
 
-    if all_rows.is_empty() {
+    if all_rows.len() < 2 {
         return Ok(Vec::new());
     }
 
-    // Extract header row in-place; remaining rows are moved (no full-data clone).
     let headers = all_rows.remove(0);
+    let rows = all_rows;
 
-    if all_rows.is_empty() {
+    Ok(vec![SheetData {
+        name,
+        headers,
+        rows,
+        col_widths: Vec::new(),
+    }])
+}
+
+fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
+    parse_delimited(path, b',')
+}
+
+fn parse_tsv(path: &Path) -> Result<Vec<SheetData>> {
+    parse_delimited(path, b'\t')
+}
+
+/// Parse metadata for a delimiter-separated file (CSV, TSV, etc.)
+fn parse_delimited_metadata(path: &Path, delimiter: u8) -> Result<Vec<SheetMetadata>> {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("data")
+        .to_string();
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .delimiter(delimiter)
+        .from_path(path)?;
+
+    let mut headers: Vec<String> = Vec::new();
+    let mut row_count: usize = 0;
+    for result in rdr.records() {
+        let record = result?;
+        if headers.is_empty() {
+            headers = record.iter().map(|s| s.to_string()).collect();
+        } else {
+            row_count += 1;
+        }
+    }
+    if headers.is_empty() || row_count == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![SheetMetadata { name, headers, row_count }])
+}
+
+fn parse_dbf(path: &Path) -> Result<Vec<SheetData>> {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("dbf")
+        .to_string();
+
+    let mut reader = dbase::Reader::from_path(path)
+        .map_err(|e| anyhow::anyhow!("Failed to open DBF file '{}': {}", path.display(), e))?;
+
+    // Get field definitions in file order before reading records
+    // (reader.fields() borrows, so clone before calling read())
+    let field_infos: Vec<dbase::FieldInfo> = reader.fields().to_vec();
+    let headers: Vec<String> = field_infos
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect();
+
+    if headers.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let records: Vec<dbase::Record> = reader
+        .read()
+        .map_err(|e| anyhow::anyhow!("Failed to read DBF records from '{}': {}", path.display(), e))?;
+
+    // Convert each record to Vec<String> using header order for lookup.
+    // Record uses an unordered map internally, so we look up by field name
+    // rather than relying on iteration order.
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(records.len());
+    for record in &records {
+        let mut row: Vec<String> = Vec::with_capacity(headers.len());
+        for header in &headers {
+            match record.get(header) {
+                Some(value) => row.push(dbf_value_to_string(value)),
+                None => row.push(String::new()),
+            }
+        }
+        if !row.iter().all(|c| c.is_empty()) {
+            rows.push(row);
+        }
+    }
+
+    if rows.is_empty() {
         return Ok(Vec::new());
     }
 
     Ok(vec![SheetData {
         name,
         headers,
-        rows: all_rows,
+        rows,
         col_widths: Vec::new(),
     }])
+}
+
+/// Convert a dBase FieldValue to a display string.
+fn dbf_value_to_string(value: &dbase::FieldValue) -> String {
+    use dbase::FieldValue;
+    match value {
+        FieldValue::Character(opt) => opt.clone().unwrap_or_default(),
+        FieldValue::Numeric(opt) => opt
+            .map(|n| {
+                // Show as integer if it's a whole number, else as float
+                if n.fract() == 0.0 && n.abs() < 1e15 {
+                    format!("{}", n as i64)
+                } else {
+                    n.to_string()
+                }
+            })
+            .unwrap_or_default(),
+        FieldValue::Float(opt) => opt
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+        FieldValue::Integer(i) => i.to_string(),
+        FieldValue::Double(f) => f.to_string(),
+        FieldValue::Currency(f) => format!("{:.2}", f),
+        FieldValue::Logical(opt) => opt
+            .map(|b| if b { "TRUE".to_string() } else { "FALSE".to_string() })
+            .unwrap_or_default(),
+        FieldValue::Date(opt) => opt
+            .map(|d| format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
+            .unwrap_or_default(),
+        FieldValue::DateTime(dt) => {
+            let date = dt.date();
+            let time = dt.time();
+            format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                date.year(),
+                date.month(),
+                date.day(),
+                time.hours(),
+                time.minutes(),
+                time.seconds()
+            )
+        }
+        FieldValue::Memo(s) => s.clone(),
+    }
+}
+
+fn parse_xml(path: &Path) -> Result<Vec<SheetData>> {
+    crate::xml_table::parse_xml_table(path)
 }
 
 #[derive(Debug, Clone)]
@@ -566,21 +711,27 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         }
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "csv" {
-        parse_csv_metadata(path)
-    } else if ext == "html" || ext == "htm" {
-        parse_html_metadata(path)
-    } else if ext == "txt" || ext == "md" || ext == "markdown" {
-        parse_text_metadata(path)
-    } else {
-        parse_excel_metadata(path)
+    match FileFormat::from_path(path) {
+        Some(FileFormat::Csv) => parse_delimited_metadata(path, b','),
+        Some(FileFormat::Tsv) => parse_delimited_metadata(path, b'\t'),
+        Some(FileFormat::Html) => parse_html_metadata(path),
+        Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text_metadata(path),
+        Some(FileFormat::Dbf) | Some(FileFormat::Xml) => metadata_from_full_parse(path),
+        Some(FileFormat::Excel) => parse_excel_metadata(path),
+        None => parse_excel_metadata(path),
     }
+}
+
+fn metadata_from_full_parse(path: &Path) -> Result<Vec<SheetMetadata>> {
+    let sheets = parse_file(path)?;
+    Ok(sheets
+        .into_iter()
+        .map(|s| SheetMetadata {
+            name: s.name,
+            headers: s.headers,
+            row_count: s.rows.len(),
+        })
+        .collect())
 }
 
 fn parse_html_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
@@ -615,40 +766,6 @@ fn parse_text_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
             row_count: t.row_count,
         })
         .collect())
-}
-
-fn parse_csv_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("csv")
-        .to_string();
-
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(path)?;
-
-    let mut headers: Vec<String> = Vec::new();
-    let mut row_count: usize = 0;
-
-    for result in rdr.records() {
-        let record = result?;
-        if headers.is_empty() {
-            headers = record.iter().map(|s| s.to_string()).collect();
-        } else {
-            row_count += 1;
-        }
-    }
-
-    if headers.is_empty() || row_count == 0 {
-        return Ok(Vec::new());
-    }
-
-    Ok(vec![SheetMetadata {
-        name,
-        headers,
-        row_count,
-    }])
 }
 
 fn parse_excel_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
@@ -696,34 +813,46 @@ pub fn for_each_sheet<F>(path: &Path, mut handler: F) -> Result<Vec<(String, usi
 where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "html" || ext == "htm" {
-        let sheets = parse_html(path)?;
-        let mut info = Vec::new();
-        for (idx, sheet) in sheets.into_iter().enumerate() {
-            let row_count = sheet.rows.len();
-            handler(sheet, idx)?;
-            info.push((format!("html_{}", idx), row_count));
+    match FileFormat::from_path(path) {
+        Some(FileFormat::Html) => {
+            let sheets = parse_html(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("html_{}", idx), row_count));
+            }
+            Ok(info)
         }
-        return Ok(info);
-    }
-
-    if ext == "txt" || ext == "md" || ext == "markdown" {
-        let sheets = parse_text(path)?;
-        let mut info = Vec::new();
-        for (idx, sheet) in sheets.into_iter().enumerate() {
-            let row_count = sheet.rows.len();
-            handler(sheet, idx)?;
-            info.push((format!("text_{}", idx), row_count));
+        Some(FileFormat::Text) | Some(FileFormat::Markdown) => {
+            let sheets = parse_text(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("text_{}", idx), row_count));
+            }
+            Ok(info)
         }
-        return Ok(info);
+        Some(FileFormat::Excel) | None => for_each_excel_sheet(path, handler),
+        _ => {
+            let sheets = parse_file(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("sheet_{}", idx), row_count));
+            }
+            Ok(info)
+        }
     }
+}
 
+/// Calamine-based sheet iteration (Excel/ODS fallback).
+fn for_each_excel_sheet<F>(path: &Path, mut handler: F) -> Result<Vec<(String, usize)>>
+where
+    F: FnMut(SheetData, usize) -> Result<()>,
+{
     let mut workbook = open_workbook_auto(path)?;
     let sheet_names = workbook.sheet_names().to_vec();
     let xlsx_widths = parse_xlsx_col_widths(path);
@@ -888,23 +1017,13 @@ fn extract_xml_attr<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
 /// Handles cases where calamine fails due to ZIP central directory issues
 /// or XML parsing strictness, as long as the underlying ZIP entries are readable.
 pub fn parse_file_repair(path: &Path) -> Result<Vec<SheetData>> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "csv" {
-        return parse_csv(path);
+    match FileFormat::from_path(path) {
+        Some(FileFormat::Csv) => parse_csv(path),
+        Some(FileFormat::Tsv) => parse_tsv(path),
+        Some(FileFormat::Html) => parse_html(path),
+        Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text(path),
+        _ => parse_xlsx_repair(path),
     }
-    if ext == "html" || ext == "htm" {
-        return parse_html(path);
-    }
-    if ext == "txt" || ext == "md" || ext == "markdown" {
-        return parse_text(path);
-    }
-
-    parse_xlsx_repair(path)
 }
 
 /// Streaming variant of repair parse: processes one sheet at a time via callback.
@@ -912,44 +1031,39 @@ pub fn for_each_sheet_repair<F>(path: &Path, mut handler: F) -> Result<Vec<(Stri
 where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "csv" {
-        let sheets = parse_csv(path)?;
-        let mut info = Vec::new();
-        for (idx, sheet) in sheets.into_iter().enumerate() {
-            let row_count = sheet.rows.len();
-            handler(sheet, idx)?;
-            info.push((format!("csv_{}", idx), row_count));
+    match FileFormat::from_path(path) {
+        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) => {
+            let sheets = parse_file(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("sheet_{}", idx), row_count));
+            }
+            Ok(info)
         }
-        return Ok(info);
-    }
-    if ext == "html" || ext == "htm" {
-        let sheets = parse_html(path)?;
-        let mut info = Vec::new();
-        for (idx, sheet) in sheets.into_iter().enumerate() {
-            let row_count = sheet.rows.len();
-            handler(sheet, idx)?;
-            info.push((format!("html_{}", idx), row_count));
+        Some(FileFormat::Html) => {
+            let sheets = parse_html(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("html_{}", idx), row_count));
+            }
+            Ok(info)
         }
-        return Ok(info);
-    }
-    if ext == "txt" || ext == "md" || ext == "markdown" {
-        let sheets = parse_text(path)?;
-        let mut info = Vec::new();
-        for (idx, sheet) in sheets.into_iter().enumerate() {
-            let row_count = sheet.rows.len();
-            handler(sheet, idx)?;
-            info.push((format!("text_{}", idx), row_count));
+        Some(FileFormat::Text) | Some(FileFormat::Markdown) => {
+            let sheets = parse_text(path)?;
+            let mut info = Vec::new();
+            for (idx, sheet) in sheets.into_iter().enumerate() {
+                let row_count = sheet.rows.len();
+                handler(sheet, idx)?;
+                info.push((format!("text_{}", idx), row_count));
+            }
+            Ok(info)
         }
-        return Ok(info);
+        _ => for_each_xlsx_repair(path, handler),
     }
-
-    for_each_xlsx_repair(path, handler)
 }
 
 fn parse_xlsx_repair(path: &Path) -> Result<Vec<SheetData>> {

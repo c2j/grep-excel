@@ -723,6 +723,119 @@ impl SearchEngine for SqliteEngine {
         self.import_excel_file_repair(path, progress)
     }
 
+    fn import_sheets(
+        &mut self,
+        file_name: &str,
+        sheets: Vec<crate::excel::SheetData>,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
+        let sample = sheets.first().map(|s| FileSample {
+            sheet_name: s.name.clone(),
+            headers: s.headers.clone(),
+            rows: s.rows.iter().take(3).cloned().collect(),
+        });
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![file_name],
+        )?;
+        let file_id: i64 = self
+            .conn
+            .query_row("SELECT last_insert_rowid()", [], |row| row.get(0))?;
+
+        let mut sheet_info = Vec::new();
+        let mut processed_rows = 0;
+
+        for (sheet_idx, sheet) in sheets.into_iter().enumerate() {
+            let row_count = sheet.rows.len() as i32;
+            let col_names = sanitize_col_names(&sheet.headers);
+            let table_name = format!("sheet_{}_{}", file_id, sheet_idx);
+
+            let col_defs: Vec<String> = col_names
+                .iter()
+                .map(|c| format!("{} TEXT", quote_ident(c)))
+                .collect();
+            self.conn.execute(
+                &format!(
+                    "CREATE TABLE {} ({})",
+                    quote_ident(&table_name),
+                    col_defs.join(", ")
+                ),
+                [],
+            )?;
+
+            let placeholders: Vec<&str> = (0..col_names.len()).map(|_| "?").collect();
+            let insert_sql = format!(
+                "INSERT INTO {} VALUES ({})",
+                quote_ident(&table_name),
+                placeholders.join(", ")
+            );
+
+            for row in &sheet.rows {
+                let mut padded = row.clone();
+                padded.resize(col_names.len(), String::new());
+                let params_refs: Vec<&dyn rusqlite::types::ToSql> = padded
+                    .iter()
+                    .map(|s| s as &dyn rusqlite::types::ToSql)
+                    .collect();
+                self.conn.execute(&insert_sql, params_refs.as_slice())?;
+                processed_rows += 1;
+                progress(processed_rows, total_rows);
+            }
+
+            let col_names_str = col_names.join("\x1f");
+            let col_widths_str = sheet
+                .col_widths
+                .iter()
+                .map(|w| format!("{}", w))
+                .collect::<Vec<_>>()
+                .join("\x1f");
+            self.conn.execute(
+                "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
+                params![file_id, &sheet.name, &table_name, row_count, &col_names_str, &col_widths_str],
+            )?;
+
+            for col_name in &col_names {
+                let safe_name = col_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                let index_name = format!("idx_{}_{}", table_name, safe_name);
+                let _ = self.conn.execute(
+                    &format!(
+                        "CREATE INDEX IF NOT EXISTS \"{}\" ON {} ({})",
+                        index_name,
+                        quote_ident(&table_name),
+                        quote_ident(col_name)
+                    ),
+                    [],
+                );
+            }
+
+            let file_stem = std::path::Path::new(file_name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let dotted_alias = format!("{}.{}", file_stem, sheet.name);
+            let _ = self.conn.execute(
+                &format!(
+                    "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                    quote_ident(&dotted_alias),
+                    quote_ident(&table_name),
+                ),
+                [],
+            );
+
+            sheet_info.push((sheet.name, row_count as usize));
+        }
+
+        Ok(FileInfo {
+            name: file_name.to_string(),
+            sheets: sheet_info,
+            total_rows,
+            sample,
+        })
+    }
+
     fn search(&self, query: &SearchQuery) -> Result<(Vec<SearchResult>, SearchStats)> {
         let start = Instant::now();
 
