@@ -421,11 +421,11 @@ impl SearchEngine for MemEngine {
             use crate::engine::write_xlsx;
 
             let sheets: Vec<&MemSheet> = self.sheets.iter()
-                .filter(|s| s.file_name == _file_name)
+                .filter(|s| s.file_name == file_name)
                 .collect();
 
             if sheets.is_empty() {
-                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", _file_name);
+                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
             }
 
             let sheet_data: Vec<(&str, &[String], &[Vec<String>])> = sheets.iter()
