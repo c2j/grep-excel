@@ -1,3 +1,4 @@
+use crate::format::FileFormat;
 use anyhow::Result;
 use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
 use chrono::{Datelike, Duration};
@@ -75,20 +76,15 @@ pub fn parse_file(path: &Path) -> Result<Vec<SheetData>> {
         }
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ext == "csv" {
-        parse_csv(path)
-    } else if ext == "html" || ext == "htm" {
-        parse_html(path)
-    } else if ext == "txt" || ext == "md" || ext == "markdown" {
-        parse_text(path)
-    } else {
-        parse_excel(path)
+    match FileFormat::from_path(path) {
+        Some(FileFormat::Csv) => parse_csv(path),
+        Some(FileFormat::Tsv) => parse_tsv(path),
+        Some(FileFormat::Html) => parse_html(path),
+        Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text(path),
+        Some(FileFormat::Dbf) => parse_dbf(path),
+        Some(FileFormat::Xml) => parse_xml(path),
+        Some(FileFormat::Excel) => parse_excel(path),
+        None => parse_excel(path),
     }
 }
 
@@ -128,15 +124,17 @@ fn parse_text(path: &Path) -> Result<Vec<SheetData>> {
         .collect())
 }
 
-fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
+/// Parse a delimiter-separated file (CSV, TSV, etc.)
+fn parse_delimited(path: &Path, delimiter: u8) -> Result<Vec<SheetData>> {
     let name = path
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("csv")
+        .unwrap_or("data")
         .to_string();
 
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
+        .delimiter(delimiter)
         .from_path(path)?;
 
     let mut all_rows: Vec<Vec<String>> = Vec::new();
@@ -145,23 +143,35 @@ fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
         all_rows.push(record.iter().map(|s| s.to_string()).collect());
     }
 
-    if all_rows.is_empty() {
+    if all_rows.len() < 2 {
         return Ok(Vec::new());
     }
 
-    // Extract header row in-place; remaining rows are moved (no full-data clone).
     let headers = all_rows.remove(0);
-
-    if all_rows.is_empty() {
-        return Ok(Vec::new());
-    }
+    let rows = all_rows;
 
     Ok(vec![SheetData {
         name,
         headers,
-        rows: all_rows,
+        rows,
         col_widths: Vec::new(),
     }])
+}
+
+fn parse_csv(path: &Path) -> Result<Vec<SheetData>> {
+    parse_delimited(path, b',')
+}
+
+fn parse_tsv(path: &Path) -> Result<Vec<SheetData>> {
+    parse_delimited(path, b'\t')
+}
+
+fn parse_dbf(_path: &Path) -> Result<Vec<SheetData>> {
+    anyhow::bail!("DBF format support is not yet implemented");
+}
+
+fn parse_xml(_path: &Path) -> Result<Vec<SheetData>> {
+    anyhow::bail!("XML format support is not yet implemented");
 }
 
 #[derive(Debug, Clone)]
