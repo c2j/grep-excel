@@ -81,20 +81,10 @@ pub struct App {
     pub(crate) browse_col_offset: usize,
     pub(crate) browse_loading: bool,
     pub(crate) browse_visible_rows: usize,
-    pub(crate) db_path: Option<PathBuf>,
 }
 
 impl App {
     pub fn new(database: DefaultEngine, event_tx: EventSender, event_rx: EventReceiver) -> Self {
-        Self::new_with_db_path(database, event_tx, event_rx, None)
-    }
-
-    pub fn new_with_db_path(
-        database: DefaultEngine,
-        event_tx: EventSender,
-        event_rx: EventReceiver,
-        db_path: Option<PathBuf>,
-    ) -> Self {
         let database = Arc::new(Mutex::new(SyncDb(database)));
         let initial_files = database.lock().0.list_files();
         let file_count = initial_files.len();
@@ -147,7 +137,6 @@ impl App {
             browse_col_offset: 0,
             browse_loading: false,
             browse_visible_rows: 15,
-            db_path,
         }
     }
 
@@ -228,7 +217,6 @@ impl App {
                 match grep_excel_core::excel::parse_file_as(&path_clone, Some(fmt)) {
                     Ok(sheets) => {
                         let sheet_count = sheets.len();
-                        let total_rows: usize = sheets.iter().map(|s| s.rows.len()).sum();
                         match db_guard.0.import_sheets(&file_name, sheets, &|_, _| {}) {
                             Ok(info) => {
                                 let _ = tx.send(AppEvent::Progress(sheet_count, sheet_count));
@@ -237,7 +225,7 @@ impl App {
                             Err(e) => Err(e),
                         }
                     }
-                    Err(e) => Err(e.into()),
+                    Err(e) => Err(e),
                 }
             };
             let _ = tx.send(AppEvent::FileImported(result));
@@ -349,7 +337,7 @@ impl App {
                             let key = format!("{}::{}", result.file_name, result.sheet_name);
                             self.results_by_sheet
                                 .entry(key)
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push(result.clone());
                         }
 
