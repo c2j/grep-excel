@@ -117,6 +117,65 @@ fn skips_docx_table_with_only_header_row() {
 }
 
 #[test]
+fn docx_horizontal_merge_gridspan() {
+    let xml = wrap_docx_body(
+        r#"<w:tbl>
+  <w:tblPr/><w:tblGrid/>
+  <w:tr>
+    <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Merged</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc>
+  </w:tr>
+</w:tbl>"#,
+    );
+    let path = build_docx(&xml);
+    let sheets = parse_file(&path).expect("parse");
+    assert_eq!(sheets.len(), 1);
+    let s = &sheets[0];
+    assert_eq!(s.headers, vec!["Merged", "Merged", "C"]);
+    assert_eq!(s.rows[0], vec!["A", "B", "C"]);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn docx_vertical_merge_vmerge() {
+    let xml = wrap_docx_body(
+        r#"<w:tbl>
+  <w:tblPr/><w:tblGrid/>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>Region</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>Value</w:t></w:r></w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>North</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>100</w:t></w:r></w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>200</w:t></w:r></w:p></w:tc>
+  </w:tr>
+  <w:tr>
+    <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>300</w:t></w:r></w:p></w:tc>
+  </w:tr>
+</w:tbl>"#,
+    );
+    let path = build_docx(&xml);
+    let sheets = parse_file(&path).expect("parse");
+    assert_eq!(sheets.len(), 1);
+    let s = &sheets[0];
+    assert_eq!(s.headers, vec!["Region", "Value"]);
+    assert_eq!(s.rows[0], vec!["North", "100"]);
+    assert_eq!(s.rows[1], vec!["North", "200"]);
+    assert_eq!(s.rows[2], vec!["North", "300"]);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn docx_cell_with_multiple_paragraphs_joined_with_newline() {
     let single_cell = "<w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc>";
     let multi_para_cell = "<w:tc>\

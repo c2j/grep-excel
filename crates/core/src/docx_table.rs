@@ -58,30 +58,114 @@ fn is_top_level_table(tbl: roxmltree::Node) -> bool {
     true
 }
 
+struct CellMeta {
+    text: String,
+    grid_span: usize,
+    v_merge_restart: bool,
+    v_merge_continue: bool,
+}
+
 fn parse_table(tbl: roxmltree::Node, idx: usize) -> Option<SheetData> {
-    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut raw_rows: Vec<Vec<CellMeta>> = Vec::new();
 
     for tr in tbl.children().filter(|n| n.is_element() && n.has_tag_name("tr")) {
-        let row: Vec<String> = tr
-            .children()
-            .filter(|n| n.is_element() && n.has_tag_name("tc"))
-            .map(extract_cell_text)
-            .collect();
-        rows.push(row);
+        let mut row: Vec<CellMeta> = Vec::new();
+        for tc in tr.children().filter(|n| n.is_element() && n.has_tag_name("tc")) {
+            let text = extract_cell_text(tc);
+            let (grid_span, v_merge_restart, v_merge_continue) = parse_tc_pr(tc);
+            row.push(CellMeta {
+                text,
+                grid_span,
+                v_merge_restart,
+                v_merge_continue,
+            });
+        }
+        raw_rows.push(row);
     }
 
-    if rows.len() < 2 {
+    if raw_rows.len() < 2 {
         return None;
     }
 
-    let headers = rows.remove(0);
+    apply_vmerge(&mut raw_rows);
+
+    let mut all_rows: Vec<Vec<String>> = Vec::new();
+    for row_meta in &raw_rows {
+        let mut row = Vec::new();
+        for cell in row_meta {
+            for _ in 0..cell.grid_span {
+                row.push(cell.text.clone());
+            }
+        }
+        all_rows.push(row);
+    }
+
+    let headers = all_rows.remove(0);
 
     Some(SheetData {
         name: format!("Table_{}", idx),
         headers,
-        rows,
+        rows: all_rows,
         col_widths: Vec::new(),
     })
+}
+
+fn parse_tc_pr(tc: roxmltree::Node) -> (usize, bool, bool) {
+    let mut grid_span = 1usize;
+    let mut v_merge_restart = false;
+    let mut v_merge_continue = false;
+
+    if let Some(tc_pr) = tc
+        .children()
+        .find(|n| n.is_element() && n.has_tag_name("tcPr"))
+    {
+        for child in tc_pr.children().filter(|n| n.is_element()) {
+            if child.has_tag_name("gridSpan") {
+                if let Some(v) = find_attr(child, "val").and_then(|v| v.parse::<usize>().ok()) {
+                    grid_span = v.max(1);
+                }
+            } else if child.has_tag_name("vMerge") {
+                match find_attr(child, "val") {
+                    Some("restart") => v_merge_restart = true,
+                    None => v_merge_continue = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    (grid_span, v_merge_restart, v_merge_continue)
+}
+
+fn apply_vmerge(rows: &mut [Vec<CellMeta>]) {
+    let col_count = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    for col in 0..col_count {
+        let mut anchor_text: Option<String> = None;
+        for row in rows.iter_mut() {
+            if col >= row.len() {
+                continue;
+            }
+            let cell = &mut row[col];
+            if cell.v_merge_restart {
+                anchor_text = Some(cell.text.clone());
+            } else if cell.v_merge_continue {
+                if let Some(ref anchor) = anchor_text {
+                    cell.text = anchor.clone();
+                }
+            } else {
+                anchor_text = None;
+            }
+        }
+    }
+}
+
+fn find_attr<'a>(el: roxmltree::Node<'a, 'a>, local_name: &str) -> Option<&'a str> {
+    el.attributes()
+        .find(|a| {
+            let n = a.name();
+            n == local_name || n.ends_with(&format!(":{}", local_name))
+        })
+        .map(|a| a.value())
 }
 
 fn extract_cell_text(tc: roxmltree::Node) -> String {
