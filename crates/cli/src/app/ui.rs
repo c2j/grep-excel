@@ -1,10 +1,10 @@
 use super::render::*;
 use super::theme::theme;
 use super::{App, AppMode};
-use crate::engine::{SearchEngine, SearchMode, SearchResult};
+use crate::engine::{SearchMode, SearchResult};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
         Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Scrollbar,
@@ -565,7 +565,7 @@ impl App {
                 r.col_widths
                     .iter()
                     .map(|&w| {
-                        let chars = w.round().max(4.0).min(50.0) as u16;
+                        let chars = w.round().clamp(4.0, 50.0) as u16;
                         chars + 2
                     })
                     .collect()
@@ -735,7 +735,7 @@ impl App {
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
 
-        let mut scrollbar_state = self.scroll_state.clone();
+        let mut scrollbar_state = self.scroll_state;
         frame.render_stateful_widget(
             scrollbar,
             area.inner(ratatui::layout::Margin::new(0, 1)),
@@ -846,7 +846,7 @@ impl App {
                 r.col_widths
                     .iter()
                     .map(|&w| {
-                        let chars = w.round().max(4.0).min(50.0) as u16;
+                        let chars = w.round().clamp(4.0, 50.0) as u16;
                         chars + 2
                     })
                     .collect()

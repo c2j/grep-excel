@@ -90,11 +90,9 @@ fn classify_extra_hosts(input: &str) -> Option<SourceKind> {
         if !lower.starts_with("http://") && !lower.starts_with("https://") {
             return None;
         }
-        let after_scheme = input.splitn(2, "://").nth(1)?;
-        let (host_port, path_query) = match after_scheme.find('/') {
-            Some(idx) => (&after_scheme[..idx], &after_scheme[idx..]),
-            None => return None,
-        };
+        let after_scheme = input.split_once("://")?.1;
+        let idx = after_scheme.find('/')?;
+        let (host_port, path_query) = (&after_scheme[..idx], &after_scheme[idx..]);
         let host = host_port.split(':').next()?;
         let path = path_query.split(['?', '#']).next().unwrap_or(path_query);
 
@@ -125,7 +123,7 @@ pub fn classify_with_providers(input: &str, providers: &[ShareProvider]) -> Sour
         return SourceKind::Local(PathBuf::from(input));
     }
 
-    let after_scheme = input.splitn(2, "://").nth(1).unwrap_or("");
+    let after_scheme = input.split_once("://").map_or("", |x| x.1);
     let (host_port, path_query) = match after_scheme.find('/') {
         Some(idx) => (&after_scheme[..idx], &after_scheme[idx..]),
         None => (after_scheme, ""),
@@ -192,7 +190,7 @@ fn extract_sid(path: &str, prefix: &str) -> Option<String> {
 /// Extract host from a URL string (manual parse for MVP).
 #[cfg(feature = "share-url")]
 fn extract_host(url: &str) -> Option<String> {
-    let after_scheme = url.splitn(2, "://").nth(1)?;
+    let after_scheme = url.split_once("://")?.1;
     let host_port = after_scheme.split('/').next()?;
     let host = host_port.split(':').next()?;
     Some(host.to_string())
@@ -501,7 +499,7 @@ pub mod download {
 
         // Step 2: Download the actual file
         let file_resp = reqwest::blocking::get(dl_url)
-            .with_context(|| format!("Failed to download file from temporary URL"))?;
+            .context("Failed to download file from temporary URL")?;
 
         if !file_resp.status().is_success() {
             return Err(anyhow!(

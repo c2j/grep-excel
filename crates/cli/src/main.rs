@@ -340,7 +340,7 @@ fn run_tui(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resul
     ));
     let database = DefaultEngine::with_path(&db_path).or_else(|_| DefaultEngine::new())?;
     let (event_tx, event_rx) = create_event_channel();
-    let mut app = App::new_with_db_path(database, event_tx, event_rx, Some(db_path.clone()));
+    let mut app = App::new(database, event_tx, event_rx);
 
     #[cfg(feature = "share-url")]
     let _share_auth = grep_excel::resolve_share_auth(args.kdocs_cookie.as_deref());
@@ -564,7 +564,7 @@ fn run_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resul
                 "{}",
                 grep_excel::i18n::cli_export_done(&export_path.display().to_string())
             ),
-            Err(e) => eprintln!("{}", grep_excel::i18n::cli_export_failed()),
+            Err(_e) => eprintln!("{}", grep_excel::i18n::cli_export_failed()),
         }
     }
 
@@ -1350,17 +1350,17 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
     let mut fail_count = 0;
 
     for result in &results {
-        let expanded_cmd = expand_exec_template(exec_template, &result.col_names, &result.row);
-        if expanded_cmd.is_err() {
-            eprintln!(
-                "Warning: failed to expand template for row {} in {}/{}: {}",
-                result.row_index, result.file_name, result.sheet_name,
-                expanded_cmd.unwrap_err()
-            );
-            fail_count += 1;
-            continue;
-        }
-        let expanded_cmd = expanded_cmd.unwrap();
+        let expanded_cmd = match expand_exec_template(exec_template, &result.col_names, &result.row) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to expand template for row {} in {}/{}: {}",
+                    result.row_index, result.file_name, result.sheet_name, e
+                );
+                fail_count += 1;
+                continue;
+            }
+        };
 
         let output = std::process::Command::new("sh")
             .args(["-c", &expanded_cmd])
@@ -2362,7 +2362,7 @@ fn exec_dispatch(
                 }
                 if counts.is_empty() { None } else {
                     let mut sorted: Vec<_> = counts.into_iter().collect();
-                    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+                    sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
                     Some(sorted.into_iter().map(|(value, count)| serde_json::json!({"value": value, "count": count})).collect::<Vec<_>>())
                 }
             });

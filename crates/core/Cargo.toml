@@ -46,6 +46,10 @@ rusqlite = { version = "0.32", features = ["bundled", "functions"], optional = t
 rust_xlsxwriter = { version = "0.82", optional = true }
 schemars = { version = "1", optional = true }
 
+# Test-only builds: tempfile must link even when no feature enables the optional dep above
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = ["engine-memory"]
 engine-memory = []

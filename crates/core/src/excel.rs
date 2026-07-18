@@ -520,7 +520,7 @@ fn is_date_column_name(name: &str) -> bool {
 /// Uses the same algorithm as calamine's `ExcelDateTime::as_datetime()`:
 /// epoch = 1899-12-30, with the Lotus 1-2-3 leap year bug (day 60 = Feb 29, 1900).
 fn excel_serial_to_date_string(serial: f64) -> Option<String> {
-    if serial < 1.0 || serial > 100_000.0 {
+    if !(1.0..=100_000.0).contains(&serial) {
         return None;
     }
     // Skip values with significant fractional parts (likely non-date numbers)
@@ -565,13 +565,13 @@ fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> 
     let col_count = raw_rows.first().map(|r| r.len()).unwrap_or(0).min(headers.len());
     let mut result = vec![false; col_count];
 
-    for col_idx in 0..col_count {
+    for (col_idx, detected) in result.iter_mut().enumerate() {
         // Signal 1: calamine already found a DateTime in this column
         let has_calamine_date = raw_rows.iter().any(|row| {
-            row.get(col_idx).map_or(false, |d| matches!(d, Data::DateTime(_)))
+            row.get(col_idx).is_some_and(|d| matches!(d, Data::DateTime(_)))
         });
         if has_calamine_date {
-            result[col_idx] = true;
+            *detected = true;
             continue;
         }
 
@@ -594,7 +594,7 @@ fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> 
 
         // Require at least 2 match candidates and >50% of floats are date-like
         if date_like >= 2 && total_floats > 0 && date_like * 2 > total_floats {
-            result[col_idx] = true;
+            *detected = true;
         }
     }
 
@@ -612,7 +612,7 @@ fn convert_date_columns_in_place(headers: &[String], rows: &mut [Vec<String>]) {
         let date_count = rows.iter().filter(|row| {
             row.get(col_idx)
                 .and_then(|v| v.parse::<f64>().ok())
-                .and_then(|f| excel_serial_to_date_string(f))
+                .and_then(excel_serial_to_date_string)
                 .is_some()
         }).count();
         if date_count < 2 || date_count * 2 <= rows.len() {
@@ -649,7 +649,7 @@ pub fn parse_excel(path: &Path) -> Result<Vec<SheetData>> {
 
         let mut raw_rows: Vec<Vec<Data>> = range
             .rows()
-            .map(|row| row.iter().cloned().collect())
+            .map(|row| row.to_vec())
             .collect();
 
         if raw_rows.len() < 2 {
@@ -790,8 +790,7 @@ fn parse_excel_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
             Err(_) => continue,
         };
 
-        let (total_rows_u32, _) = range.get_size();
-        let total_rows = total_rows_u32 as usize;
+        let (total_rows, _) = range.get_size();
 
         if total_rows < 2 {
             continue;
@@ -878,7 +877,7 @@ where
 
         let mut raw_rows: Vec<Vec<Data>> = range
             .rows()
-            .map(|row| row.iter().cloned().collect())
+            .map(|row| row.to_vec())
             .collect();
 
         if raw_rows.len() < 2 {
@@ -1005,8 +1004,8 @@ fn extract_col_widths_from_xml(content: &str) -> Vec<f64> {
             widths.resize(max, DEFAULT_WIDTH);
         }
         let effective_width = if hidden == 1 { 0.0 } else { width };
-        for i in (min - 1)..max {
-            widths[i] = effective_width;
+        for w in widths.iter_mut().take(max).skip(min - 1) {
+            *w = effective_width;
         }
 
         pos = tag_end;
