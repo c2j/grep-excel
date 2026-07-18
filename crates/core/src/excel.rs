@@ -305,8 +305,8 @@ fn dbf_value_to_string(value: &dbase::FieldValue) -> String {
     }
 }
 
-fn parse_xml(_path: &Path) -> Result<Vec<SheetData>> {
-    anyhow::bail!("XML format support is not yet implemented");
+fn parse_xml(path: &Path) -> Result<Vec<SheetData>> {
+    crate::xml_table::parse_xml_table(path)
 }
 
 #[derive(Debug, Clone)]
