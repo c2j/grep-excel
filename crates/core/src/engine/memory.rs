@@ -428,11 +428,11 @@ impl SearchEngine for MemEngine {
                 anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
             }
 
-            let sheet_data: Vec<(&str, &[String], &[Vec<String>])> = sheets.iter()
+            let sheet_data: Vec<SheetRowsRef<'_>> = sheets.iter()
                 .map(|s| (s.sheet_name.as_str(), &s.headers[..], &s.rows[..]))
                 .collect();
 
-            return write_xlsx(&sheet_data, _output_path);
+            write_xlsx(&sheet_data, _output_path)
         }
         #[cfg(not(feature = "mcp-server"))]
         anyhow::bail!("save_as requires the mcp-server feature")
@@ -615,7 +615,7 @@ impl SearchEngine for MemEngine {
             let distinct_count = count_map.len();
 
             let mut top: Vec<_> = count_map.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-            top.sort_by(|a, b| b.1.cmp(&a.1));
+            top.sort_by_key(|b| std::cmp::Reverse(b.1));
             top.truncate(max_top_values);
 
             columns.push(ColumnStatistics {

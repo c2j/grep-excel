@@ -148,7 +148,7 @@ pub fn like_match(pattern: &str, text: &str) -> bool {
         if t.is_empty() {
             return false;
         }
-        if p[0] == '_' || p[0].to_ascii_lowercase() == t[0].to_ascii_lowercase() {
+        if p[0] == '_' || p[0].eq_ignore_ascii_case(&t[0]) {
             return match_inner(&p[1..], &t[1..]);
         }
         false
@@ -199,6 +199,7 @@ pub fn export_results_csv(results: &[SearchResult], path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "engine-duckdb", feature = "engine-sqlite"))]
 pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
     // Use lowercased keys for dedup since SQL engines (DuckDB, SQLite, etc.)
     // treat column names case-insensitively.
@@ -228,10 +229,12 @@ pub(crate) fn sanitize_col_names(headers: &[String]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(any(feature = "engine-duckdb", feature = "engine-sqlite"))]
 pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+#[cfg(any(feature = "engine-duckdb", feature = "engine-sqlite"))]
 pub(crate) fn sanitize_schema_name(name: &str) -> String {
     let sanitized: String = name
         .chars()
@@ -337,8 +340,11 @@ pub use memory::MemEngine as DefaultEngine;
 compile_error!("Enable one engine feature: engine-duckdb, engine-sqlite, or engine-memory");
 
 #[cfg(feature = "mcp-server")]
+pub(crate) type SheetRowsRef<'a> = (&'a str, &'a [String], &'a [Vec<String>]);
+
+#[cfg(feature = "mcp-server")]
 pub fn write_xlsx(
-    sheets: &[(&str, &[String], &[Vec<String>])],
+    sheets: &[SheetRowsRef<'_>],
     output_path: &Path,
 ) -> Result<()> {
     use rust_xlsxwriter::Workbook;
