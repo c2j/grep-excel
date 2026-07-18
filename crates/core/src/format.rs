@@ -21,6 +21,10 @@ pub enum FileFormat {
     Dbf,
     /// XML data files: .xml
     Xml,
+    /// Word documents (OOXML): .docx — tables extracted from word/document.xml
+    Docx,
+    /// PowerPoint presentations (OOXML): .pptx — tables extracted from ppt/slides/slideN.xml
+    Pptx,
 }
 
 impl FileFormat {
@@ -46,6 +50,10 @@ impl FileFormat {
             Some(Self::Dbf)
         } else if ext.eq_ignore_ascii_case("xml") {
             Some(Self::Xml)
+        } else if ext.eq_ignore_ascii_case("docx") {
+            Some(Self::Docx)
+        } else if ext.eq_ignore_ascii_case("pptx") {
+            Some(Self::Pptx)
         } else if ext.eq_ignore_ascii_case("xlsx")
             || ext.eq_ignore_ascii_case("xls")
             || ext.eq_ignore_ascii_case("xlsm")
@@ -68,6 +76,8 @@ impl FileFormat {
             "md" | "markdown" => Some(Self::Markdown),
             "dbf" => Some(Self::Dbf),
             "xml" => Some(Self::Xml),
+            "docx" => Some(Self::Docx),
+            "pptx" => Some(Self::Pptx),
             "excel" | "xlsx" | "xls" => Some(Self::Excel),
             _ => None,
         }
@@ -75,7 +85,7 @@ impl FileFormat {
 
     /// Human-readable names accepted by `from_name()`, for help text.
     pub const ALL_NAMES: &[&str] = &[
-        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel",
+        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel", "docx", "pptx",
     ];
 
     /// All extensions recognized as table files (for archive filtering).
@@ -87,6 +97,7 @@ impl FileFormat {
         "txt", "md", "markdown",
         "dbf",
         "xml",
+        "docx", "pptx",
     ];
 }
 
@@ -109,5 +120,26 @@ mod tests {
     fn from_name_invalid() {
         assert_eq!(FileFormat::from_name("pdf"), None);
         assert_eq!(FileFormat::from_name(""), None);
+    }
+
+    #[test]
+    fn from_path_docx_pptx() {
+        use std::path::Path;
+        assert_eq!(FileFormat::from_path(Path::new("a.docx")), Some(FileFormat::Docx));
+        assert_eq!(FileFormat::from_path(Path::new("A.DOCX")), Some(FileFormat::Docx));
+        assert_eq!(FileFormat::from_path(Path::new("report.pptx")), Some(FileFormat::Pptx));
+        assert_eq!(FileFormat::from_path(Path::new("DECK.PPTX")), Some(FileFormat::Pptx));
+    }
+
+    #[test]
+    fn from_name_docx_pptx() {
+        assert_eq!(FileFormat::from_name("docx"), Some(FileFormat::Docx));
+        assert_eq!(FileFormat::from_name("PPTX"), Some(FileFormat::Pptx));
+    }
+
+    #[test]
+    fn table_extensions_include_docx_pptx() {
+        assert!(FileFormat::TABLE_EXTENSIONS.contains(&"docx"));
+        assert!(FileFormat::TABLE_EXTENSIONS.contains(&"pptx"));
     }
 }

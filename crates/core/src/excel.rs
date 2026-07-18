@@ -91,6 +91,8 @@ pub fn parse_file_as(path: &Path, format: Option<FileFormat>) -> Result<Vec<Shee
         FileFormat::Text | FileFormat::Markdown => parse_text(path),
         FileFormat::Dbf => parse_dbf(path),
         FileFormat::Xml => parse_xml(path),
+        FileFormat::Docx => parse_docx(path),
+        FileFormat::Pptx => parse_pptx(path),
         FileFormat::Excel => parse_excel(path),
     }
 }
@@ -307,6 +309,14 @@ fn dbf_value_to_string(value: &dbase::FieldValue) -> String {
 
 fn parse_xml(path: &Path) -> Result<Vec<SheetData>> {
     crate::xml_table::parse_xml_table(path)
+}
+
+fn parse_docx(path: &Path) -> Result<Vec<SheetData>> {
+    crate::docx_table::parse_docx(path)
+}
+
+fn parse_pptx(path: &Path) -> Result<Vec<SheetData>> {
+    crate::pptx_table::parse_pptx(path)
 }
 
 #[derive(Debug, Clone)]
@@ -716,7 +726,7 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         Some(FileFormat::Tsv) => parse_delimited_metadata(path, b'\t'),
         Some(FileFormat::Html) => parse_html_metadata(path),
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text_metadata(path),
-        Some(FileFormat::Dbf) | Some(FileFormat::Xml) => metadata_from_full_parse(path),
+        Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => metadata_from_full_parse(path),
         Some(FileFormat::Excel) => parse_excel_metadata(path),
         None => parse_excel_metadata(path),
     }
@@ -1022,6 +1032,8 @@ pub fn parse_file_repair(path: &Path) -> Result<Vec<SheetData>> {
         Some(FileFormat::Tsv) => parse_tsv(path),
         Some(FileFormat::Html) => parse_html(path),
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text(path),
+        Some(FileFormat::Docx) => parse_docx(path),
+        Some(FileFormat::Pptx) => parse_pptx(path),
         _ => parse_xlsx_repair(path),
     }
 }
@@ -1032,7 +1044,7 @@ where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
     match FileFormat::from_path(path) {
-        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) => {
+        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => {
             let sheets = parse_file(path)?;
             let mut info = Vec::new();
             for (idx, sheet) in sheets.into_iter().enumerate() {

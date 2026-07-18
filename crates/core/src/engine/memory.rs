@@ -18,6 +18,21 @@ pub struct MemEngine {
     sheets: Vec<MemSheet>,
 }
 
+fn check_not_readonly(file_name: &str) -> Result<()> {
+    let ext = Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "docx" || ext == "pptx" {
+        anyhow::bail!(
+            "Editing is not supported for {} files. Only spreadsheet formats (.xlsx/.xls/.xlsm/.xlsb/.ods) can be edited.",
+            ext.to_uppercase()
+        );
+    }
+    Ok(())
+}
+
 impl MemEngine {
     fn do_import_sheets(
         &mut self,
@@ -399,7 +414,8 @@ impl SearchEngine for MemEngine {
         })
     }
 
-    fn save_as(&self, _file_name: &str, _output_path: &Path) -> Result<()> {
+    fn save_as(&self, file_name: &str, _output_path: &Path) -> Result<()> {
+        check_not_readonly(file_name)?;
         #[cfg(feature = "mcp-server")]
         {
             use crate::engine::write_xlsx;
@@ -423,6 +439,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(
@@ -445,6 +462,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(
@@ -465,6 +483,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(
@@ -494,6 +513,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(
@@ -512,6 +532,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(
@@ -532,6 +553,7 @@ impl SearchEngine for MemEngine {
     }
 
     fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+        check_not_readonly(file_name)?;
         let sheet = self.sheets.iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
             .ok_or_else(|| anyhow::anyhow!(

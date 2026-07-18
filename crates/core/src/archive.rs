@@ -53,7 +53,7 @@ fn is_internally_zip_table_format(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    matches!(ext.as_str(), "xlsx" | "xlsm" | "xlsb" | "ods")
+    matches!(ext.as_str(), "xlsx" | "xlsm" | "xlsb" | "ods" | "docx" | "pptx")
 }
 
 fn detect_by_split_zip(path: &Path) -> Option<ArchiveFormat> {
