@@ -46,6 +46,26 @@ impl FileFormat {
         }
     }
 
+    /// Parse format from a CLI string (for --as flag).
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "csv" => Some(Self::Csv),
+            "tsv" | "tab" => Some(Self::Tsv),
+            "html" | "htm" => Some(Self::Html),
+            "txt" | "text" => Some(Self::Text),
+            "md" | "markdown" => Some(Self::Markdown),
+            "dbf" => Some(Self::Dbf),
+            "xml" => Some(Self::Xml),
+            "excel" | "xlsx" | "xls" => Some(Self::Excel),
+            _ => None,
+        }
+    }
+
+    /// Human-readable names accepted by `from_name()`, for help text.
+    pub const ALL_NAMES: &[&str] = &[
+        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel",
+    ];
+
     /// All extensions recognized as table files (for archive filtering).
     /// Derived at compile time from the same extension→format mapping.
     pub const TABLE_EXTENSIONS: &[&str] = &[
@@ -56,4 +76,26 @@ impl FileFormat {
         "dbf",
         "xml",
     ];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_name_valid() {
+        assert_eq!(FileFormat::from_name("csv"), Some(FileFormat::Csv));
+        assert_eq!(FileFormat::from_name("TSV"), Some(FileFormat::Tsv));
+        assert_eq!(FileFormat::from_name("Excel"), Some(FileFormat::Excel));
+        assert_eq!(FileFormat::from_name("md"), Some(FileFormat::Markdown));
+        assert_eq!(FileFormat::from_name("tab"), Some(FileFormat::Tsv));
+        assert_eq!(FileFormat::from_name("TEXT"), Some(FileFormat::Text));
+        assert_eq!(FileFormat::from_name("htm"), Some(FileFormat::Html));
+    }
+
+    #[test]
+    fn from_name_invalid() {
+        assert_eq!(FileFormat::from_name("pdf"), None);
+        assert_eq!(FileFormat::from_name(""), None);
+    }
 }
