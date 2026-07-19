@@ -1749,6 +1749,12 @@ fn print_exec_help() {
             println!();
             println!("  \x1b[1msave\x1b[0m                 保存回原文件 (覆盖)");
             println!("                       参数: file_name, sheet_name?");
+            println!();
+            println!("  \x1b[1mmaterialize_query\x1b[0m     将 SQL 查询结果物化为会话临时表");
+            println!("                       参数: name, sql, replace? (默认 true), max_rows?");
+            println!();
+            println!("  \x1b[1mdrop_temp_table\x1b[0m       删除由 materialize_query 创建的临时表");
+            println!("                       参数: name");
         }
         grep_excel::i18n::Lang::En => {
             println!("grep_excel --exec / --run help");
@@ -1879,6 +1885,12 @@ fn print_exec_help() {
                 "  \x1b[1msave\x1b[0m                 Save back to the original file (overwrite)"
             );
             println!("                       Params: file_name, sheet_name?");
+            println!();
+            println!("  \x1b[1mmaterialize_query\x1b[0m     Materialize a SQL query result as a session temp table");
+            println!("                       Params: name, sql, replace? (default true), max_rows?");
+            println!();
+            println!("  \x1b[1mdrop_temp_table\x1b[0m       Drop a temp table created by materialize_query");
+            println!("                       Params: name");
         }
     }
 }
@@ -2503,8 +2515,18 @@ fn exec_dispatch(
                 anyhow::bail!("save requires the mcp-server feature to be enabled")
             }
         }
+        "materialize_query" => {
+            let p: MaterializeQueryParams = serde_json::from_value(params.clone())?;
+            let info = db.materialize_query(&p.name, &p.sql, p.replace.unwrap_or(true), p.max_rows)?;
+            Ok(serde_json::to_string_pretty(&info)?)
+        }
+        "drop_temp_table" => {
+            let p: DropTempTableParams = serde_json::from_value(params.clone())?;
+            db.drop_temp_table(&p.name)?;
+            Ok(format!("Dropped temp table '{}'", p.name))
+        }
         _ => anyhow::bail!(
-            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
+            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column, materialize_query, drop_temp_table",
             tool
         ),
     }
