@@ -58,4 +58,5 @@ mcp-server = ["dep:rmcp", "dep:tokio", "grep-excel-core/rust_xlsxwriter", "grep-
 share-url = ["grep-excel-core/share-url"]
 gui = ["dep:eframe", "dep:egui", "dep:egui_extras", "file-dialog"]
 archive-support = ["grep-excel-core/archive-support"]
-full = ["engine-memory", "file-dialog", "mcp-server", "share-url", "archive-support"]
+pdf-support = ["grep-excel-core/pdf-support"]
+full = ["engine-memory", "file-dialog", "mcp-server", "share-url", "archive-support", "pdf-support"]
