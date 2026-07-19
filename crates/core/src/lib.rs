@@ -7,6 +7,7 @@ pub mod text_table;
 pub mod xml_table;
 pub mod docx_table;
 pub mod pptx_table;
+pub mod pdf_table;
 pub mod i18n;
 pub mod source;
 pub mod archive;

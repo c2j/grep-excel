@@ -1692,3 +1692,21 @@ pub fn share_auth_failed() -> String {
         Lang::En => "Authentication failed: session expired or insufficient permissions. Re-login and update cookie.".to_string(),
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// PDF extraction
+// ─────────────────────────────────────────────────────────────
+
+pub fn pdf_no_tables(path: &str) -> String {
+    match current() {
+        Lang::Zh => format!("PDF 中未提取到表格 '{}'。文件可能不含带边框表格，或为扫描件（暂不支持 OCR）。", path),
+        Lang::En => format!("No tables extracted from PDF '{}'. The file may not contain bordered tables, or may be scanned (OCR not supported).", path),
+    }
+}
+
+pub fn pdf_not_enabled() -> &'static str {
+    match current() {
+        Lang::Zh => "PDF 支持未启用。请使用 --features pdf-support 重新编译以启用 PDF 表格提取。",
+        Lang::En => "PDF support is not enabled. Rebuild with --features pdf-support to enable PDF table extraction.",
+    }
+}

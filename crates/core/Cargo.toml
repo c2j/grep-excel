@@ -27,6 +27,9 @@ encoding_rs.workspace = true
 scraper = "0.21"
 dbase = "0.8"
 
+# Optional: PDF table extraction
+pdfsink-rs = { version = "0.2", optional = true }
+
 # Optional: cloud share URL download
 reqwest = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
@@ -60,3 +63,4 @@ rust_xlsxwriter = ["dep:rust_xlsxwriter"]
 mcp-server = ["dep:schemars"]
 share-url = ["dep:reqwest", "dep:tempfile"]
 archive-support = ["dep:tar", "dep:flate2", "dep:bzip2", "dep:xz2", "dep:zstd", "dep:tempfile"]
+pdf-support = ["dep:pdfsink-rs"]
