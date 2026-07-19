@@ -1251,6 +1251,48 @@ pub fn repl_save_truncated() -> String {
     }
 }
 
+pub fn repl_let_usage() -> String {
+    match current() {
+        Lang::Zh => ".let <name> AS <sql...>".to_string(),
+        Lang::En => ".let <name> AS <sql...>".to_string(),
+    }
+}
+
+pub fn repl_let_ok(name: &str, rows: usize, cols: usize) -> String {
+    match current() {
+        Lang::Zh => format!("已物化临时表 '{}': {} 行, {} 列", name, rows, cols),
+        Lang::En => format!("Materialized temp table '{}': {} rows, {} cols", name, rows, cols),
+    }
+}
+
+pub fn repl_let_error(name: &str, e: &str) -> String {
+    match current() {
+        Lang::Zh => format!("物化 '{}' 失败: {}", name, e),
+        Lang::En => format!("Failed to materialize '{}': {}", name, e),
+    }
+}
+
+pub fn repl_drop_usage() -> String {
+    match current() {
+        Lang::Zh => ".drop <name>".to_string(),
+        Lang::En => ".drop <name>".to_string(),
+    }
+}
+
+pub fn repl_drop_ok(name: &str) -> String {
+    match current() {
+        Lang::Zh => format!("已删除临时表 '{}'", name),
+        Lang::En => format!("Dropped temp table '{}'", name),
+    }
+}
+
+pub fn repl_drop_error(name: &str, e: &str) -> String {
+    match current() {
+        Lang::Zh => format!("删除 '{}' 失败: {}", name, e),
+        Lang::En => format!("Failed to drop '{}': {}", name, e),
+    }
+}
+
 pub fn repl_help() -> String {
     match current() {
         Lang::Zh => {
@@ -1263,7 +1305,9 @@ pub fn repl_help() -> String {
              \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      清屏\n\
              \x1b[1m.output <文件>\x1b[0m     持续重定向 SQL 结果到文件 (CSV 格式)\n\
              \x1b[1m.output\x1b[0m            恢复终端输出\n\
-             \x1b[1m.save <文件> [fmt]\x1b[0m  保存上次 SQL 结果到文件 (fmt: csv|json|tsv|table)\n\n\
+             \x1b[1m.save <文件> [fmt]\x1b[0m  保存上次 SQL 结果到文件 (fmt: csv|json|tsv|table)\n\
+             \x1b[1m.let <名> AS <SQL>\x1b[0m  将 SQL 查询结果物化为会话临时表\n\
+             \x1b[1m.drop <名>\x1b[0m          删除由 .let 创建的临时表\n\n\
              SQL 执行:\n\
              • 输入以 \x1b[1m;\x1b[0m 结尾即执行；未结束时显示 \x1b[1m> \x1b[0m 续行提示\n\
              • \x1b[2mSELECT 1;\x1b[0m  →  立即执行\n\
@@ -1290,7 +1334,9 @@ pub fn repl_help() -> String {
              \x1b[1m.clear\x1b[0m / \x1b[1m.cls\x1b[0m      Clear screen\n\
              \x1b[1m.output <file>\x1b[0m     Continuously redirect SQL results to file (CSV)\n\
              \x1b[1m.output\x1b[0m            Restore terminal output\n\
-             \x1b[1m.save <file> [fmt]\x1b[0m Save last SQL result to file (fmt: csv|json|tsv|table)\n\n\
+             \x1b[1m.save <file> [fmt]\x1b[0m Save last SQL result to file (fmt: csv|json|tsv|table)\n\
+             \x1b[1m.let <name> AS <SQL>\x1b[0m  Materialize a SQL query result as a session temp table\n\
+             \x1b[1m.drop <name>\x1b[0m          Drop a temp table created by .let\n\n\
              SQL execution:\n\
              • Input executes when it ends with \x1b[1m;\x1b[0m; mid-statement shows \x1b[1m> \x1b[0m continuation prompt\n\
              • \x1b[2mSELECT 1;\x1b[0m  →  executes immediately\n\
