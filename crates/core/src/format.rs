@@ -25,6 +25,8 @@ pub enum FileFormat {
     Docx,
     /// PowerPoint presentations (OOXML): .pptx — tables extracted from ppt/slides/slideN.xml
     Pptx,
+    /// PDF documents (pdfsink-rs): .pdf — table extraction via lattice/text strategies
+    Pdf,
 }
 
 impl FileFormat {
@@ -54,6 +56,8 @@ impl FileFormat {
             Some(Self::Docx)
         } else if ext.eq_ignore_ascii_case("pptx") {
             Some(Self::Pptx)
+        } else if ext.eq_ignore_ascii_case("pdf") {
+            Some(Self::Pdf)
         } else if ext.eq_ignore_ascii_case("xlsx")
             || ext.eq_ignore_ascii_case("xls")
             || ext.eq_ignore_ascii_case("xlsm")
@@ -78,6 +82,7 @@ impl FileFormat {
             "xml" => Some(Self::Xml),
             "docx" => Some(Self::Docx),
             "pptx" => Some(Self::Pptx),
+            "pdf" => Some(Self::Pdf),
             "excel" | "xlsx" | "xls" => Some(Self::Excel),
             _ => None,
         }
@@ -85,7 +90,7 @@ impl FileFormat {
 
     /// Human-readable names accepted by `from_name()`, for help text.
     pub const ALL_NAMES: &[&str] = &[
-        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel", "docx", "pptx",
+        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel", "docx", "pptx", "pdf",
     ];
 
     /// All extensions recognized as table files (for archive filtering).
@@ -98,6 +103,7 @@ impl FileFormat {
         "dbf",
         "xml",
         "docx", "pptx",
+        "pdf",
     ];
 }
 
@@ -118,7 +124,6 @@ mod tests {
 
     #[test]
     fn from_name_invalid() {
-        assert_eq!(FileFormat::from_name("pdf"), None);
         assert_eq!(FileFormat::from_name(""), None);
     }
 
@@ -141,5 +146,23 @@ mod tests {
     fn table_extensions_include_docx_pptx() {
         assert!(FileFormat::TABLE_EXTENSIONS.contains(&"docx"));
         assert!(FileFormat::TABLE_EXTENSIONS.contains(&"pptx"));
+    }
+
+    #[test]
+    fn from_name_pdf() {
+        assert_eq!(FileFormat::from_name("pdf"), Some(FileFormat::Pdf));
+        assert_eq!(FileFormat::from_name("PDF"), Some(FileFormat::Pdf));
+    }
+
+    #[test]
+    fn from_path_pdf() {
+        use std::path::Path;
+        assert_eq!(FileFormat::from_path(Path::new("report.pdf")), Some(FileFormat::Pdf));
+        assert_eq!(FileFormat::from_path(Path::new("REPORT.PDF")), Some(FileFormat::Pdf));
+    }
+
+    #[test]
+    fn table_extensions_include_pdf() {
+        assert!(FileFormat::TABLE_EXTENSIONS.contains(&"pdf"));
     }
 }
