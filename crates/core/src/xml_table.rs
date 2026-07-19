@@ -1,5 +1,5 @@
-use crate::excel::SheetData;
 use std::path::Path;
+use crate::excel::SheetData;
 
 pub fn parse_xml_table(path: &Path) -> anyhow::Result<Vec<SheetData>> {
     let content = crate::excel::read_file_auto_encoding(path)?;

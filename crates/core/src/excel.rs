@@ -38,14 +38,8 @@ pub fn read_file_auto_encoding(path: &Path) -> Result<String> {
 
     // 3. Try common encodings in order of likelihood
     let fallback_labels = [
-        "gbk",
-        "gb18030",
-        "big5",
-        "shift_jis",
-        "euc-jp",
-        "euc-kr",
-        "windows-1252",
-        "iso-8859-1",
+        "gbk", "gb18030", "big5", "shift_jis", "euc-jp", "euc-kr",
+        "windows-1252", "iso-8859-1",
     ];
     for label in &fallback_labels {
         if let Some(encoding) = encoding_rs::Encoding::for_label(label.as_bytes()) {
@@ -86,7 +80,9 @@ pub fn parse_file_as(path: &Path, format: Option<FileFormat>) -> Result<Vec<Shee
         }
     }
 
-    let fmt = format.unwrap_or_else(|| FileFormat::from_path(path).unwrap_or(FileFormat::Excel));
+    let fmt = format.unwrap_or_else(|| {
+        FileFormat::from_path(path).unwrap_or(FileFormat::Excel)
+    });
 
     match fmt {
         FileFormat::Csv => parse_delimited(path, b','),
@@ -209,11 +205,7 @@ fn parse_delimited_metadata(path: &Path, delimiter: u8) -> Result<Vec<SheetMetad
     if headers.is_empty() || row_count == 0 {
         return Ok(Vec::new());
     }
-    Ok(vec![SheetMetadata {
-        name,
-        headers,
-        row_count,
-    }])
+    Ok(vec![SheetMetadata { name, headers, row_count }])
 }
 
 fn parse_dbf(path: &Path) -> Result<Vec<SheetData>> {
@@ -229,19 +221,18 @@ fn parse_dbf(path: &Path) -> Result<Vec<SheetData>> {
     // Get field definitions in file order before reading records
     // (reader.fields() borrows, so clone before calling read())
     let field_infos: Vec<dbase::FieldInfo> = reader.fields().to_vec();
-    let headers: Vec<String> = field_infos.iter().map(|f| f.name().to_string()).collect();
+    let headers: Vec<String> = field_infos
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect();
 
     if headers.is_empty() {
         return Ok(Vec::new());
     }
 
-    let records: Vec<dbase::Record> = reader.read().map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read DBF records from '{}': {}",
-            path.display(),
-            e
-        )
-    })?;
+    let records: Vec<dbase::Record> = reader
+        .read()
+        .map_err(|e| anyhow::anyhow!("Failed to read DBF records from '{}': {}", path.display(), e))?;
 
     // Convert each record to Vec<String> using header order for lookup.
     // Record uses an unordered map internally, so we look up by field name
@@ -287,18 +278,14 @@ fn dbf_value_to_string(value: &dbase::FieldValue) -> String {
                 }
             })
             .unwrap_or_default(),
-        FieldValue::Float(opt) => opt.map(|n| n.to_string()).unwrap_or_default(),
+        FieldValue::Float(opt) => opt
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
         FieldValue::Integer(i) => i.to_string(),
         FieldValue::Double(f) => f.to_string(),
         FieldValue::Currency(f) => format!("{:.2}", f),
         FieldValue::Logical(opt) => opt
-            .map(|b| {
-                if b {
-                    "TRUE".to_string()
-                } else {
-                    "FALSE".to_string()
-                }
-            })
+            .map(|b| if b { "TRUE".to_string() } else { "FALSE".to_string() })
             .unwrap_or_default(),
         FieldValue::Date(opt) => opt
             .map(|d| format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
@@ -517,26 +504,11 @@ fn densify_repair_rows(mut row_map: BTreeMap<usize, Vec<String>>) -> Vec<Vec<Str
 
 /// Keywords that suggest a column contains date values.
 const DATE_COLUMN_KEYWORDS: &[&str] = &[
-    "date",
-    "time",
-    "datetime",
-    "timestamp",
-    "日期",
-    "时间",
-    "生日",
-    "日付",
-    "fecha",
-    "data",
-    "datum",
-    "dob",
-    "birth",
-    "created",
-    "updated",
-    "modified",
-    "begin",
-    "start",
-    "end",
-    "deadline",
+    "date", "time", "datetime", "timestamp",
+    "日期", "时间", "生日", "日付",
+    "fecha", "data", "datum", "dob", "birth",
+    "created", "updated", "modified",
+    "begin", "start", "end", "deadline",
 ];
 
 fn is_date_column_name(name: &str) -> bool {
@@ -563,12 +535,7 @@ fn excel_serial_to_date_string(serial: f64) -> Option<String> {
     let ms = (adjusted * ms_multiplier).round() as i64;
     let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30)?;
     let date = epoch + Duration::milliseconds(ms);
-    Some(format!(
-        "{:04}{:02}{:02}",
-        date.year(),
-        date.month(),
-        date.day()
-    ))
+    Some(format!("{:04}{:02}{:02}", date.year(), date.month(), date.day()))
 }
 
 /// Like `data_to_string`, but for `Data::DateTime` uses calamine's
@@ -576,11 +543,14 @@ fn excel_serial_to_date_string(serial: f64) -> Option<String> {
 /// `Data::Float` tries date conversion.
 fn date_aware_to_string(data: &Data) -> String {
     match data {
-        Data::DateTime(dt) => dt
-            .as_datetime()
-            .map(|ndt| format!("{:04}{:02}{:02}", ndt.year(), ndt.month(), ndt.day()))
-            .unwrap_or_else(|| dt.to_string()),
-        Data::Float(f) => excel_serial_to_date_string(*f).unwrap_or_else(|| f.to_string()),
+        Data::DateTime(dt) => {
+            dt.as_datetime()
+                .map(|ndt| format!("{:04}{:02}{:02}", ndt.year(), ndt.month(), ndt.day()))
+                .unwrap_or_else(|| dt.to_string())
+        }
+        Data::Float(f) => {
+            excel_serial_to_date_string(*f).unwrap_or_else(|| f.to_string())
+        }
         other => data_to_string(other),
     }
 }
@@ -592,18 +562,13 @@ fn date_aware_to_string(data: &Data) -> String {
 ///   2. Fallback: column name matches date keywords AND the majority of
 ///      `Data::Float` values in the column look like Excel serial dates.
 fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> Vec<bool> {
-    let col_count = raw_rows
-        .first()
-        .map(|r| r.len())
-        .unwrap_or(0)
-        .min(headers.len());
+    let col_count = raw_rows.first().map(|r| r.len()).unwrap_or(0).min(headers.len());
     let mut result = vec![false; col_count];
 
     for col_idx in 0..col_count {
         // Signal 1: calamine already found a DateTime in this column
         let has_calamine_date = raw_rows.iter().any(|row| {
-            row.get(col_idx)
-                .map_or(false, |d| matches!(d, Data::DateTime(_)))
+            row.get(col_idx).map_or(false, |d| matches!(d, Data::DateTime(_)))
         });
         if has_calamine_date {
             result[col_idx] = true;
@@ -617,16 +582,15 @@ fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> 
         }
 
         // Count how many Float values in this column look like dates
-        let (date_like, total_floats) =
-            raw_rows
-                .iter()
-                .fold((0usize, 0usize), |(dl, tf), row| match row.get(col_idx) {
-                    Some(Data::Float(f)) => {
-                        let is_date = excel_serial_to_date_string(*f).is_some();
-                        (dl + is_date as usize, tf + 1)
-                    }
-                    _ => (dl, tf),
-                });
+        let (date_like, total_floats) = raw_rows.iter().fold((0usize, 0usize), |(dl, tf), row| {
+            match row.get(col_idx) {
+                Some(Data::Float(f)) => {
+                    let is_date = excel_serial_to_date_string(*f).is_some();
+                    (dl + is_date as usize, tf + 1)
+                }
+                _ => (dl, tf),
+            }
+        });
 
         // Require at least 2 match candidates and >50% of floats are date-like
         if date_like >= 2 && total_floats > 0 && date_like * 2 > total_floats {
@@ -645,15 +609,12 @@ fn convert_date_columns_in_place(headers: &[String], rows: &mut [Vec<String>]) {
         if !is_date_column_name(header) {
             continue;
         }
-        let date_count = rows
-            .iter()
-            .filter(|row| {
-                row.get(col_idx)
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .and_then(|f| excel_serial_to_date_string(f))
-                    .is_some()
-            })
-            .count();
+        let date_count = rows.iter().filter(|row| {
+            row.get(col_idx)
+                .and_then(|v| v.parse::<f64>().ok())
+                .and_then(|f| excel_serial_to_date_string(f))
+                .is_some()
+        }).count();
         if date_count < 2 || date_count * 2 <= rows.len() {
             continue;
         }
@@ -765,10 +726,7 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         Some(FileFormat::Tsv) => parse_delimited_metadata(path, b'\t'),
         Some(FileFormat::Html) => parse_html_metadata(path),
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text_metadata(path),
-        Some(FileFormat::Dbf)
-        | Some(FileFormat::Xml)
-        | Some(FileFormat::Docx)
-        | Some(FileFormat::Pptx) => metadata_from_full_parse(path),
+        Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => metadata_from_full_parse(path),
         Some(FileFormat::Excel) => parse_excel_metadata(path),
         None => parse_excel_metadata(path),
     }
@@ -1086,12 +1044,7 @@ where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
     match FileFormat::from_path(path) {
-        Some(FileFormat::Csv)
-        | Some(FileFormat::Tsv)
-        | Some(FileFormat::Dbf)
-        | Some(FileFormat::Xml)
-        | Some(FileFormat::Docx)
-        | Some(FileFormat::Pptx) => {
+        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => {
             let sheets = parse_file(path)?;
             let mut info = Vec::new();
             for (idx, sheet) in sheets.into_iter().enumerate() {
@@ -1128,8 +1081,8 @@ where
 fn parse_xlsx_repair(path: &Path) -> Result<Vec<SheetData>> {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| anyhow::anyhow!("无法打开xlsx文件进行修复: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| anyhow::anyhow!("无法打开xlsx文件进行修复: {}", e))?;
 
     let shared_strings = read_shared_strings(&mut archive).unwrap_or_default();
     let sheets = read_workbook_sheets(&mut archive)?;
@@ -1167,7 +1120,7 @@ fn parse_xlsx_repair(path: &Path) -> Result<Vec<SheetData>> {
 
 #[cfg(feature = "archive-support")]
 fn parse_archive(path: &Path, format: crate::archive::ArchiveFormat) -> Result<Vec<SheetData>> {
-    use crate::archive::{extract_entry, is_table_entry, list_entries};
+    use crate::archive::{is_table_entry, list_entries, extract_entry};
 
     let entries = list_entries(path, format)?;
     let table_entries: Vec<_> = entries
@@ -1218,7 +1171,7 @@ fn parse_archive_metadata(
     path: &Path,
     format: crate::archive::ArchiveFormat,
 ) -> Result<Vec<SheetMetadata>> {
-    use crate::archive::{extract_entry, is_table_entry, list_entries};
+    use crate::archive::{is_table_entry, list_entries, extract_entry};
 
     let entries = list_entries(path, format)?;
     let table_entries: Vec<_> = entries
@@ -1262,8 +1215,8 @@ where
 {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| anyhow::anyhow!("无法打开xlsx文件进行修复: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| anyhow::anyhow!("无法打开xlsx文件进行修复: {}", e))?;
 
     let shared_strings = read_shared_strings(&mut archive).unwrap_or_default();
     let sheets = read_workbook_sheets(&mut archive)?;

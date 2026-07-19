@@ -57,11 +57,8 @@ fn regress_thead_tbody_tfoot() {
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers, ["Product", "Qty"]);
     // <tfoot> row should also be extracted as a data row
-    assert!(
-        tables[0].rows.iter().any(|r| r[0] == "Total"),
-        "tfoot row should be present: {:?}",
-        tables[0].rows
-    );
+    assert!(tables[0].rows.iter().any(|r| r[0] == "Total"),
+        "tfoot row should be present: {:?}", tables[0].rows);
 }
 
 #[test]
@@ -99,12 +96,7 @@ fn regress_colspan_header() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // scraper doesn't expand colspan; it treats <th colspan="2"> as a single cell
-    assert_eq!(
-        tables[0].headers.len(),
-        2,
-        "colspan header: 2 headers expected (colspan collapsed), got {:?}",
-        tables[0].headers
-    );
+    assert_eq!(tables[0].headers.len(), 2, "colspan header: 2 headers expected (colspan collapsed), got {:?}", tables[0].headers);
     assert_eq!(tables[0].rows[0], ["John", "Doe", "30"]);
 }
 
@@ -120,11 +112,8 @@ fn regress_colspan_data_cell() {
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].rows.len(), 1);
     // colspan cell yields a single text, so we get 2 data cells vs 3 headers
-    assert_eq!(
-        tables[0].rows[0].len(),
-        2,
-        "colspan data row should reflect actual <td> count"
-    );
+    assert_eq!(tables[0].rows[0].len(), 2,
+        "colspan data row should reflect actual <td> count");
 }
 
 // ── 4. `rowspan` in data ───────────────────────────────────────────────────
@@ -173,14 +162,8 @@ fn regress_nested_table() {
     let tables = extract_tables(html).unwrap();
     // Both tables should be extracted; the inner one is a descendant of the outer <td>
     assert_eq!(tables.len(), 2, "nested tables should both be extracted");
-    let outer = tables
-        .iter()
-        .find(|t| t.name == "Outer")
-        .expect("outer table");
-    let inner = tables
-        .iter()
-        .find(|t| t.name == "Inner")
-        .expect("inner table");
+    let outer = tables.iter().find(|t| t.name == "Outer").expect("outer table");
+    let inner = tables.iter().find(|t| t.name == "Inner").expect("inner table");
     assert_eq!(outer.headers, ["Name", "Details"]);
     assert_eq!(inner.headers, ["InnerKey", "InnerVal"]);
     assert_eq!(inner.rows[0], ["X", "42"]);
@@ -210,10 +193,7 @@ fn regress_deeply_nested() {
     assert!(tables.iter().any(|t| t.name == "L1"));
     assert!(tables.iter().any(|t| t.name == "L2"));
     assert!(tables.iter().any(|t| t.name == "L3"));
-    assert_eq!(
-        tables.iter().find(|t| t.name == "L3").unwrap().rows[0][0],
-        "deep"
-    );
+    assert_eq!(tables.iter().find(|t| t.name == "L3").unwrap().rows[0][0], "deep");
 }
 
 // ── 6. `<caption>` as Table Name ────────────────────────────────────────────
@@ -233,10 +213,8 @@ fn regress_caption_as_name() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // Name currently falls back to auto-generated because no summary, no h3
-    assert_eq!(
-        tables[0].name, "Table_1",
-        "caption not yet used as name source; falls back to auto"
-    );
+    assert_eq!(tables[0].name, "Table_1",
+        "caption not yet used as name source; falls back to auto");
     assert_eq!(tables[0].headers, ["H1", "H2"]);
     assert_eq!(tables[0].rows[0], ["A", "B"]);
 }
@@ -256,10 +234,7 @@ fn regress_empty_cells() {
     assert_eq!(tables[0].rows[0].len(), 3, "empty cells should be present");
     assert_eq!(tables[0].rows[0][0], "", "empty td -> empty string");
     // scraper's text() + .trim() reduces whitespace-only cells to empty
-    assert_eq!(
-        tables[0].rows[0][1], "",
-        "whitespace-only td -> trimmed to empty"
-    );
+    assert_eq!(tables[0].rows[0][1], "", "whitespace-only td -> trimmed to empty");
     assert_eq!(tables[0].rows[0][2], "val");
 }
 
@@ -292,11 +267,7 @@ fn regress_all_empty_row() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
-    assert_eq!(
-        tables[0].rows.len(),
-        2,
-        "empty data rows should still be extracted"
-    );
+    assert_eq!(tables[0].rows.len(), 2, "empty data rows should still be extracted");
     assert_eq!(tables[0].rows[0][0], "");
 }
 
@@ -314,16 +285,8 @@ fn regress_br_in_cell() {
     assert_eq!(tables.len(), 1);
     // scraper's text() concatenates text nodes; <br> doesn't produce text
     let cell = &tables[0].rows[0][0];
-    assert!(
-        cell.contains("123 Main St."),
-        "cell should contain address: '{}'",
-        cell
-    );
-    assert!(
-        cell.contains("City, State"),
-        "cell should contain city: '{}'",
-        cell
-    );
+    assert!(cell.contains("123 Main St."), "cell should contain address: '{}'", cell);
+    assert!(cell.contains("City, State"), "cell should contain city: '{}'", cell);
 }
 
 // ── 9. `<a>` Links Inside Cells ──────────────────────────────────────────────
@@ -339,10 +302,7 @@ fn regress_links_in_cells() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
-    assert_eq!(
-        tables[0].rows[0][0], "Example",
-        "link text should be extracted"
-    );
+    assert_eq!(tables[0].rows[0][0], "Example", "link text should be extracted");
     assert_eq!(tables[0].rows[1][0], "Relative Link");
 }
 
@@ -363,15 +323,10 @@ fn regress_embedded_css_js() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // CSS/JS text should NOT leak into table content
-    assert!(
-        !tables[0].headers.iter().any(|h| h.contains("border")),
-        "CSS should not leak into headers: {:?}",
-        tables[0].headers
-    );
-    assert!(
-        !tables[0].rows[0][0].contains("getElementById"),
-        "JS should not leak into rows"
-    );
+    assert!(!tables[0].headers.iter().any(|h| h.contains("border")),
+        "CSS should not leak into headers: {:?}", tables[0].headers);
+    assert!(!tables[0].rows[0][0].contains("getElementById"),
+        "JS should not leak into rows");
     assert_eq!(tables[0].rows[0][0], "real content");
 }
 
@@ -394,16 +349,9 @@ fn regress_mid_table_th_row() {
     // `th_cells.len() == 1` branch -> row = [th_cell] + td_cells (empty) = [th_cell]
     // The mid-table <th> row has th_cells=["Sub Section"] but no td_cells,
     // so `!cells.is_empty()` is false → row is skipped
-    assert_eq!(
-        tables[0].rows.len(),
-        2,
-        "mid-table th row is skipped (no td cells)"
-    );
+    assert_eq!(tables[0].rows.len(), 2, "mid-table th row is skipped (no td cells)");
     assert_eq!(tables[0].rows[0][0], "Item1");
-    assert_eq!(
-        tables[0].rows[1][0], "Item2",
-        "sub-section marker row dropped, Item2 is second row"
-    );
+    assert_eq!(tables[0].rows[1][0], "Item2", "sub-section marker row dropped, Item2 is second row");
 }
 
 // ── 12. No `<th>` at All (Infer Header from First Row) ─────────────────────
@@ -447,10 +395,7 @@ fn regress_no_th_single_row() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers, ["Only", "Row"]);
-    assert!(
-        tables[0].rows.is_empty(),
-        "single row: header promoted, no data rows left"
-    );
+    assert!(tables[0].rows.is_empty(), "single row: header promoted, no data rows left");
 }
 
 // ── 13. Jagged Rows (Varying Column Counts) ─────────────────────────────────
@@ -577,11 +522,8 @@ fn regress_h3_empty_skipped() {
         </table>
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
-    assert_eq!(
-        tables[0].name, "Table_1",
-        "empty h3 shouldn't set heading, got: '{}'",
-        tables[0].name
-    );
+    assert_eq!(tables[0].name, "Table_1",
+        "empty h3 shouldn't set heading, got: '{}'", tables[0].name);
 }
 
 #[test]
@@ -596,10 +538,8 @@ fn regress_h3_not_immediately_preceding() {
         </table>
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
-    assert_eq!(
-        tables[0].name, "Target",
-        "h3 before intermediary elements should still apply"
-    );
+    assert_eq!(tables[0].name, "Target",
+        "h3 before intermediary elements should still apply");
 }
 
 // ── 17. Mixed `<th>` and `<td>` in Same Row (WDR Style) ───────────────────
@@ -618,12 +558,8 @@ fn regress_mixed_th_td_row() {
     assert_eq!(tables[0].headers, ["Metric", "Value", "Unit"]);
     // Row with th+td: th_cells = ["DB Time"], td_cells = ["5709", "us"]
     // th_cells.len() == 1 -> merged row = ["DB Time", "5709", "us"]
-    assert_eq!(
-        tables[0].rows[0],
-        ["DB Time", "5709", "us"],
-        "mixed th/td row should combine: got {:?}",
-        tables[0].rows[0]
-    );
+    assert_eq!(tables[0].rows[0], ["DB Time", "5709", "us"],
+        "mixed th/td row should combine: got {:?}", tables[0].rows[0]);
     // Normal td-only row
     assert_eq!(tables[0].rows[1], ["CPU", "23", "%"]);
 }
@@ -645,11 +581,7 @@ fn regress_comments_in_table() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // Commented-out tr should NOT appear
-    assert_eq!(
-        tables[0].rows.len(),
-        2,
-        "commented-out row should not appear"
-    );
+    assert_eq!(tables[0].rows.len(), 2, "commented-out row should not appear");
     assert_eq!(tables[0].rows[0][0], "Alice");
     assert_eq!(tables[0].rows[1][0], "Charlie");
 }
@@ -668,10 +600,7 @@ fn regress_img_in_cell() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // <img> elements don't produce text children, so cell is empty
-    assert_eq!(
-        tables[0].rows[0][0], "",
-        "img alt text not extracted (img is self-closing)"
-    );
+    assert_eq!(tables[0].rows[0][0], "", "img alt text not extracted (img is self-closing)");
     assert_eq!(tables[0].rows[0][1], "Done");
 }
 
@@ -681,15 +610,12 @@ fn regress_img_in_cell() {
 fn regress_utf8_bom() {
     // Prepend UTF-8 BOM bytes before the HTML string
     let bom = "\u{feff}";
-    let html = format!(
-        r#"{}<html><body>
+    let html = format!(r#"{}<html><body>
         <table summary="BOM Test">
             <tr><th>Col</th></tr>
             <tr><td>value</td></tr>
         </table>
-    </body></html>"#,
-        bom
-    );
+    </body></html>"#, bom);
     let tables = extract_tables(&html).unwrap();
     assert_eq!(tables.len(), 1, "BOM prefix should not break parsing");
     assert_eq!(tables[0].name, "BOM Test");
@@ -727,11 +653,8 @@ fn regress_chinese_no_th() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
-    assert_eq!(
-        tables[0].headers,
-        ["商品", "价格"],
-        "No-th Chinese table: first row promoted to headers"
-    );
+    assert_eq!(tables[0].headers, ["商品", "价格"],
+        "No-th Chinese table: first row promoted to headers");
     assert_eq!(tables[0].rows[0], ["苹果", "5.00"]);
 }
 
@@ -748,11 +671,8 @@ fn regress_h2_not_tracked() {
         </table>
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
-    assert_eq!(
-        tables[0].name, "Table_1",
-        "h2 should not be used as table name, got: '{}'",
-        tables[0].name
-    );
+    assert_eq!(tables[0].name, "Table_1",
+        "h2 should not be used as table name, got: '{}'", tables[0].name);
 }
 
 #[test]
@@ -765,11 +685,8 @@ fn regress_h4_not_tracked() {
         </table>
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
-    assert_eq!(
-        tables[0].name, "Table_1",
-        "h4 should not be used as table name, got: '{}'",
-        tables[0].name
-    );
+    assert_eq!(tables[0].name, "Table_1",
+        "h4 should not be used as table name, got: '{}'", tables[0].name);
 }
 
 // ── 23. Attributes with Special Characters ──────────────────────────────────
@@ -785,10 +702,8 @@ fn regress_summary_with_special_chars() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // scraper decodes HTML entities in attributes
-    assert_eq!(
-        tables[0].name, "Load Profile (Per Second & Per Transaction)",
-        "HTML entities in summary should be decoded"
-    );
+    assert_eq!(tables[0].name, "Load Profile (Per Second & Per Transaction)",
+        "HTML entities in summary should be decoded");
 }
 
 // ── 24. `<th>` in First Row Only, Data Rows Have Mixed Content ─────────────
@@ -819,10 +734,7 @@ fn regress_headers_only() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers, ["ColA", "ColB"]);
-    assert!(
-        tables[0].rows.is_empty(),
-        "headers-only table should have no rows"
-    );
+    assert!(tables[0].rows.is_empty(), "headers-only table should have no rows");
 }
 
 // ── 26. `<tr>` with No `<td>` or `<th>` (Empty Row) ────────────────────────
@@ -839,7 +751,8 @@ fn regress_empty_tr_tags() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // <tr></tr> has no td/th, so it's skipped entirely
-    assert_eq!(tables[0].rows.len(), 1, "empty <tr> should be skipped");
+    assert_eq!(tables[0].rows.len(), 1,
+        "empty <tr> should be skipped");
     assert_eq!(tables[0].rows[0][0], "data");
 }
 
@@ -880,10 +793,8 @@ fn regress_h3_with_gap() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 2);
     assert_eq!(tables[0].name, "T1", "summary takes precedence");
-    assert_eq!(
-        tables[1].name, "Section Three",
-        "table without summary should pick up preceding h3"
-    );
+    assert_eq!(tables[1].name, "Section Three",
+        "table without summary should pick up preceding h3");
 }
 
 // ── 29. `scraper` Error Tolerance: HTML with Extra Attributes on Table ─────
@@ -932,11 +843,7 @@ fn regress_table_no_tr() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // scaper still finds <th> as descendant of <table>, no <tr> needed
-    assert_eq!(
-        tables[0].headers,
-        ["Orphan"],
-        "<th> found even without <tr>"
-    );
+    assert_eq!(tables[0].headers, ["Orphan"], "<th> found even without <tr>");
     assert!(tables[0].rows.is_empty(), "no tr -> no data rows");
 }
 
@@ -978,10 +885,8 @@ fn regress_empty_summary_attr() {
         </table>
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
-    assert_eq!(
-        tables[0].name, "Fallback Name",
-        "empty summary attr should fallback to h3"
-    );
+    assert_eq!(tables[0].name, "Fallback Name",
+        "empty summary attr should fallback to h3");
 }
 
 #[test]
@@ -995,10 +900,8 @@ fn regress_summary_whitespace_only() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     // scraper preserves whitespace attr value; the code only filters empty strings
-    assert_eq!(
-        tables[0].name, "   ",
-        "whitespace-only summary is NOT filtered (only empty string is)"
-    );
+    assert_eq!(tables[0].name, "   ",
+        "whitespace-only summary is NOT filtered (only empty string is)");
 }
 
 // ── 34. Real-World WDR: Table with `class` and Complex Structure ───────────
@@ -1036,10 +939,7 @@ fn regress_wdr_complex_table() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].name, "This table displays SQL Statistics");
-    assert_eq!(
-        tables[0].headers,
-        ["SQL ID", "SQL Text", "Elapsed(us)", "CPU(us)"]
-    );
+    assert_eq!(tables[0].headers, ["SQL ID", "SQL Text", "Elapsed(us)", "CPU(us)"]);
     assert_eq!(tables[0].rows.len(), 2);
     assert!(tables[0].rows[0][1].contains("SELECT * FROM users"));
 }
@@ -1085,10 +985,8 @@ fn regress_h3_after_table() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
-    assert_eq!(
-        tables[0].name, "First",
-        "h3 after table should not override its name"
-    );
+    assert_eq!(tables[0].name, "First",
+        "h3 after table should not override its name");
 }
 
 // ── 37. DOCTYPE Declaration ─────────────────────────────────────────────────
@@ -1164,10 +1062,7 @@ fn regress_single_cell_table() {
     assert_eq!(tables.len(), 1);
     // No <th>, first (and only) row becomes header
     assert_eq!(tables[0].headers, ["only cell"]);
-    assert!(
-        tables[0].rows.is_empty(),
-        "single cell: promoted to header, no data rows left"
-    );
+    assert!(tables[0].rows.is_empty(), "single cell: promoted to header, no data rows left");
 }
 
 // ── 41. `<th>` with `scope` Attribute ───────────────────────────────────────
@@ -1198,20 +1093,11 @@ fn regress_th_with_scope() {
 
 #[test]
 fn regress_wide_table() {
-    let html_content: String = (0..50)
-        .map(|i| format!("<th>H{}</th>", i))
-        .collect::<Vec<_>>()
-        .join("");
-    let row_content: String = (0..50)
-        .map(|i| format!("<td>V{}</td>", i))
-        .collect::<Vec<_>>()
-        .join("");
-    let html = format!(
-        r#"<html><body>
+    let html_content: String = (0..50).map(|i| format!("<th>H{}</th>", i)).collect::<Vec<_>>().join("");
+    let row_content: String = (0..50).map(|i| format!("<td>V{}</td>", i)).collect::<Vec<_>>().join("");
+    let html = format!(r#"<html><body>
         <table summary="Wide"><tr>{}</tr><tr>{}</tr></table>
-    </body></html>"#,
-        html_content, row_content
-    );
+    </body></html>"#, html_content, row_content);
     let tables = extract_tables(&html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers.len(), 50, "50-column table");
@@ -1228,12 +1114,9 @@ fn regress_long_table() {
         .map(|i| format!("<tr><td>{}</td><td>x</td></tr>", i))
         .collect::<Vec<_>>()
         .join("");
-    let html = format!(
-        r#"<html><body>
+    let html = format!(r#"<html><body>
         <table summary="Long">{}{}</table>
-    </body></html>"#,
-        header, rows
-    );
+    </body></html>"#, header, rows);
     let tables = extract_tables(&html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].rows.len(), 500, "500-row table");
@@ -1264,10 +1147,8 @@ fn regress_td_without_tr() {
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers, ["Name", "Value"]);
     // td cells in the same implicit <tr> as th are skipped due to `continue`
-    assert!(
-        tables[0].rows.is_empty(),
-        "td in same implicit tr as th are skipped by current logic"
-    );
+    assert!(tables[0].rows.is_empty(),
+        "td in same implicit tr as th are skipped by current logic");
 }
 
 // ── 45. `<th>` Only Without `<tr>` ──────────────────────────────────────────
@@ -1284,10 +1165,7 @@ fn regress_th_only_no_tr() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].headers, ["ColA", "ColB", "ColC"]);
-    assert!(
-        tables[0].rows.is_empty(),
-        "only th elements -> headers only"
-    );
+    assert!(tables[0].rows.is_empty(), "only th elements -> headers only");
 }
 
 // ── 46. Uppercase Tag Names ─────────────────────────────────────────────────
@@ -1341,10 +1219,8 @@ fn regress_single_quoted_attr() {
     </body></html>"#;
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
-    assert_eq!(
-        tables[0].name, "Single Quoted",
-        "single-quoted summary attr should be parsed"
-    );
+    assert_eq!(tables[0].name, "Single Quoted",
+        "single-quoted summary attr should be parsed");
     assert_eq!(tables[0].headers, ["A", "B"]);
 }
 
@@ -1362,11 +1238,7 @@ fn regress_unquoted_attr() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // scraper may or may not parse unquoted attr
-    assert_eq!(
-        tables[0].headers,
-        ["H"],
-        "table content should be extracted"
-    );
+    assert_eq!(tables[0].headers, ["H"], "table content should be extracted");
     assert_eq!(tables[0].rows[0][0], "data");
 }
 
@@ -1384,18 +1256,10 @@ fn regress_td_no_close() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // scraper's html5 parser auto-closes unclosed td/th
-    assert_eq!(
-        tables[0].headers,
-        ["A", "B", "C"],
-        "unclosed <th> should still parse: got {:?}",
-        tables[0].headers
-    );
-    assert_eq!(
-        tables[0].rows[0],
-        ["1", "2", "3"],
-        "unclosed <td> should still parse: got {:?}",
-        tables[0].rows[0]
-    );
+    assert_eq!(tables[0].headers, ["A", "B", "C"],
+        "unclosed <th> should still parse: got {:?}", tables[0].headers);
+    assert_eq!(tables[0].rows[0], ["1", "2", "3"],
+        "unclosed <td> should still parse: got {:?}", tables[0].rows[0]);
 }
 
 // ── 51. Missing `<th>` Closing Tag, Mixed With `<td>` ──────────────────────
@@ -1413,12 +1277,8 @@ fn regress_th_no_close_mixed() {
     // The first row has 2 th + 1 td; th_cells=["Name","Age"], td_cells=["extra"]
     // header_row_seen is false so headers become ["Name","Age"]
     // Then th_cells.len() == 1? No, th_cells.len() == 2 -> td-only row cells=["extra"]
-    assert_eq!(
-        tables[0].headers,
-        ["Name", "Age"],
-        "first two th become headers: got {:?}",
-        tables[0].headers
-    );
+    assert_eq!(tables[0].headers, ["Name", "Age"],
+        "first two th become headers: got {:?}", tables[0].headers);
 }
 
 // ── 52. Layout Table With No `<th>` — Pure `<td>` Grid ──────────────────────
@@ -1524,10 +1384,7 @@ fn regress_table_in_form() {
     // Input elements are self-closing — no text content in <td>
     assert_eq!(tables[0].rows[0][0], "Name:");
     // The second cell has <input> which has no text -> empty string
-    assert_eq!(
-        tables[0].rows[0][1], "",
-        "input element has no text content"
-    );
+    assert_eq!(tables[0].rows[0][1], "", "input element has no text content");
 }
 
 // ── 57. `<table>` With `cellpadding` / `cellspacing` / `width` ─────────────
@@ -1581,12 +1438,8 @@ fn regress_tr_with_text_nodes() {
     let tables = extract_tables(html).unwrap();
     assert_eq!(tables.len(), 1);
     // The extra "Header" and "Data" text nodes inside <tr> are ignored by scraper
-    assert_eq!(
-        tables[0].headers,
-        ["Item", "Price"],
-        "text nodes in tr should not interfere: got {:?}",
-        tables[0].headers
-    );
+    assert_eq!(tables[0].headers, ["Item", "Price"],
+        "text nodes in tr should not interfere: got {:?}", tables[0].headers);
     assert_eq!(tables[0].rows[0][0], "A");
 }
 
@@ -1609,10 +1462,7 @@ fn regress_br_row_separator() {
     assert!(cell.contains("Row2"), "cell contains Row2: '{}'", cell);
     assert!(cell.contains("Row3"), "cell contains Row3: '{}'", cell);
     // All text is concatenated into one cell (no row splitting)
-    assert!(
-        !cell.contains('\n'),
-        "br-separated text concats without newline"
-    );
+    assert!(!cell.contains('\n'), "br-separated text concats without newline");
 }
 
 // ── 61. Table With `nowrap` Attribute on `<td>` ────────────────────────────
@@ -1660,16 +1510,8 @@ fn regress_td_with_block_elements() {
     assert_eq!(tables.len(), 1);
     // scraper's text() concatenates all text: "Paragraph one.Paragraph two."
     let cell = &tables[0].rows[0][0];
-    assert!(
-        cell.contains("Paragraph one"),
-        "p text extracted: '{}'",
-        cell
-    );
-    assert!(
-        cell.contains("Paragraph two"),
-        "p text extracted: '{}'",
-        cell
-    );
+    assert!(cell.contains("Paragraph one"), "p text extracted: '{}'", cell);
+    assert!(cell.contains("Paragraph two"), "p text extracted: '{}'", cell);
 }
 
 // ── 64. `<table>` With Duplicate Header Row (Copy-Paste Artifact) ──────────
@@ -1689,12 +1531,8 @@ fn regress_duplicate_header_row() {
     // header_row_seen is set after first <th> row; second <th> row falls through
     // th_cells = ["Name", "Score"], td_cells = [] -> cells.is_empty() -> skipped
     assert_eq!(tables[0].headers, ["Name", "Score"]);
-    assert_eq!(
-        tables[0].rows.len(),
-        2,
-        "duplicate header row should be skipped: got {} rows",
-        tables[0].rows.len()
-    );
+    assert_eq!(tables[0].rows.len(), 2,
+        "duplicate header row should be skipped: got {} rows", tables[0].rows.len());
     assert_eq!(tables[0].rows[0][0], "Alice");
 }
 
@@ -1715,12 +1553,8 @@ fn regress_merged_header_row() {
     // Second row: th_cells=["SubA","SubB"] -> header_row_seen=true -> skipped? No, it's seen.
     //   th_cells.len()==2 != 1 -> just check td_cells which is [] -> cells.is_empty() -> skip
     // So headers stay as the single merged header
-    assert_eq!(
-        tables[0].headers.len(),
-        1,
-        "merged th row becomes sole header: got {:?}",
-        tables[0].headers
-    );
+    assert_eq!(tables[0].headers.len(), 1,
+        "merged th row becomes sole header: got {:?}", tables[0].headers);
     assert_eq!(tables[0].headers[0], "Merged Header");
     // Data row is found
     assert_eq!(tables[0].rows[0], ["1", "2"]);
@@ -1800,11 +1634,7 @@ fn regress_script_in_td() {
     // scraper's text() does NOT skip <script> content — it concatenates all text nodes
     // including JS code. This is a known limitation.
     let cell = &tables[0].rows[0][0];
-    assert!(
-        cell.contains("real content"),
-        "real content present: '{}'",
-        cell
-    );
+    assert!(cell.contains("real content"), "real content present: '{}'", cell);
     // JS content may leak through (scraper behavior)
 }
 

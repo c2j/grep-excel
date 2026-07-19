@@ -169,10 +169,7 @@ fn parse_pipe_row(line: &str) -> Vec<String> {
     } else {
         trimmed
     };
-    inner
-        .split('|')
-        .map(|cell| cell.trim().to_string())
-        .collect()
+    inner.split('|').map(|cell| cell.trim().to_string()).collect()
 }
 
 /// Extract heading text from a markdown heading line (# to ######)
@@ -362,7 +359,10 @@ fn extract_table_from_section(section: &Section) -> Option<TableData> {
         hi -= 1;
         let line = body_lines[hi];
         let trimmed = line.trim();
-        if trimmed.is_empty() || is_tilde_line(line) || is_dash_separator(line) {
+        if trimmed.is_empty()
+            || is_tilde_line(line)
+            || is_dash_separator(line)
+        {
             break;
         }
         // Check if this line looks like a section title (short, no overlap with boundaries)
@@ -512,11 +512,8 @@ fn detect_table_by_alignment(section: &Section) -> Option<TableData> {
     // Compute median start position for each column index
     let mut boundaries: Vec<(usize, usize)> = Vec::new();
     for col in 0..best_count {
-        let mut positions: Vec<usize> = matching
-            .iter()
-            .filter_map(|pt| pt.positions.get(col))
-            .copied()
-            .collect();
+        let mut positions: Vec<usize> =
+            matching.iter().filter_map(|pt| pt.positions.get(col)).copied().collect();
         if positions.is_empty() {
             return None;
         }
@@ -754,7 +751,10 @@ fn extract_table_metadata_from_section(section: &Section) -> Option<TextTableMet
         hi -= 1;
         let line = body_lines[hi];
         let trimmed = line.trim();
-        if trimmed.is_empty() || is_tilde_line(line) || is_dash_separator(line) {
+        if trimmed.is_empty()
+            || is_tilde_line(line)
+            || is_dash_separator(line)
+        {
             break;
         }
         // Check if this line looks like a section title (short, no overlap with boundaries)
@@ -904,11 +904,8 @@ fn detect_table_metadata_by_alignment(section: &Section) -> Option<TextTableMeta
     // Compute median start position for each column index
     let mut boundaries: Vec<(usize, usize)> = Vec::new();
     for col in 0..best_count {
-        let mut positions: Vec<usize> = matching
-            .iter()
-            .filter_map(|pt| pt.positions.get(col))
-            .copied()
-            .collect();
+        let mut positions: Vec<usize> =
+            matching.iter().filter_map(|pt| pt.positions.get(col)).copied().collect();
         if positions.is_empty() {
             return None;
         }
@@ -983,10 +980,7 @@ fn extract_tables_metadata_txt(text: &str) -> Vec<TextTableMetadata> {
 ///
 /// Returns table metadata (name, headers, row_count) without materializing
 /// row data — suitable for fast schema discovery on large files.
-pub fn extract_tables_metadata(
-    path: &Path,
-    content: &str,
-) -> Result<Vec<TextTableMetadata>, String> {
+pub fn extract_tables_metadata(path: &Path, content: &str) -> Result<Vec<TextTableMetadata>, String> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -1086,11 +1080,7 @@ mod tests {
 | foo | bar |
 "#;
         let tables = extract_tables_md(md);
-        assert_eq!(
-            tables.len(),
-            1,
-            "tables inside code blocks should be skipped"
-        );
+        assert_eq!(tables.len(), 1, "tables inside code blocks should be skipped");
         assert_eq!(tables[0].headers, vec!["Real", "Table"]);
     }
 
@@ -1113,11 +1103,7 @@ mod tests {
 | A | B |
 "#;
         let tables = extract_tables_md(md);
-        assert_eq!(
-            tables.len(),
-            1,
-            "separator-less pipe lines should parse as header+data"
-        );
+        assert_eq!(tables.len(), 1, "separator-less pipe lines should parse as header+data");
         assert_eq!(tables[0].headers, vec!["H1", "H2"]);
         assert_eq!(tables[0].rows[0], vec!["A", "B"]);
     }
@@ -1352,10 +1338,7 @@ Just some text.
 Nothing tabular.
 "#;
         let tables = extract_tables_txt(txt);
-        assert!(
-            tables.is_empty(),
-            "section without table should yield nothing"
-        );
+        assert!(tables.is_empty(), "section without table should yield nothing");
     }
 
     #[test]
@@ -1401,11 +1384,7 @@ Nothing tabular.
 | 1 | 2 |
 "#;
         let meta3 = extract_tables_metadata(path, md3).unwrap();
-        assert_eq!(
-            meta3.len(),
-            1,
-            "tables inside code blocks should be skipped"
-        );
+        assert_eq!(meta3.len(), 1, "tables inside code blocks should be skipped");
         assert_eq!(meta3[0].headers, vec!["Visible", "Col"]);
         assert_eq!(meta3[0].row_count, 1);
 

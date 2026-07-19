@@ -49,10 +49,9 @@ fn setup_cjk_fonts(ctx: &egui::Context) {
 
     for path in &cjk_font_paths {
         if let Ok(data) = std::fs::read(path) {
-            fonts.font_data.insert(
-                "CJK".into(),
-                std::sync::Arc::new(egui::FontData::from_owned(data)),
-            );
+            fonts
+                .font_data
+                .insert("CJK".into(), std::sync::Arc::new(egui::FontData::from_owned(data)));
             fonts
                 .families
                 .get_mut(&egui::FontFamily::Proportional)
@@ -143,9 +142,7 @@ impl SpikeApp {
                 self.results = results;
                 self.status = format!(
                     "🔍 找到 {} 条结果 ({} 行已搜索, {}ms)",
-                    stats.total_matches,
-                    stats.total_rows_searched,
-                    elapsed.as_millis()
+                    stats.total_matches, stats.total_rows_searched, elapsed.as_millis()
                 );
                 if stats.truncated {
                     self.status
@@ -222,7 +219,10 @@ impl eframe::App for SpikeApp {
                     if self.file_loaded {
                         ui.colored_label(egui::Color32::GREEN, "✅ 文件已加载，开始搜索吧");
                     } else {
-                        ui.colored_label(egui::Color32::from_rgb(200, 200, 200), "⬆ 请先加载文件");
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 200, 200),
+                            "⬆ 请先加载文件",
+                        );
                     }
                 });
                 return;

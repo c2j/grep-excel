@@ -53,10 +53,7 @@ fn is_internally_zip_table_format(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    matches!(
-        ext.as_str(),
-        "xlsx" | "xlsm" | "xlsb" | "ods" | "docx" | "pptx"
-    )
+    matches!(ext.as_str(), "xlsx" | "xlsm" | "xlsb" | "ods" | "docx" | "pptx")
 }
 
 fn detect_by_split_zip(path: &Path) -> Option<ArchiveFormat> {
@@ -229,9 +226,7 @@ fn list_tar_zst_entries(path: &Path) -> anyhow::Result<Vec<ArchiveEntry>> {
 }
 
 #[cfg(feature = "archive-support")]
-fn collect_tar_entries<R: Read>(
-    archive: &mut tar::Archive<R>,
-) -> anyhow::Result<Vec<ArchiveEntry>> {
+fn collect_tar_entries<R: Read>(archive: &mut tar::Archive<R>) -> anyhow::Result<Vec<ArchiveEntry>> {
     let mut entries = Vec::new();
     for entry in archive.entries()? {
         let entry = entry?;
@@ -290,7 +285,11 @@ pub fn extract_entry(
 }
 
 #[cfg(feature = "archive-support")]
-fn extract_zip_entry(archive_path: &Path, entry_path: &str, dest: &Path) -> anyhow::Result<()> {
+fn extract_zip_entry(
+    archive_path: &Path,
+    entry_path: &str,
+    dest: &Path,
+) -> anyhow::Result<()> {
     let file = std::fs::File::open(archive_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
     let mut entry = archive.by_name(entry_path)?;
@@ -490,12 +489,10 @@ mod tests {
         // Create a real ZIP with a CSV inside
         let file = std::fs::File::create(&zip_path).unwrap();
         let mut zip_writer = zip::ZipWriter::new(file);
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
         zip_writer.start_file("data.csv", options).unwrap();
-        zip_writer
-            .write_all(b"name,value\nalice,10\nbob,20\n")
-            .unwrap();
+        zip_writer.write_all(b"name,value\nalice,10\nbob,20\n").unwrap();
         zip_writer.finish().unwrap();
 
         // Detect archive
@@ -533,8 +530,8 @@ mod tests {
 
         let file = std::fs::File::create(&zip_path).unwrap();
         let mut zip_writer = zip::ZipWriter::new(file);
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
         zip_writer.start_file("readme.txt", options).unwrap();
         zip_writer.write_all(b"hello").unwrap();
         zip_writer.start_file("image.png", options).unwrap();
@@ -545,7 +542,7 @@ mod tests {
         // Both entries exist, but only "readme.txt" has a table extension
         let table_count = entries.iter().filter(|e| is_table_entry(&e.path)).count();
         assert_eq!(table_count, 1); // "readme.txt" IS a table extension
-                                    // "image.png" is NOT a table extension
+        // "image.png" is NOT a table extension
         assert!(!is_table_entry("image.png"));
     }
 }

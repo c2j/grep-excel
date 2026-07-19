@@ -66,7 +66,11 @@ fn pptx_table(rows: &[&[&str]]) -> String {
 
 #[test]
 fn parses_simple_pptx_table() {
-    let tbl = pptx_table(&[&["Name", "Age"], &["Alice", "30"], &["Bob", "25"]]);
+    let tbl = pptx_table(&[
+        &["Name", "Age"],
+        &["Alice", "30"],
+        &["Bob", "25"],
+    ]);
     let slide = wrap_slide(&tbl);
     let path = build_pptx(&[&slide]);
 

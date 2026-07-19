@@ -180,11 +180,7 @@ fn md_code_block_skips_tables() {
 | foo | bar |
 "#;
     let sheets = parse_text_content(md, "md");
-    assert_eq!(
-        sheets.len(),
-        1,
-        "tables inside code blocks should be skipped"
-    );
+    assert_eq!(sheets.len(), 1, "tables inside code blocks should be skipped");
     assert_eq!(sheets[0].headers, vec!["Real", "Table"]);
 }
 
@@ -310,11 +306,7 @@ fn txt_no_dash_separator() {
  67.8     8.9    23.3
 "#;
     let sheets = parse_text_content(txt, "txt");
-    assert_eq!(
-        sheets.len(),
-        1,
-        "should detect table without dash separator"
-    );
+    assert_eq!(sheets.len(), 1, "should detect table without dash separator");
     assert_eq!(sheets[0].name, "Host CPU");
     // At minimum, should find 2 data rows
     assert_eq!(sheets[0].rows.len(), 2);
@@ -372,16 +364,9 @@ fn txt_empty_file() {
 fn regress_awr_txt() {
     let path = workspace_fixture("tests/regress/awr.txt");
     let sheets = parse_file(&path).expect("awr.txt should parse");
-    assert!(
-        !sheets.is_empty(),
-        "awr.txt should yield at least one table"
-    );
+    assert!(!sheets.is_empty(), "awr.txt should yield at least one table");
     // Expect 15+ tables from the AWR report
-    assert!(
-        sheets.len() >= 15,
-        "expected >=15 tables from awr.txt, got {}",
-        sheets.len()
-    );
+    assert!(sheets.len() >= 15, "expected >=15 tables from awr.txt, got {}", sheets.len());
     // First table should have a name and headers
     assert!(!sheets[0].name.is_empty());
     assert!(!sheets[0].headers.is_empty());
@@ -391,8 +376,7 @@ fn regress_awr_txt() {
     let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"Instance Activity Stats"),
-        "should find 'Instance Activity Stats', got: {:?}",
-        names
+        "should find 'Instance Activity Stats', got: {:?}", names
     );
 }
 
@@ -403,11 +387,7 @@ fn regress_awr_md() {
     let sheets = parse_file(&path).expect("awr.md should parse");
     assert!(!sheets.is_empty(), "awr.md should yield at least one table");
     // Expect 18+ pipe tables from the MD AWR report
-    assert!(
-        sheets.len() >= 18,
-        "expected >=18 tables from awr.md, got {}",
-        sheets.len()
-    );
+    assert!(sheets.len() >= 18, "expected >=18 tables from awr.md, got {}", sheets.len());
     // First table should have a name and headers
     assert!(!sheets[0].name.is_empty());
     assert!(!sheets[0].headers.is_empty());
@@ -417,18 +397,15 @@ fn regress_awr_md() {
     let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"Load Profile"),
-        "should find 'Load Profile' in MD output, got: {:?}",
-        names
+        "should find 'Load Profile' in MD output, got: {:?}", names
     );
     assert!(
         names.contains(&"Top 5 Timed Foreground Events"),
-        "should find 'Top 5 Timed Foreground Events', got: {:?}",
-        names
+        "should find 'Top 5 Timed Foreground Events', got: {:?}", names
     );
     assert!(
         names.contains(&"Wait Event Histogram"),
-        "should find 'Wait Event Histogram', got: {:?}",
-        names
+        "should find 'Wait Event Histogram', got: {:?}", names
     );
 }
 
@@ -441,13 +418,11 @@ fn regress_sample_md() {
     let names: Vec<&str> = sheets.iter().map(|s| s.name.as_str()).collect();
     assert!(
         names.contains(&"Basic Table"),
-        "should find 'Basic Table', got: {:?}",
-        names
+        "should find 'Basic Table', got: {:?}", names
     );
     assert!(
         names.contains(&"Performance Metrics"),
-        "should find 'Performance Metrics', got: {:?}",
-        names
+        "should find 'Performance Metrics', got: {:?}", names
     );
 }
 

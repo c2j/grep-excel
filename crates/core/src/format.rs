@@ -31,7 +31,10 @@ impl FileFormat {
     /// Detect format from file extension. Returns `None` for unknown extensions
     /// (caller should fall back to calamine as a last resort).
     pub fn from_path(path: &Path) -> Option<Self> {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
 
         if ext.eq_ignore_ascii_case("csv") {
             Some(Self::Csv)
@@ -88,8 +91,13 @@ impl FileFormat {
     /// All extensions recognized as table files (for archive filtering).
     /// Derived at compile time from the same extension→format mapping.
     pub const TABLE_EXTENSIONS: &[&str] = &[
-        "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "tsv", "tab", "html", "htm", "txt", "md",
-        "markdown", "dbf", "xml", "docx", "pptx",
+        "xlsx", "xls", "xlsm", "xlsb", "ods",
+        "csv", "tsv", "tab",
+        "html", "htm",
+        "txt", "md", "markdown",
+        "dbf",
+        "xml",
+        "docx", "pptx",
     ];
 }
 
@@ -117,22 +125,10 @@ mod tests {
     #[test]
     fn from_path_docx_pptx() {
         use std::path::Path;
-        assert_eq!(
-            FileFormat::from_path(Path::new("a.docx")),
-            Some(FileFormat::Docx)
-        );
-        assert_eq!(
-            FileFormat::from_path(Path::new("A.DOCX")),
-            Some(FileFormat::Docx)
-        );
-        assert_eq!(
-            FileFormat::from_path(Path::new("report.pptx")),
-            Some(FileFormat::Pptx)
-        );
-        assert_eq!(
-            FileFormat::from_path(Path::new("DECK.PPTX")),
-            Some(FileFormat::Pptx)
-        );
+        assert_eq!(FileFormat::from_path(Path::new("a.docx")), Some(FileFormat::Docx));
+        assert_eq!(FileFormat::from_path(Path::new("A.DOCX")), Some(FileFormat::Docx));
+        assert_eq!(FileFormat::from_path(Path::new("report.pptx")), Some(FileFormat::Pptx));
+        assert_eq!(FileFormat::from_path(Path::new("DECK.PPTX")), Some(FileFormat::Pptx));
     }
 
     #[test]
