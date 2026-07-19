@@ -183,7 +183,9 @@ impl SearchEngine for MemEngine {
                 }
 
                 // Multi-condition AND filter
-                if !query.conditions.is_empty() && !matches_conditions(row, &sheet.headers, &query.conditions) {
+                if !query.conditions.is_empty()
+                    && !matches_conditions(row, &sheet.headers, &query.conditions)
+                {
                     continue;
                 }
 
@@ -204,7 +206,11 @@ impl SearchEngine for MemEngine {
                     file_name: sheet.file_name.clone(),
                     row: row.clone(),
                     col_names: sheet.headers.clone(),
-                    matched_columns: if query.invert { vec![] } else { matched_columns },
+                    matched_columns: if query.invert {
+                        vec![]
+                    } else {
+                        matched_columns
+                    },
                     col_widths: sheet.col_widths.clone(),
                     row_index: row_idx,
                     context,
@@ -296,21 +302,28 @@ impl SearchEngine for MemEngine {
                     sheet_name: s.sheet_name.clone(),
                     row_count: s.rows.len(),
                     columns: s.headers.clone(),
+                    kind: crate::types::TableKind::File,
                 }
             })
             .collect()
     }
 
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
-        let sheets: Vec<&MemSheet> = self.sheets.iter()
+        let sheets: Vec<&MemSheet> = self
+            .sheets
+            .iter()
             .filter(|s| s.file_name == file_name)
             .collect();
 
         if sheets.is_empty() {
-            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+            anyhow::bail!(
+                "File '{}' not found. Use list_files to see imported files.",
+                file_name
+            );
         }
 
-        let sheet_infos: Vec<SheetMetadataInfo> = sheets.iter()
+        let sheet_infos: Vec<SheetMetadataInfo> = sheets
+            .iter()
             .map(|s| SheetMetadataInfo {
                 sheet_name: s.sheet_name.clone(),
                 row_count: s.rows.len(),
@@ -325,13 +338,23 @@ impl SearchEngine for MemEngine {
         })
     }
 
-    fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
-        let sheet = self.sheets.iter()
+    fn get_sheet_sample(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        sample_size: usize,
+    ) -> Result<SheetDataResult> {
+        let sheet = self
+            .sheets
+            .iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         let total_rows = sheet.rows.len();
         let sample_size = sample_size.min(total_rows);
@@ -367,12 +390,17 @@ impl SearchEngine for MemEngine {
         end_row: Option<usize>,
         columns: Option<&[String]>,
     ) -> Result<SheetDataResult> {
-        let sheet = self.sheets.iter()
+        let sheet = self
+            .sheets
+            .iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         let total_rows = sheet.rows.len();
         let start = start_row.unwrap_or(0).min(total_rows);
@@ -381,21 +409,22 @@ impl SearchEngine for MemEngine {
         let rows_slice = &sheet.rows[start..end];
 
         let (col_indices, result_columns): (Vec<usize>, Vec<String>) = if let Some(cols) = columns {
-            let indices: Vec<usize> = cols.iter()
+            let indices: Vec<usize> = cols
+                .iter()
                 .filter_map(|c| sheet.headers.iter().position(|h| h == c))
                 .collect();
-            let names: Vec<String> = indices.iter()
-                .map(|&i| sheet.headers[i].clone())
-                .collect();
+            let names: Vec<String> = indices.iter().map(|&i| sheet.headers[i].clone()).collect();
             (indices, names)
         } else {
             let indices: Vec<usize> = (0..sheet.headers.len()).collect();
             (indices, sheet.headers.clone())
         };
 
-        let result_rows: Vec<Vec<String>> = rows_slice.iter()
+        let result_rows: Vec<Vec<String>> = rows_slice
+            .iter()
             .map(|row| {
-                col_indices.iter()
+                col_indices
+                    .iter()
                     .map(|&i| row.get(i).cloned().unwrap_or_default())
                     .collect()
             })
@@ -420,15 +449,21 @@ impl SearchEngine for MemEngine {
         {
             use crate::engine::write_xlsx;
 
-            let sheets: Vec<&MemSheet> = self.sheets.iter()
+            let sheets: Vec<&MemSheet> = self
+                .sheets
+                .iter()
                 .filter(|s| s.file_name == file_name)
                 .collect();
 
             if sheets.is_empty() {
-                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+                anyhow::bail!(
+                    "File '{}' not found. Use list_files to see imported files.",
+                    file_name
+                );
             }
 
-            let sheet_data: Vec<SheetRowsRef<'_>> = sheets.iter()
+            let sheet_data: Vec<SheetRowsRef<'_>> = sheets
+                .iter()
                 .map(|s| (s.sheet_name.as_str(), &s.headers[..], &s.rows[..]))
                 .collect();
 
@@ -438,37 +473,65 @@ impl SearchEngine for MemEngine {
         anyhow::bail!("save_as requires the mcp-server feature")
     }
 
-    fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+    fn update_cell(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        row: usize,
+        column: &str,
+        value: &str,
+    ) -> Result<()> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
-        let col_idx = sheet.headers.iter()
+        let col_idx = sheet
+            .headers
+            .iter()
             .position(|h| h == column)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Column '{}' not found in sheet '{}'.", column, sheet_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Column '{}' not found in sheet '{}'.", column, sheet_name)
+            })?;
 
         if row >= sheet.rows.len() {
-            anyhow::bail!("Row index {} is out of bounds (total rows: {}).", row, sheet.rows.len());
+            anyhow::bail!(
+                "Row index {} is out of bounds (total rows: {}).",
+                row,
+                sheet.rows.len()
+            );
         }
 
         sheet.rows[row][col_idx] = value.to_string();
         Ok(())
     }
 
-    fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+    fn update_cells(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        updates: &[(usize, String, String)],
+    ) -> Result<usize> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         let mut count = 0;
         for (row, column, value) in updates {
@@ -482,17 +545,29 @@ impl SearchEngine for MemEngine {
         Ok(count)
     }
 
-    fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+    fn insert_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        rows: Vec<Vec<String>>,
+    ) -> Result<()> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         let col_count = sheet.headers.len();
-        let mut padded_rows: Vec<Vec<String>> = rows.into_iter()
+        let mut padded_rows: Vec<Vec<String>> = rows
+            .into_iter()
             .map(|mut row| {
                 if row.len() < col_count {
                     row.resize(col_count, String::new());
@@ -512,14 +587,25 @@ impl SearchEngine for MemEngine {
         Ok(())
     }
 
-    fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+    fn delete_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        count: usize,
+    ) -> Result<usize> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         if start_row >= sheet.rows.len() {
             return Ok(0);
@@ -531,17 +617,32 @@ impl SearchEngine for MemEngine {
         Ok(deleted)
     }
 
-    fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+    fn add_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        column_name: &str,
+        default_value: &str,
+    ) -> Result<()> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         if sheet.headers.iter().any(|h| h == column_name) {
-            anyhow::bail!("Column '{}' already exists in sheet '{}'.", column_name, sheet_name);
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'.",
+                column_name,
+                sheet_name
+            );
         }
 
         sheet.headers.push(column_name.to_string());
@@ -552,30 +653,51 @@ impl SearchEngine for MemEngine {
         Ok(())
     }
 
-    fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+    fn rename_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<()> {
         check_not_readonly(file_name)?;
-        let sheet = self.sheets.iter_mut()
+        let sheet = self
+            .sheets
+            .iter_mut()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
-        let col_idx = sheet.headers.iter()
+        let col_idx = sheet
+            .headers
+            .iter()
             .position(|h| h == old_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Column '{}' not found in sheet '{}'.", old_name, sheet_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Column '{}' not found in sheet '{}'.", old_name, sheet_name)
+            })?;
 
         if old_name != new_name && sheet.headers.iter().any(|h| h == new_name) {
-            anyhow::bail!("Column '{}' already exists in sheet '{}'.", new_name, sheet_name);
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'.",
+                new_name,
+                sheet_name
+            );
         }
 
         sheet.headers[col_idx] = new_name.to_string();
         Ok(())
     }
 
-    fn register_virtual(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
+    fn register_virtual(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
         self.import_excel(path, progress) // fall back to full import
     }
 
@@ -587,19 +709,50 @@ impl SearchEngine for MemEngine {
         Some(SheetState::Materialized)
     }
 
-    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
-        let sheet = self.sheets.iter()
+    fn materialize_query(
+        &mut self,
+        _name: &str,
+        _sql: &str,
+        _replace: bool,
+        _max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo> {
+        anyhow::bail!(
+            "Session temp tables are not supported with the memory engine. \
+             Rebuild with --features engine-duckdb or engine-sqlite."
+        );
+    }
+
+    fn drop_temp_table(&mut self, _name: &str) -> Result<()> {
+        anyhow::bail!(
+            "Session temp tables are not supported with the memory engine. \
+             Rebuild with --features engine-duckdb or engine-sqlite."
+        );
+    }
+
+    fn get_sheet_statistics(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        max_top_values: usize,
+    ) -> Result<SheetStatistics> {
+        let sheet = self
+            .sheets
+            .iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
+                    sheet_name,
+                    file_name
+                )
+            })?;
 
         let total_rows = sheet.rows.len();
         let mut columns = Vec::new();
 
         for (col_idx, col_name) in sheet.headers.iter().enumerate() {
-            let mut count_map: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            let mut count_map: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
             let mut non_null = 0usize;
 
             for row in &sheet.rows {
@@ -614,7 +767,10 @@ impl SearchEngine for MemEngine {
             let null_count = total_rows - non_null;
             let distinct_count = count_map.len();
 
-            let mut top: Vec<_> = count_map.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+            let mut top: Vec<_> = count_map
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
             top.sort_by_key(|b| std::cmp::Reverse(b.1));
             top.truncate(max_top_values);
 
@@ -646,7 +802,7 @@ impl MemEngine {
         format: crate::archive::ArchiveFormat,
         progress: &dyn Fn(usize, usize),
     ) -> Result<FileInfo> {
-        use crate::archive::{is_table_entry, list_entries, extract_entry};
+        use crate::archive::{extract_entry, is_table_entry, list_entries};
 
         let entries = list_entries(archive_path, format)?;
         let table_entries: Vec<_> = entries
@@ -716,14 +872,16 @@ fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCo
             "!=" | "<>" => val != cond.value,
             "ILIKE" => val.to_lowercase().contains(&cond.value.to_lowercase()),
             "LIKE" => super::like_match(&cond.value, val),
-            ">" | "<" | ">=" | "<=" => {
-                match (val.parse::<f64>(), cond.value.parse::<f64>()) {
-                    (Ok(a), Ok(b)) => match cond.operator.as_str() {
-                        ">" => a > b, "<" => a < b, ">=" => a >= b, "<=" => a <= b, _ => false,
-                    },
+            ">" | "<" | ">=" | "<=" => match (val.parse::<f64>(), cond.value.parse::<f64>()) {
+                (Ok(a), Ok(b)) => match cond.operator.as_str() {
+                    ">" => a > b,
+                    "<" => a < b,
+                    ">=" => a >= b,
+                    "<=" => a <= b,
                     _ => false,
-                }
-            }
+                },
+                _ => false,
+            },
             _ => false,
         };
         if !matched {
@@ -731,4 +889,33 @@ fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCo
         }
     }
     true
+}
+
+#[cfg(test)]
+mod temp_table_stub_tests {
+    use super::*;
+
+    #[test]
+    fn materialize_query_unsupported_on_memory() {
+        let mut eng = MemEngine::new().unwrap();
+        let err = eng
+            .materialize_query("t", "SELECT 1", true, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("memory engine"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn drop_temp_table_unsupported_on_memory() {
+        let mut eng = MemEngine::new().unwrap();
+        let err = eng.drop_temp_table("t").unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("memory engine"),
+            "got: {}",
+            err
+        );
+    }
 }

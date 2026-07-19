@@ -14,8 +14,15 @@ struct SheetQueryMeta {
     row_count: usize,
 }
 
+struct TempTableMeta {
+    name: String,
+    columns: Vec<String>,
+    row_count: usize,
+}
+
 pub struct SqliteEngine {
     conn: Connection,
+    temp_tables: HashMap<String, TempTableMeta>,
 }
 
 impl SqliteEngine {
@@ -403,7 +410,7 @@ impl SqliteEngine {
         format: crate::archive::ArchiveFormat,
         progress: &dyn Fn(usize, usize),
     ) -> Result<FileInfo> {
-        use crate::archive::{is_table_entry, list_entries, extract_entry};
+        use crate::archive::{extract_entry, is_table_entry, list_entries};
 
         let entries = list_entries(archive_path, format)?;
         let table_entries: Vec<_> = entries
@@ -560,7 +567,11 @@ impl SqliteEngine {
         })
     }
 
-    fn get_sheet_metadata_query(&self, file_name: &str, sheet_name: &str) -> Result<SheetQueryMeta> {
+    fn get_sheet_metadata_query(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+    ) -> Result<SheetQueryMeta> {
         let result = self.conn.query_row(
             "SELECT s.table_name, s.col_names, s.row_count
              FROM sheets s JOIN files f ON s.file_id = f.file_id
@@ -576,14 +587,19 @@ impl SqliteEngine {
                 };
                 let row_count: i32 = row.get(2)?;
                 Ok((table_name, col_names, row_count as usize))
-            }
+            },
         );
 
         match result {
-            Ok((table_name, col_names, row_count)) => Ok(SheetQueryMeta { table_name, col_names, row_count }),
+            Ok((table_name, col_names, row_count)) => Ok(SheetQueryMeta {
+                table_name,
+                col_names,
+                row_count,
+            }),
             Err(_) => anyhow::bail!(
                 "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
+                sheet_name,
+                file_name
             ),
         }
     }
@@ -591,13 +607,15 @@ impl SqliteEngine {
     fn query_rows(&self, sql: &str, col_names: &[String]) -> Result<Vec<Vec<String>>> {
         let mut stmt = self.conn.prepare(sql)?;
         let col_count = col_names.len();
-        let rows: Vec<Vec<String>> = stmt.query_map([], |row| {
-            let mut values = Vec::with_capacity(col_count);
-            for i in 0..col_count {
-                values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
-            }
-            Ok(values)
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rows: Vec<Vec<String>> = stmt
+            .query_map([], |row| {
+                let mut values = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
+                }
+                Ok(values)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -652,7 +670,11 @@ impl SqliteEngine {
             (true, true) => "1=0".to_string(),
             (false, true) => or_parts.join(" OR "),
             (true, false) => and_parts.join(" AND "),
-            (false, false) => format!("({}) AND ({})", or_parts.join(" OR "), and_parts.join(" AND ")),
+            (false, false) => format!(
+                "({}) AND ({})",
+                or_parts.join(" OR "),
+                and_parts.join(" AND ")
+            ),
         };
         (where_sql, values)
     }
@@ -681,7 +703,10 @@ impl SearchEngine for SqliteEngine {
 
         Self::add_regexp_fn(&conn)?;
 
-        Ok(SqliteEngine { conn })
+        Ok(SqliteEngine {
+            conn,
+            temp_tables: HashMap::new(),
+        })
     }
 
     fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
@@ -921,7 +946,11 @@ impl SearchEngine for SqliteEngine {
                 String::new()
             };
             let effective_where = if where_sql == "1=0" {
-                if query.invert { "1=1".to_string() } else { "1=0".to_string() }
+                if query.invert {
+                    "1=1".to_string()
+                } else {
+                    "1=0".to_string()
+                }
             } else if query.invert {
                 format!("NOT ({})", where_sql)
             } else {
@@ -974,7 +1003,11 @@ impl SearchEngine for SqliteEngine {
                     let n = query.context_lines.unwrap_or(0) as i64;
                     let ctx_sql = format!(
                         "SELECT {} FROM {} WHERE rowid BETWEEN ? AND ? ORDER BY rowid",
-                        meta.col_names.iter().map(|c| super::quote_ident(c)).collect::<Vec<_>>().join(", "),
+                        meta.col_names
+                            .iter()
+                            .map(|c| super::quote_ident(c))
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         super::quote_ident(&meta.table_name),
                     );
                     let mut ctx_stmt = self.conn.prepare(&ctx_sql).unwrap();
@@ -989,7 +1022,10 @@ impl SearchEngine for SqliteEngine {
                         .unwrap()
                         .filter_map(|r| r.ok())
                         .map(|row_opts| {
-                            row_opts.into_iter().map(|v| v.unwrap_or_default()).collect::<Vec<_>>()
+                            row_opts
+                                .into_iter()
+                                .map(|v| v.unwrap_or_default())
+                                .collect::<Vec<_>>()
                         })
                         .collect();
 
@@ -1082,18 +1118,17 @@ impl SearchEngine for SqliteEngine {
 
     fn clear(&mut self) -> Result<()> {
         {
-            let mut stmt = self.conn.prepare(
-                "SELECT name FROM sqlite_master WHERE type='view'",
-            )?;
+            let mut stmt = self
+                .conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='view'")?;
             let views: Vec<String> = stmt
                 .query_map([], |row| row.get(0))?
                 .filter_map(|r| r.ok())
                 .collect();
             for view in &views {
-                let _ = self.conn.execute(
-                    &format!("DROP VIEW IF EXISTS {}", quote_ident(view)),
-                    [],
-                );
+                let _ = self
+                    .conn
+                    .execute(&format!("DROP VIEW IF EXISTS {}", quote_ident(view)), []);
             }
         }
 
@@ -1112,7 +1147,20 @@ impl SearchEngine for SqliteEngine {
 
         self.conn.execute("DELETE FROM sheets", [])?;
         self.conn.execute("DELETE FROM files", [])?;
-        let _ = self.conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('files', 'sheets')", []);
+        let _ = self.conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN ('files', 'sheets')",
+            [],
+        );
+
+        // Drop and clear all session temp tables
+        for meta in self.temp_tables.values() {
+            let _ = self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&meta.name)),
+                [],
+            );
+        }
+        self.temp_tables.clear();
+
         Ok(())
     }
 
@@ -1136,7 +1184,10 @@ impl SearchEngine for SqliteEngine {
         let rows: Vec<Vec<String>> = stmt
             .query_map([], |row| {
                 (0..col_count)
-                    .map(|i| row.get::<_, Option<String>>(i).map(|v| v.unwrap_or_default()))
+                    .map(|i| {
+                        row.get::<_, Option<String>>(i)
+                            .map(|v| v.unwrap_or_default())
+                    })
                     .collect::<Result<Vec<_>, _>>()
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1158,7 +1209,7 @@ impl SearchEngine for SqliteEngine {
         let mut stmt = match self.conn.prepare(
             "SELECT s.table_name, s.sheet_name, s.row_count, s.col_names, f.file_name
              FROM sheets s JOIN files f ON s.file_id = f.file_id
-             ORDER BY f.file_id, s.sheet_id"
+             ORDER BY f.file_id, s.sheet_id",
         ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
@@ -1177,27 +1228,48 @@ impl SearchEngine for SqliteEngine {
             Err(_) => return Vec::new(),
         };
 
-        rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
-            let columns: Vec<String> = if col_names_str.is_empty() {
-                vec![]
-            } else {
-                col_names_str.split('\x1f').map(|s| s.to_string()).collect()
-            };
-            let file_stem = std::path::Path::new(&file_name)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let alias = format!("{}.{}", file_stem, sheet_name);
-            crate::types::TableAliasInfo {
-                table_name,
-                alias,
-                file_name,
-                sheet_name,
-                row_count: row_count as usize,
-                columns,
-            }
-        }).collect()
+        let mut aliases: Vec<crate::types::TableAliasInfo> = rows
+            .into_iter()
+            .map(
+                |(table_name, sheet_name, row_count, col_names_str, file_name)| {
+                    let columns: Vec<String> = if col_names_str.is_empty() {
+                        vec![]
+                    } else {
+                        col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                    };
+                    let file_stem = std::path::Path::new(&file_name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let alias = format!("{}.{}", file_stem, sheet_name);
+                    crate::types::TableAliasInfo {
+                        table_name,
+                        alias,
+                        file_name,
+                        sheet_name,
+                        row_count: row_count as usize,
+                        columns,
+                        kind: crate::types::TableKind::File,
+                    }
+                },
+            )
+            .collect();
+
+        // Append session temp table aliases
+        for meta in self.temp_tables.values() {
+            aliases.push(crate::types::TableAliasInfo {
+                table_name: meta.name.clone(),
+                alias: format!("temp.{}", meta.name),
+                file_name: "<temp>".to_string(),
+                sheet_name: meta.name.clone(),
+                row_count: meta.row_count,
+                columns: meta.columns.clone(),
+                kind: crate::types::TableKind::Temp,
+            });
+        }
+
+        aliases
     }
 
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
@@ -1205,27 +1277,32 @@ impl SearchEngine for SqliteEngine {
             "SELECT s.sheet_name, s.row_count, s.col_names
              FROM sheets s JOIN files f ON s.file_id = f.file_id
              WHERE f.file_name = ?
-             ORDER BY s.sheet_id"
+             ORDER BY s.sheet_id",
         )?;
 
-        let sheet_infos: Vec<SheetMetadataInfo> = stmt.query_map(params![file_name], |row| {
-            let sheet_name: String = row.get(0)?;
-            let row_count: i32 = row.get(1)?;
-            let col_names_str: String = row.get(2)?;
-            let columns: Vec<String> = if col_names_str.is_empty() {
-                vec![]
-            } else {
-                col_names_str.split('\x1f').map(|s| s.to_string()).collect()
-            };
-            Ok(SheetMetadataInfo {
-                sheet_name,
-                row_count: row_count as usize,
-                columns,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let sheet_infos: Vec<SheetMetadataInfo> = stmt
+            .query_map(params![file_name], |row| {
+                let sheet_name: String = row.get(0)?;
+                let row_count: i32 = row.get(1)?;
+                let col_names_str: String = row.get(2)?;
+                let columns: Vec<String> = if col_names_str.is_empty() {
+                    vec![]
+                } else {
+                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                };
+                Ok(SheetMetadataInfo {
+                    sheet_name,
+                    row_count: row_count as usize,
+                    columns,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         if sheet_infos.is_empty() {
-            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
+            anyhow::bail!(
+                "File '{}' not found. Use list_files to see imported files.",
+                file_name
+            );
         }
 
         Ok(FileMetadataInfo {
@@ -1235,10 +1312,17 @@ impl SearchEngine for SqliteEngine {
         })
     }
 
-    fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
+    fn get_sheet_sample(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        sample_size: usize,
+    ) -> Result<SheetDataResult> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
 
-        let col_list: String = meta.col_names.iter()
+        let col_list: String = meta
+            .col_names
+            .iter()
             .map(|c| quote_ident(c))
             .collect::<Vec<_>>()
             .join(", ");
@@ -1281,14 +1365,17 @@ impl SearchEngine for SqliteEngine {
             meta.col_names.clone()
         };
 
-        let col_indices: Vec<usize> = selected_cols.iter()
+        let col_indices: Vec<usize> = selected_cols
+            .iter()
             .filter_map(|c| meta.col_names.iter().position(|h| h == c))
             .collect();
-        let col_names: Vec<String> = col_indices.iter()
+        let col_names: Vec<String> = col_indices
+            .iter()
             .map(|&i| meta.col_names[i].clone())
             .collect();
 
-        let col_list: String = col_names.iter()
+        let col_list: String = col_names
+            .iter()
             .map(|c| quote_ident(c))
             .collect::<Vec<_>>()
             .join(", ");
@@ -1325,73 +1412,110 @@ impl SearchEngine for SqliteEngine {
         {
             use crate::engine::write_xlsx;
 
-        let mut stmt = self.conn.prepare(
-            "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
              FROM sheets s JOIN files f ON s.file_id = f.file_id
              WHERE f.file_name = ?
-             ORDER BY s.sheet_id"
-        )?;
+             ORDER BY s.sheet_id",
+            )?;
 
-        let sheet_rows: Vec<(String, String, Vec<String>)> = stmt.query_map(params![file_name], |row| {
-            let sheet_name: String = row.get(0)?;
-            let table_name: String = row.get(1)?;
-            let col_names_str: String = row.get(2)?;
-            let col_names: Vec<String> = if col_names_str.is_empty() {
-                vec![]
-            } else {
-                col_names_str.split('\x1f').map(|s| s.to_string()).collect()
-            };
-            Ok((sheet_name, table_name, col_names))
-        })?.collect::<Result<Vec<_>, _>>()?;
+            let sheet_rows: Vec<(String, String, Vec<String>)> = stmt
+                .query_map(params![file_name], |row| {
+                    let sheet_name: String = row.get(0)?;
+                    let table_name: String = row.get(1)?;
+                    let col_names_str: String = row.get(2)?;
+                    let col_names: Vec<String> = if col_names_str.is_empty() {
+                        vec![]
+                    } else {
+                        col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                    };
+                    Ok((sheet_name, table_name, col_names))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
 
-        if sheet_rows.is_empty() {
-            anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
-        }
+            if sheet_rows.is_empty() {
+                anyhow::bail!(
+                    "File '{}' not found. Use list_files to see imported files.",
+                    file_name
+                );
+            }
 
-        let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
-        for (sheet_name, table_name, col_names) in &sheet_rows {
-            let col_list: String = col_names.iter()
-                .map(|c| quote_ident(c))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
-            let rows = self.query_rows(&sql, col_names)?;
-            sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
-        }
+            let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
+            for (sheet_name, table_name, col_names) in &sheet_rows {
+                let col_list: String = col_names
+                    .iter()
+                    .map(|c| quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
+                let rows = self.query_rows(&sql, col_names)?;
+                sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
+            }
 
-        let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data.iter()
-            .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
-            .collect();
+            let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data
+                .iter()
+                .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
+                .collect();
 
-        write_xlsx(&refs, output_path)
+            write_xlsx(&refs, output_path)
         }
         #[cfg(not(feature = "mcp-server"))]
         anyhow::bail!("save_as requires the mcp-server feature")
     }
 
-    fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
+    fn update_cell(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        row: usize,
+        column: &str,
+        value: &str,
+    ) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-        let col_idx = meta.col_names.iter().position(|h| h == column)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Column '{}' not found. Available columns: {}",
-                column, meta.col_names.join(", ")
-            ))?;
+        let col_idx = meta
+            .col_names
+            .iter()
+            .position(|h| h == column)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    column,
+                    meta.col_names.join(", ")
+                )
+            })?;
         let quoted_col = quote_ident(&meta.col_names[col_idx]);
-        let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
+        let sql = format!(
+            "UPDATE {} SET {} = ? WHERE rowid = ?",
+            quote_ident(&meta.table_name),
+            quoted_col
+        );
         let affected = self.conn.execute(&sql, params![value, (row + 1) as i64])?;
         if affected == 0 {
-            anyhow::bail!("Row {} out of range (sheet has {} rows)", row, meta.row_count);
+            anyhow::bail!(
+                "Row {} out of range (sheet has {} rows)",
+                row,
+                meta.row_count
+            );
         }
         Ok(())
     }
 
-    fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
+    fn update_cells(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        updates: &[(usize, String, String)],
+    ) -> Result<usize> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let mut count = 0usize;
         for (row, column, value) in updates {
             if let Some(col_idx) = meta.col_names.iter().position(|h| h == column) {
                 let quoted_col = quote_ident(&meta.col_names[col_idx]);
-                let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
+                let sql = format!(
+                    "UPDATE {} SET {} = ? WHERE rowid = ?",
+                    quote_ident(&meta.table_name),
+                    quoted_col
+                );
                 if self.conn.execute(&sql, params![value, (*row + 1) as i64])? > 0 {
                     count += 1;
                 }
@@ -1400,55 +1524,118 @@ impl SearchEngine for SqliteEngine {
         Ok(count)
     }
 
-    fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
+    fn insert_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        rows: Vec<Vec<String>>,
+    ) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let total = meta.row_count;
         let start = start_row.min(total);
         let col_count = meta.col_names.len();
-        let col_list = meta.col_names.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
+        let col_list = meta
+            .col_names
+            .iter()
+            .map(|c| quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
 
         let temp_table = format!("{}_edit_temp", meta.table_name);
 
-        let _ = self.conn.execute(&format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_table)), []);
+        let _ = self.conn.execute(
+            &format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_table)),
+            [],
+        );
 
-        let col_defs: Vec<String> = meta.col_names.iter().map(|c| format!("{} TEXT", quote_ident(c))).collect();
-        self.conn.execute(&format!("CREATE TABLE {} ({})", quote_ident(&temp_table), col_defs.join(", ")), [])?;
+        let col_defs: Vec<String> = meta
+            .col_names
+            .iter()
+            .map(|c| format!("{} TEXT", quote_ident(c)))
+            .collect();
+        self.conn.execute(
+            &format!(
+                "CREATE TABLE {} ({})",
+                quote_ident(&temp_table),
+                col_defs.join(", ")
+            ),
+            [],
+        )?;
 
         if start > 0 {
-            self.conn.execute(&format!(
-                "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid <= {}",
-                quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
-            ), [])?;
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid <= {}",
+                    quote_ident(&temp_table),
+                    col_list,
+                    col_list,
+                    quote_ident(&meta.table_name),
+                    start
+                ),
+                [],
+            )?;
         }
 
         let placeholders: Vec<&str> = (0..col_count).map(|_| "?").collect();
-        let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", quote_ident(&temp_table), col_list, placeholders.join(", "));
+        let insert_sql = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            quote_ident(&temp_table),
+            col_list,
+            placeholders.join(", ")
+        );
         for row in &rows {
             let mut padded = row.clone();
             padded.resize(col_count, String::new());
-            let values: Vec<Box<dyn rusqlite::types::ToSql>> = padded.into_iter()
+            let values: Vec<Box<dyn rusqlite::types::ToSql>> = padded
+                .into_iter()
                 .map(|s| Box::new(s) as Box<dyn rusqlite::types::ToSql>)
                 .collect();
-            self.conn.execute(&insert_sql, rusqlite::params_from_iter(values))?;
+            self.conn
+                .execute(&insert_sql, rusqlite::params_from_iter(values))?;
         }
 
         if start < total {
-            self.conn.execute(&format!(
-                "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid > {}",
-                quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
-            ), [])?;
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid > {}",
+                    quote_ident(&temp_table),
+                    col_list,
+                    col_list,
+                    quote_ident(&meta.table_name),
+                    start
+                ),
+                [],
+            )?;
         }
 
-        self.conn.execute(&format!("DROP TABLE {}", quote_ident(&meta.table_name)), [])?;
-        self.conn.execute(&format!("ALTER TABLE {} RENAME TO {}", quote_ident(&temp_table), quote_ident(&meta.table_name)), [])?;
+        self.conn
+            .execute(&format!("DROP TABLE {}", quote_ident(&meta.table_name)), [])?;
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} RENAME TO {}",
+                quote_ident(&temp_table),
+                quote_ident(&meta.table_name)
+            ),
+            [],
+        )?;
 
         let new_count = total + rows.len();
-        self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
+        self.conn.execute(
+            "UPDATE sheets SET row_count = ? WHERE table_name = ?",
+            params![new_count as i32, &meta.table_name],
+        )?;
 
         Ok(())
     }
 
-    fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
+    fn delete_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        count: usize,
+    ) -> Result<usize> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         if start_row >= meta.row_count {
             return Ok(0);
@@ -1461,67 +1648,121 @@ impl SearchEngine for SqliteEngine {
             "DELETE FROM {} WHERE rowid > ? AND rowid <= ?",
             quote_ident(&meta.table_name)
         );
-        self.conn.execute(&sql, params![start_row as i64, end as i64])?;
+        self.conn
+            .execute(&sql, params![start_row as i64, end as i64])?;
 
         let new_count = meta.row_count - actual_count;
-        self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
+        self.conn.execute(
+            "UPDATE sheets SET row_count = ? WHERE table_name = ?",
+            params![new_count as i32, &meta.table_name],
+        )?;
 
         Ok(actual_count)
     }
 
-    fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
+    fn add_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        column_name: &str,
+        default_value: &str,
+    ) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         if meta.col_names.iter().any(|h| h == column_name) {
-            anyhow::bail!("Column '{}' already exists in sheet '{}'", column_name, sheet_name);
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'",
+                column_name,
+                sheet_name
+            );
         }
 
         let quoted_col = quote_ident(column_name);
-        self.conn.execute(&format!(
-            "ALTER TABLE {} ADD COLUMN {} TEXT",
-            quote_ident(&meta.table_name), quoted_col
-        ), [])?;
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} ADD COLUMN {} TEXT",
+                quote_ident(&meta.table_name),
+                quoted_col
+            ),
+            [],
+        )?;
 
         if !default_value.is_empty() {
-            self.conn.execute(&format!(
-                "UPDATE {} SET {} = ? WHERE {} IS NULL",
-                quote_ident(&meta.table_name), quoted_col, quoted_col
-            ), params![default_value])?;
+            self.conn.execute(
+                &format!(
+                    "UPDATE {} SET {} = ? WHERE {} IS NULL",
+                    quote_ident(&meta.table_name),
+                    quoted_col,
+                    quoted_col
+                ),
+                params![default_value],
+            )?;
         }
 
         let mut new_col_names = meta.col_names.clone();
         new_col_names.push(column_name.to_string());
         let col_names_str = new_col_names.join("\x1f");
-        self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
+        self.conn.execute(
+            "UPDATE sheets SET col_names = ? WHERE table_name = ?",
+            params![&col_names_str, &meta.table_name],
+        )?;
 
         Ok(())
     }
 
-    fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
+    fn rename_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<()> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-        let col_idx = meta.col_names.iter().position(|h| h == old_name)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Column '{}' not found. Available columns: {}",
-                old_name, meta.col_names.join(", ")
-            ))?;
+        let col_idx = meta
+            .col_names
+            .iter()
+            .position(|h| h == old_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    old_name,
+                    meta.col_names.join(", ")
+                )
+            })?;
 
         if old_name != new_name && meta.col_names.iter().any(|h| h == new_name) {
-            anyhow::bail!("Column '{}' already exists in sheet '{}'", new_name, sheet_name);
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'",
+                new_name,
+                sheet_name
+            );
         }
 
-        self.conn.execute(&format!(
-            "ALTER TABLE {} RENAME COLUMN {} TO {}",
-            quote_ident(&meta.table_name), quote_ident(old_name), quote_ident(new_name)
-        ), [])?;
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} RENAME COLUMN {} TO {}",
+                quote_ident(&meta.table_name),
+                quote_ident(old_name),
+                quote_ident(new_name)
+            ),
+            [],
+        )?;
 
         let mut new_col_names = meta.col_names.clone();
         new_col_names[col_idx] = new_name.to_string();
         let col_names_str = new_col_names.join("\x1f");
-        self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
+        self.conn.execute(
+            "UPDATE sheets SET col_names = ? WHERE table_name = ?",
+            params![&col_names_str, &meta.table_name],
+        )?;
 
         Ok(())
     }
 
-    fn register_virtual(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
+    fn register_virtual(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
         self.import_excel(path, progress) // fall back to full import
     }
 
@@ -1533,7 +1774,174 @@ impl SearchEngine for SqliteEngine {
         Some(SheetState::Materialized)
     }
 
-    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
+    fn materialize_query(
+        &mut self,
+        name: &str,
+        sql: &str,
+        replace: bool,
+        max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo> {
+        super::validate_temp_table_name(name)?;
+        let sql = super::normalize_materialize_sql(sql);
+        super::validate_sql(sql)?;
+
+        let lower = name.to_lowercase();
+
+        // Check collision with any import table_name from sheets catalog
+        let sheet_table_names: Vec<String> = self
+            .conn
+            .prepare("SELECT table_name FROM sheets")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        for tn in &sheet_table_names {
+            if tn.to_lowercase() == lower {
+                anyhow::bail!(
+                    "Name '{}' collides with an imported table sheet. Choose a different name.",
+                    name
+                );
+            }
+        }
+
+        let exists_temp = self.temp_tables.contains_key(&lower);
+        if exists_temp && !replace {
+            anyhow::bail!(
+                "Temp table '{}' already exists. Use replace: true to overwrite.",
+                name
+            );
+        }
+
+        // Drop existing if replacing
+        if exists_temp && replace {
+            let existing_meta = self.temp_tables.get(&lower).unwrap();
+            self.conn.execute(
+                &format!(
+                    "DROP TABLE IF EXISTS {}",
+                    super::quote_ident(&existing_meta.name)
+                ),
+                [],
+            )?;
+            self.temp_tables.remove(&lower);
+        }
+
+        // CTAS
+        let qname = super::quote_ident(name);
+        if let Some(limit) = max_rows {
+            self.conn.execute(
+                &format!(
+                    "CREATE TABLE {} AS SELECT * FROM ({}) LIMIT {}",
+                    qname, sql, limit
+                ),
+                [],
+            )?;
+        } else {
+            self.conn
+                .execute(&format!("CREATE TABLE {} AS {}", qname, sql), [])?;
+        }
+
+        let introspect = (|| -> Result<(Vec<String>, usize)> {
+            let mut pragma_stmt = self
+                .conn
+                .prepare(&format!("PRAGMA table_info({})", qname))?;
+            let columns: Vec<String> = pragma_stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if columns.is_empty() {
+                anyhow::bail!(
+                    "Failed to introspect columns for temp table '{}'",
+                    name
+                );
+            }
+            let row_count: i64 = self.conn.query_row(
+                &format!("SELECT COUNT(*) FROM {}", qname),
+                [],
+                |row| row.get(0),
+            )?;
+            Ok((columns, row_count as usize))
+        })();
+
+        let (columns, row_count) = match introspect {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute(&format!("DROP TABLE IF EXISTS {}", qname), []);
+                return Err(e.context(format!(
+                    "Temp table '{}' created but metadata introspection failed; table dropped",
+                    name
+                )));
+            }
+        };
+
+        let meta = TempTableMeta {
+            name: name.to_string(),
+            columns: columns.clone(),
+            row_count,
+        };
+        self.temp_tables.insert(lower, meta);
+
+        Ok(crate::types::TempTableInfo {
+            name: name.to_string(),
+            alias: format!("temp.{}", name),
+            row_count,
+            columns,
+            replaced: exists_temp,
+        })
+    }
+
+    fn drop_temp_table(&mut self, name: &str) -> Result<()> {
+        super::validate_temp_table_name(name)?;
+        let lower = name.to_lowercase();
+
+        match self.temp_tables.remove(&lower) {
+            Some(meta) => {
+                self.conn.execute(
+                    &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&meta.name)),
+                    [],
+                )?;
+                Ok(())
+            }
+            None => {
+                // Check if it's an import table (for better error message)
+                let is_import: bool = self
+                    .conn
+                    .prepare("SELECT table_name FROM sheets")
+                    .ok()
+                    .map(|mut stmt| {
+                        stmt.query_map([], |row| row.get::<_, String>(0))
+                            .ok()
+                            .map(|mut mapped| {
+                                mapped.any(|r| {
+                                    r.map(|tn| tn.to_lowercase() == lower).unwrap_or(false)
+                                })
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
+                if is_import {
+                    anyhow::bail!(
+                        "'{}' is an imported file table, not a session temp table. Cannot drop.",
+                        name
+                    );
+                }
+
+                anyhow::bail!("Unknown temp table: '{}'", name);
+            }
+        }
+    }
+
+    fn get_sheet_statistics(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        max_top_values: usize,
+    ) -> Result<SheetStatistics> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let mut columns = Vec::new();
         let total_count = meta.row_count;
@@ -1543,14 +1951,17 @@ impl SearchEngine for SqliteEngine {
 
             let count_sql = format!(
                 "SELECT COUNT({}) AS non_null, COUNT(DISTINCT {}) AS distinct_cnt FROM {}",
-                quoted, quoted, super::quote_ident(&meta.table_name)
+                quoted,
+                quoted,
+                super::quote_ident(&meta.table_name)
             );
-            let (non_null_count, distinct_count): (usize, usize) = self.conn.query_row(
-                &count_sql, [], |row| Ok((
-                    row.get::<_, i64>(0)? as usize,
-                    row.get::<_, i64>(1)? as usize,
-                ))
-            )?;
+            let (non_null_count, distinct_count): (usize, usize) =
+                self.conn.query_row(&count_sql, [], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? as usize,
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                })?;
 
             let top_sql = format!(
                 "SELECT {}, COUNT(*) AS cnt FROM {} WHERE {} IS NOT NULL AND {} != '' GROUP BY {} ORDER BY cnt DESC LIMIT {}",

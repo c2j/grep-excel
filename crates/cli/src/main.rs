@@ -54,17 +54,28 @@ fn parse_file_args(raw_args: &[String]) -> Vec<FileArg> {
         } else {
             // Known value-taking flags
             let value_taking = [
-                "-q", "--query",
-                "-c", "--column",
-                "-s", "--sheet",
-                "-m", "--mode",
-                "-x", "--sql",
-                "-e", "--export",
-                "-E", "--exec",
-                "-g", "--aggregate",
-                "-f", "--format",
-                "-r", "--repair",
-                "-X", "--run",
+                "-q",
+                "--query",
+                "-c",
+                "--column",
+                "-s",
+                "--sheet",
+                "-m",
+                "--mode",
+                "-x",
+                "--sql",
+                "-e",
+                "--export",
+                "-E",
+                "--exec",
+                "-g",
+                "--aggregate",
+                "-f",
+                "--format",
+                "-r",
+                "--repair",
+                "-X",
+                "--run",
                 "--run-output-column",
                 "--kdocs-cookie",
             ];
@@ -157,7 +168,11 @@ struct Args {
     )]
     invert: bool,
 
-    #[arg(short = 'r', long, help = "尝试修复损坏的xlsx文件后再导入（ZIP/XML级别修复）")]
+    #[arg(
+        short = 'r',
+        long,
+        help = "尝试修复损坏的xlsx文件后再导入（ZIP/XML级别修复）"
+    )]
     repair: bool,
 
     #[arg(
@@ -334,10 +349,8 @@ fn main() -> Result<()> {
 
 fn run_tui(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Result<()> {
     // File-backed DuckDB enables concurrent materialize without blocking queries
-    let db_path = std::env::temp_dir().join(format!(
-        "grep_excel_tui_{}.duckdb",
-        std::process::id()
-    ));
+    let db_path =
+        std::env::temp_dir().join(format!("grep_excel_tui_{}.duckdb", std::process::id()));
     let database = DefaultEngine::with_path(&db_path).or_else(|_| DefaultEngine::new())?;
     let (event_tx, event_rx) = create_event_channel();
     let mut app = App::new(database, event_tx, event_rx);
@@ -477,17 +490,23 @@ fn run_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resul
                         _temp_guards.push(g);
                     }
                     if !path.exists() {
-                        eprintln!(
-                            "{}",
-                            grep_excel::i18n::cli_file_not_found(&display_name)
-                        );
+                        eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                         continue;
                     }
-                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
+                    match import_file_with_format_override(
+                        &mut db,
+                        input,
+                        format_overrides,
+                        args.repair,
+                    ) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
-                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
                             )
                         }
                         Err(e) => eprintln!(
@@ -515,12 +534,19 @@ fn run_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resul
                 Ok(info) => {
                     eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                        grep_excel::i18n::cli_imported(
+                            &info.name,
+                            info.sheets.len(),
+                            info.total_rows
+                        )
                     )
                 }
                 Err(e) => eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_import_failed(&path.display().to_string(), &e.to_string())
+                    grep_excel::i18n::cli_import_failed(
+                        &path.display().to_string(),
+                        &e.to_string()
+                    )
                 ),
             }
         }
@@ -685,17 +711,23 @@ fn run_sql_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> R
                         _temp_guards.push(g);
                     }
                     if !path.exists() {
-                        eprintln!(
-                            "{}",
-                            grep_excel::i18n::cli_file_not_found(&display_name)
-                        );
+                        eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                         continue;
                     }
-                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
+                    match import_file_with_format_override(
+                        &mut db,
+                        input,
+                        format_overrides,
+                        args.repair,
+                    ) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
-                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
                             );
                         }
                         Err(e) => eprintln!(
@@ -723,12 +755,19 @@ fn run_sql_cli(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> R
                 Ok(info) => {
                     eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                        grep_excel::i18n::cli_imported(
+                            &info.name,
+                            info.sheets.len(),
+                            info.total_rows
+                        )
                     );
                 }
                 Err(e) => eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_import_failed(&path.display().to_string(), &e.to_string())
+                    grep_excel::i18n::cli_import_failed(
+                        &path.display().to_string(),
+                        &e.to_string()
+                    )
                 ),
             }
         }
@@ -854,12 +893,11 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
                     continue;
                 }
             };
-            if let Some(g) = guard { _temp_guards.push(g); }
+            if let Some(g) = guard {
+                _temp_guards.push(g);
+            }
             if !path.exists() {
-                eprintln!(
-                    "{}",
-                    grep_excel::i18n::cli_file_not_found(&display_name)
-                );
+                eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                 continue;
             }
             let file_stem = std::path::Path::new(&display_name)
@@ -872,11 +910,14 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
             let result = if let Some(&fmt) = format_overrides.get(input) {
                 use grep_excel_core::excel::parse_file_as;
                 parse_file_as(&path, Some(fmt)).map(|sheets| {
-                    sheets.into_iter().map(|s| grep_excel_core::excel::SheetMetadata {
-                        name: s.name,
-                        row_count: s.rows.len(),
-                        headers: s.headers,
-                    }).collect::<Vec<_>>()
+                    sheets
+                        .into_iter()
+                        .map(|s| grep_excel_core::excel::SheetMetadata {
+                            name: s.name,
+                            row_count: s.rows.len(),
+                            headers: s.headers,
+                        })
+                        .collect::<Vec<_>>()
                 })
             } else {
                 parse_file_metadata(&path)
@@ -904,10 +945,7 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
                     if !args.repair {
                         eprintln!(
                             "{}",
-                            grep_excel::i18n::cli_import_failed(
-                                &file_name,
-                                &e.to_string()
-                            )
+                            grep_excel::i18n::cli_import_failed(&file_name, &e.to_string())
                         );
                         continue;
                     }
@@ -980,17 +1018,23 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
             if let Some(&fmt) = format_overrides.get(input) {
                 use grep_excel_core::excel::parse_file_as;
                 let result = parse_file_as(&file, Some(fmt)).map(|sheets| {
-                    sheets.into_iter().map(|s| grep_excel_core::excel::SheetMetadata {
-                        name: s.name,
-                        row_count: s.rows.len(),
-                        headers: s.headers,
-                    }).collect::<Vec<_>>()
+                    sheets
+                        .into_iter()
+                        .map(|s| grep_excel_core::excel::SheetMetadata {
+                            name: s.name,
+                            row_count: s.rows.len(),
+                            headers: s.headers,
+                        })
+                        .collect::<Vec<_>>()
                 });
                 match result {
                     Ok(sheets) if !sheets.is_empty() => {
                         let sheet_count = sheets.len();
                         let total_rows: usize = sheets.iter().map(|s| s.row_count).sum();
-                        eprintln!("{}", grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows));
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_imported(&file_name, sheet_count, total_rows)
+                        );
                         for (sheet_idx, meta) in sheets.into_iter().enumerate() {
                             tables.push(TableInfo {
                                 alias: format!("{}.{}", file_stem, meta.name),
@@ -1003,7 +1047,13 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        eprintln!("{}", grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string()));
+                        eprintln!(
+                            "{}",
+                            grep_excel::i18n::cli_import_failed(
+                                &file.display().to_string(),
+                                &e.to_string()
+                            )
+                        );
                     }
                 }
                 continue;
@@ -1142,10 +1192,7 @@ fn run_list_tables_cli(args: &Args, format_overrides: &HashMap<String, FileForma
     }
 
     println!();
-    println!(
-        "{}",
-        grep_excel::i18n::cli_list_tables_footer(tables.len())
-    );
+    println!("{}", grep_excel::i18n::cli_list_tables_footer(tables.len()));
 
     Ok(())
 }
@@ -1163,19 +1210,27 @@ fn run_interactive_cli(args: &Args, format_overrides: &HashMap<String, FileForma
         {
             match resolve_one(input, _share_auth.as_ref()) {
                 Ok((path, display_name, guard)) => {
-                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
                     if !path.exists() {
-                        eprintln!(
-                            "{}",
-                            grep_excel::i18n::cli_file_not_found(&display_name)
-                        );
+                        eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                         continue;
                     }
-                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
+                    match import_file_with_format_override(
+                        &mut db,
+                        input,
+                        format_overrides,
+                        args.repair,
+                    ) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
-                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
                             );
                         }
                         Err(e) => eprintln!(
@@ -1203,12 +1258,19 @@ fn run_interactive_cli(args: &Args, format_overrides: &HashMap<String, FileForma
                 Ok(info) => {
                     eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                        grep_excel::i18n::cli_imported(
+                            &info.name,
+                            info.sheets.len(),
+                            info.total_rows
+                        )
                     );
                 }
                 Err(e) => eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                    grep_excel::i18n::cli_import_failed(
+                        &file.display().to_string(),
+                        &e.to_string()
+                    )
                 ),
             }
         }
@@ -1231,19 +1293,27 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
         {
             match resolve_one(input, _share_auth.as_ref()) {
                 Ok((path, display_name, guard)) => {
-                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
                     if !path.exists() {
-                        eprintln!(
-                            "{}",
-                            grep_excel::i18n::cli_file_not_found(&display_name)
-                        );
+                        eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                         continue;
                     }
-                    match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
+                    match import_file_with_format_override(
+                        &mut db,
+                        input,
+                        format_overrides,
+                        args.repair,
+                    ) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
-                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
                             );
                         }
                         Err(e) => eprintln!(
@@ -1271,12 +1341,19 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
                 Ok(info) => {
                     eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                        grep_excel::i18n::cli_imported(
+                            &info.name,
+                            info.sheets.len(),
+                            info.total_rows
+                        )
                     );
                 }
                 Err(e) => eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                    grep_excel::i18n::cli_import_failed(
+                        &file.display().to_string(),
+                        &e.to_string()
+                    )
                 ),
             }
         }
@@ -1292,8 +1369,11 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
         };
         // --sql mode doesn't carry file/sheet metadata; use empty placeholders.
         // row_index maps to result position for write-back.
-        sql_result.rows.iter().enumerate().map(|(row_idx, row)| {
-            SearchResult {
+        sql_result
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row_idx, row)| SearchResult {
                 sheet_name: String::new(),
                 file_name: String::new(),
                 row: row.clone(),
@@ -1302,8 +1382,8 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
                 col_widths: vec![],
                 row_index: row_idx,
                 context: ContextRows::default(),
-            }
-        }).collect()
+            })
+            .collect()
     } else if args.query.is_some() {
         let query = SearchQuery {
             text: args.query.clone().unwrap_or_default(),
@@ -1337,7 +1417,8 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
     }
 
     if let Some(ref output_col) = args.run_output_column {
-        let mut seen_sheets: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let mut seen_sheets: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         for result in &results {
             let key = (result.file_name.clone(), result.sheet_name.clone());
             if seen_sheets.insert(key.clone()) {
@@ -1434,7 +1515,9 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
 
     eprintln!(
         "Done: {} succeeded, {} failed, {} total rows processed.",
-        success_count, fail_count, results.len()
+        success_count,
+        fail_count,
+        results.len()
     );
 
     if fail_count > 0 && success_count == 0 {
@@ -1553,22 +1636,30 @@ fn run_exec(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resu
         {
             match resolve_one(input, _share_auth.as_ref()) {
                 Ok((path, display_name, guard)) => {
-                    if let Some(g) = guard { _temp_guards.push(g); }
+                    if let Some(g) = guard {
+                        _temp_guards.push(g);
+                    }
                     if !path.exists() {
-                        eprintln!(
-                            "{}",
-                            grep_excel::i18n::cli_file_not_found(&display_name)
-                        );
+                        eprintln!("{}", grep_excel::i18n::cli_file_not_found(&display_name));
                         continue;
                     }
                     let canonical = std::fs::canonicalize(&path)
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| path.display().to_string());
-                        match import_file_with_format_override(&mut db, input, format_overrides, args.repair) {
+                    match import_file_with_format_override(
+                        &mut db,
+                        input,
+                        format_overrides,
+                        args.repair,
+                    ) {
                         Ok(info) => {
                             eprintln!(
                                 "{}",
-                                grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                                grep_excel::i18n::cli_imported(
+                                    &info.name,
+                                    info.sheets.len(),
+                                    info.total_rows
+                                )
                             );
                             import_paths.insert(info.name.clone(), canonical);
                         }
@@ -1600,13 +1691,20 @@ fn run_exec(args: &Args, format_overrides: &HashMap<String, FileFormat>) -> Resu
                 Ok(info) => {
                     eprintln!(
                         "{}",
-                        grep_excel::i18n::cli_imported(&info.name, info.sheets.len(), info.total_rows)
+                        grep_excel::i18n::cli_imported(
+                            &info.name,
+                            info.sheets.len(),
+                            info.total_rows
+                        )
                     );
                     import_paths.insert(info.name.clone(), canonical);
                 }
                 Err(e) => eprintln!(
                     "{}",
-                    grep_excel::i18n::cli_import_failed(&file.display().to_string(), &e.to_string())
+                    grep_excel::i18n::cli_import_failed(
+                        &file.display().to_string(),
+                        &e.to_string()
+                    )
                 ),
             }
         }
@@ -1657,7 +1755,9 @@ fn print_exec_help() {
             println!();
             println!("  相关选项:");
             println!("    --run-output-column <列>  命令 stdout 写入该列 (不存在则自动创建)");
-            println!("    --export <路径>     处理完成后导出完整 Excel 文件 (需要 mcp-server feature)");
+            println!(
+                "    --export <路径>     处理完成后导出完整 Excel 文件 (需要 mcp-server feature)"
+            );
             println!();
             println!("\x1b[1m═══ --exec: JSON MCP 工具模式 ═══\x1b[0m");
             println!("  以 JSON 格式执行内置 MCP 工具。");
@@ -1699,7 +1799,9 @@ fn print_exec_help() {
             println!();
             println!("工具列表:");
             println!();
-            println!("  \x1b[1mimport_file\x1b[0m          导入表格文件 (Excel/CSV/HTML/文本/Markdown)");
+            println!(
+                "  \x1b[1mimport_file\x1b[0m          导入表格文件 (Excel/CSV/HTML/文本/Markdown)"
+            );
             println!("                       参数: file_path (文件路径)");
             println!();
             println!("  \x1b[1mlist_files\x1b[0m           列出所有已导入文件及其 sheet 信息");
@@ -1749,6 +1851,12 @@ fn print_exec_help() {
             println!();
             println!("  \x1b[1msave\x1b[0m                 保存回原文件 (覆盖)");
             println!("                       参数: file_name, sheet_name?");
+            println!();
+            println!("  \x1b[1mmaterialize_query\x1b[0m     将 SQL 查询结果物化为会话临时表");
+            println!("                       参数: name, sql, replace? (默认 true), max_rows?");
+            println!();
+            println!("  \x1b[1mdrop_temp_table\x1b[0m       删除由 materialize_query 创建的临时表");
+            println!("                       参数: name");
         }
         grep_excel::i18n::Lang::En => {
             println!("grep_excel --exec / --run help");
@@ -1879,6 +1987,14 @@ fn print_exec_help() {
                 "  \x1b[1msave\x1b[0m                 Save back to the original file (overwrite)"
             );
             println!("                       Params: file_name, sheet_name?");
+            println!();
+            println!("  \x1b[1mmaterialize_query\x1b[0m     Materialize a SQL query result as a session temp table");
+            println!(
+                "                       Params: name, sql, replace? (default true), max_rows?"
+            );
+            println!();
+            println!("  \x1b[1mdrop_temp_table\x1b[0m       Drop a temp table created by materialize_query");
+            println!("                       Params: name");
         }
     }
 }
@@ -2503,8 +2619,18 @@ fn exec_dispatch(
                 anyhow::bail!("save requires the mcp-server feature to be enabled")
             }
         }
+        "materialize_query" => {
+            let p: MaterializeQueryParams = serde_json::from_value(params.clone())?;
+            let info = db.materialize_query(&p.name, &p.sql, p.replace.unwrap_or(true), p.max_rows)?;
+            Ok(serde_json::to_string_pretty(&info)?)
+        }
+        "drop_temp_table" => {
+            let p: DropTempTableParams = serde_json::from_value(params.clone())?;
+            db.drop_temp_table(&p.name)?;
+            Ok(format!("Dropped temp table '{}'", p.name))
+        }
         _ => anyhow::bail!(
-            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column",
+            "Unknown tool: '{}'. Available: import_file, list_files, get_metadata, get_sheet_sample, get_sheet_data, get_sheet_statistics, search, execute_sql, export_query, save_as, save, update_cell, update_cells, insert_rows, delete_rows, add_column, rename_column, materialize_query, drop_temp_table",
             tool
         ),
     }

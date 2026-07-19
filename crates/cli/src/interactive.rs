@@ -125,14 +125,9 @@ pub fn run<Engine: SearchEngine>(db: &mut Engine, no_history: bool) -> Result<()
                     let _ = rl.save_history(p);
                 }
 
-                    if trimmed.starts_with('.') {
-                    if handle_dot_command(
-                        trimmed,
-                        db,
-                        rl.history(),
-                        &mut output,
-                        &mut last_result,
-                    )? {
+                if trimmed.starts_with('.') {
+                    if handle_dot_command(trimmed, db, rl.history(), &mut output, &mut last_result)?
+                    {
                         // Close open output file on exit — dropping the
                         // BufWriter flushes buffered data.
                         if let OutputTarget::File(mut f) =
@@ -190,6 +185,8 @@ fn handle_dot_command<Engine: SearchEngine>(
         ".history" => print_history(history),
         ".output" => handle_output_command(args, output),
         ".save" => handle_save_command(args, last_result),
+        ".let" => handle_let_command(args, db),
+        ".drop" => handle_drop_command(args, db),
         other => println!("{}", i18n::repl_unknown_dot(other)),
     }
     Ok(false)
@@ -218,17 +215,15 @@ fn handle_output_command(args: &str, output: &mut OutputTarget) {
             println!("{}", i18n::repl_output_off());
             *output = OutputTarget::Stdout;
         }
-        ParsedOutput::File(path) => {
-            match File::create(&path) {
-                Ok(f) => {
-                    println!("{}", i18n::repl_output_on(&path));
-                    *output = OutputTarget::File(BufWriter::new(f));
-                }
-                Err(e) => {
-                    println!("{}", i18n::repl_output_open_error(&path, &e.to_string()));
-                }
+        ParsedOutput::File(path) => match File::create(&path) {
+            Ok(f) => {
+                println!("{}", i18n::repl_output_on(&path));
+                *output = OutputTarget::File(BufWriter::new(f));
             }
-        }
+            Err(e) => {
+                println!("{}", i18n::repl_output_open_error(&path, &e.to_string()));
+            }
+        },
     }
 }
 
@@ -269,6 +264,62 @@ fn handle_save_command(args: &str, last_result: &Option<SqlResult>) {
         Err(e) => println!("{}", i18n::repl_save_error(&path, &e.to_string())),
     }
 }
+
+// ---------------------------------------------------------------------------
+// .let — materialize query as temp table
+// ---------------------------------------------------------------------------
+
+/// Parse a `.let` command line: returns `(name, sql)`.
+/// Expected format: `.let <name> AS <sql...>`
+fn parse_let_args(args: &str) -> Option<(String, String)> {
+    let args = args.trim();
+    let lower = args.to_ascii_lowercase();
+    // Find " as " as delimiter (case-insensitive)
+    let as_pos = lower.find(" as ")?;
+    let name = args[..as_pos].trim();
+    let sql = args[as_pos + 4..].trim();
+    if name.is_empty() || sql.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), sql.to_string()))
+}
+
+fn handle_let_command<Engine: SearchEngine>(args: &str, db: &mut Engine) {
+    let (name, sql) = match parse_let_args(args) {
+        Some(v) => v,
+        None => {
+            println!("{}", i18n::repl_let_usage());
+            return;
+        }
+    };
+    match db.materialize_query(&name, &sql, true, None) {
+        Ok(info) => println!(
+            "{}",
+            i18n::repl_let_ok(&info.name, info.row_count, info.columns.len())
+        ),
+        Err(e) => println!("{}", i18n::repl_let_error(&name, &e.to_string())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// .drop — drop temp table
+// ---------------------------------------------------------------------------
+
+fn handle_drop_command<Engine: SearchEngine>(args: &str, db: &mut Engine) {
+    let name = args.trim();
+    if name.is_empty() {
+        println!("{}", i18n::repl_drop_usage());
+        return;
+    }
+    match db.drop_temp_table(name) {
+        Ok(()) => println!("{}", i18n::repl_drop_ok(name)),
+        Err(e) => println!("{}", i18n::repl_drop_error(name, &e.to_string())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// .save — one-shot save of last result
+// ---------------------------------------------------------------------------
 
 /// Extract `(path, format)` from args like `"result.csv csv"`.
 fn parse_save_args(args: &str) -> (String, Option<String>) {
@@ -899,5 +950,55 @@ mod tests {
         let result = make_fixture();
         let err = write_save_file(&result, "", "csv").unwrap_err();
         assert!(err.to_string().contains("no output path"));
+    }
+
+    // -- parse_let_args -------------------------------------------------------
+
+    #[test]
+    fn test_parse_let_args_basic() {
+        let (name, sql) = parse_let_args("my_table AS SELECT * FROM sheet_1_0").unwrap();
+        assert_eq!(name, "my_table");
+        assert_eq!(sql, "SELECT * FROM sheet_1_0");
+    }
+
+    #[test]
+    fn test_parse_let_args_case_insensitive_as() {
+        let (name, sql) = parse_let_args("foo As SELECT 1").unwrap();
+        assert_eq!(name, "foo");
+        assert_eq!(sql, "SELECT 1");
+    }
+
+    #[test]
+    fn test_parse_let_args_uppercase_as() {
+        let (name, sql) = parse_let_args("foo AS SELECT 1").unwrap();
+        assert_eq!(name, "foo");
+        assert_eq!(sql, "SELECT 1");
+    }
+
+    #[test]
+    fn test_parse_let_args_sql_contains_as() {
+        let (name, sql) = parse_let_args("t AS SELECT x AS y FROM z").unwrap();
+        assert_eq!(name, "t");
+        assert_eq!(sql, "SELECT x AS y FROM z");
+    }
+
+    #[test]
+    fn test_parse_let_args_empty_name() {
+        assert!(parse_let_args(" AS SELECT 1").is_none());
+    }
+
+    #[test]
+    fn test_parse_let_args_empty_sql() {
+        assert!(parse_let_args("foo AS ").is_none());
+    }
+
+    #[test]
+    fn test_parse_let_args_no_as() {
+        assert!(parse_let_args("foo bar").is_none());
+    }
+
+    #[test]
+    fn test_parse_let_args_empty_string() {
+        assert!(parse_let_args("").is_none());
     }
 }
