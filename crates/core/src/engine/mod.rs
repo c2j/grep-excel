@@ -398,3 +398,47 @@ pub fn find_match_spans(mode: SearchMode, query: &str, value: &str) -> Vec<(usiz
         SearchMode::Wildcard => vec![(0, value.len())],
     }
 }
+
+pub fn validate_temp_table_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("Temp table name must not be empty");
+    }
+    if name.len() > 64 {
+        anyhow::bail!("Temp table name must be at most 64 characters");
+    }
+    if name.starts_with("sheet_") {
+        anyhow::bail!("Temp table name must not start with 'sheet_'");
+    }
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        anyhow::bail!("Temp table name must start with a letter or underscore");
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        anyhow::bail!(
+            "Temp table name may only contain letters, digits, and underscores"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod temp_name_tests {
+    use super::validate_temp_table_name;
+
+    #[test]
+    fn accepts_simple_names() {
+        assert!(validate_temp_table_name("eng").is_ok());
+        assert!(validate_temp_table_name("t1").is_ok());
+        assert!(validate_temp_table_name("_x").is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_names() {
+        assert!(validate_temp_table_name("").is_err());
+        assert!(validate_temp_table_name("1ab").is_err());
+        assert!(validate_temp_table_name("a-b").is_err());
+        assert!(validate_temp_table_name("sheet_1_0").is_err());
+        assert!(validate_temp_table_name("a.b").is_err());
+        assert!(validate_temp_table_name(&"a".repeat(65)).is_err());
+    }
+}

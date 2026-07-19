@@ -296,6 +296,7 @@ impl SearchEngine for MemEngine {
                     sheet_name: s.sheet_name.clone(),
                     row_count: s.rows.len(),
                     columns: s.headers.clone(),
+                    kind: crate::types::TableKind::File,
                 }
             })
             .collect()

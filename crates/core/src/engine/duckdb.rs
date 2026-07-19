@@ -669,6 +669,7 @@ impl SearchEngine for DuckDbEngine {
                     sheet_name,
                     row_count: row_count as usize,
                     columns,
+                    kind: crate::types::TableKind::File,
                 }
             }).collect()
         }

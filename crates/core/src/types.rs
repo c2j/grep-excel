@@ -120,6 +120,19 @@ pub struct SheetDataResult {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TableKind {
+    File,
+    Temp,
+}
+
+impl Default for TableKind {
+    fn default() -> Self {
+        Self::File
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableAliasInfo {
     pub table_name: String,
@@ -128,6 +141,17 @@ pub struct TableAliasInfo {
     pub sheet_name: String,
     pub row_count: usize,
     pub columns: Vec<String>,
+    #[serde(default)]
+    pub kind: TableKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TempTableInfo {
+    pub name: String,
+    pub alias: String,
+    pub row_count: usize,
+    pub columns: Vec<String>,
+    pub replaced: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -350,4 +374,24 @@ pub struct GetSheetStatisticsParams {
     pub sheet_name: String,
     #[cfg_attr(feature = "mcp-server", schemars(description = "Max number of top values to return per column (default 5). MUST be a number, not a string."))]
     pub max_top_values: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+pub struct MaterializeQueryParams {
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Session table name: [A-Za-z_][A-Za-z0-9_]{0,63}"))]
+    pub name: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Read-only SQL (SELECT/WITH/...) whose full result is stored as a session table"))]
+    pub sql: String,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Replace existing temp table with the same name (default true)"))]
+    pub replace: Option<bool>,
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Optional safety cap on rows materialized. MUST be a number, not a string."))]
+    pub max_rows: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+pub struct DropTempTableParams {
+    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the session temp table to drop"))]
+    pub name: String,
 }
