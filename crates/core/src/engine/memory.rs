@@ -890,3 +890,32 @@ fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCo
     }
     true
 }
+
+#[cfg(test)]
+mod temp_table_stub_tests {
+    use super::*;
+
+    #[test]
+    fn materialize_query_unsupported_on_memory() {
+        let mut eng = MemEngine::new().unwrap();
+        let err = eng
+            .materialize_query("t", "SELECT 1", true, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("memory engine"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn drop_temp_table_unsupported_on_memory() {
+        let mut eng = MemEngine::new().unwrap();
+        let err = eng.drop_temp_table("t").unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("memory engine"),
+            "got: {}",
+            err
+        );
+    }
+}

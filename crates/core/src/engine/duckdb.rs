@@ -1328,6 +1328,7 @@ impl SearchEngine for DuckDbEngine {
         max_rows: Option<usize>,
     ) -> Result<crate::types::TempTableInfo> {
         super::validate_temp_table_name(name)?;
+        let sql = super::normalize_materialize_sql(sql);
         super::validate_sql(sql)?;
 
         let lower = name.to_lowercase();
@@ -1393,35 +1394,41 @@ impl SearchEngine for DuckDbEngine {
                 .execute(&format!("CREATE TABLE {} AS {}", qname, sql), [])?;
         }
 
-        // Introspect columns
-        let columns: Vec<String> = self
-            .conn
-            .prepare(&format!(
+        let introspect = (|| -> Result<(Vec<String>, usize)> {
+            let mut stmt = self.conn.prepare(
                 "SELECT column_name FROM information_schema.columns \
                  WHERE table_name = ? AND table_schema = 'main' \
-                 ORDER BY ordinal_position"
-            ))
-            .ok()
-            .map(|mut stmt| {
-                stmt.query_map(params![name], |row: &::duckdb::Row| row.get::<_, String>(0))
-                    .ok()
-                    .map(|mapped| {
-                        mapped
-                            .filter_map(|r: std::result::Result<String, ::duckdb::Error>| r.ok())
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-
-        let row_count: usize = self
-            .conn
-            .query_row(
+                 ORDER BY ordinal_position",
+            )?;
+            let columns: Vec<String> = stmt
+                .query_map(params![name], |row: &::duckdb::Row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if columns.is_empty() {
+                anyhow::bail!(
+                    "Failed to introspect columns for temp table '{}'",
+                    name
+                );
+            }
+            let row_count: i64 = self.conn.query_row(
                 &format!("SELECT COUNT(*) FROM {}", qname),
                 [],
-                |row: &::duckdb::Row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0) as usize;
+                |row: &::duckdb::Row| row.get(0),
+            )?;
+            Ok((columns, row_count as usize))
+        })();
+
+        let (columns, row_count) = match introspect {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute(&format!("DROP TABLE IF EXISTS {}", qname), []);
+                return Err(e.context(format!(
+                    "Temp table '{}' created but metadata introspection failed; table dropped",
+                    name
+                )));
+            }
+        };
 
         let meta = TempTableMeta {
             name: name.to_string(),

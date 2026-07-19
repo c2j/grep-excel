@@ -1782,6 +1782,7 @@ impl SearchEngine for SqliteEngine {
         max_rows: Option<usize>,
     ) -> Result<crate::types::TempTableInfo> {
         super::validate_temp_table_name(name)?;
+        let sql = super::normalize_materialize_sql(sql);
         super::validate_sql(sql)?;
 
         let lower = name.to_lowercase();
@@ -1843,21 +1844,39 @@ impl SearchEngine for SqliteEngine {
                 .execute(&format!("CREATE TABLE {} AS {}", qname, sql), [])?;
         }
 
-        // Introspect columns via PRAGMA table_info
-        let mut pragma_stmt = self
-            .conn
-            .prepare(&format!("PRAGMA table_info({})", qname))?;
-        let columns: Vec<String> = pragma_stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let introspect = (|| -> Result<(Vec<String>, usize)> {
+            let mut pragma_stmt = self
+                .conn
+                .prepare(&format!("PRAGMA table_info({})", qname))?;
+            let columns: Vec<String> = pragma_stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if columns.is_empty() {
+                anyhow::bail!(
+                    "Failed to introspect columns for temp table '{}'",
+                    name
+                );
+            }
+            let row_count: i64 = self.conn.query_row(
+                &format!("SELECT COUNT(*) FROM {}", qname),
+                [],
+                |row| row.get(0),
+            )?;
+            Ok((columns, row_count as usize))
+        })();
 
-        let row_count: usize = self
-            .conn
-            .query_row(&format!("SELECT COUNT(*) FROM {}", qname), [], |row| {
-                row.get::<_, i64>(0)
-            })
-            .unwrap_or(0) as usize;
+        let (columns, row_count) = match introspect {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = self
+                    .conn
+                    .execute(&format!("DROP TABLE IF EXISTS {}", qname), []);
+                return Err(e.context(format!(
+                    "Temp table '{}' created but metadata introspection failed; table dropped",
+                    name
+                )));
+            }
+        };
 
         let meta = TempTableMeta {
             name: name.to_string(),

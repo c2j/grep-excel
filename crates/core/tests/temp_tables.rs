@@ -173,6 +173,20 @@ fn test_materialize_with_bad_names_rejected() {
         .materialize_query("sheet_my_temp", "SELECT 1", false, None)
         .unwrap_err();
     assert!(err.to_string().contains("sheet_"));
+
+    let err = db
+        .materialize_query("files", "SELECT 1", false, None)
+        .unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("reserved"),
+        "expected reserved-name error, got: {}",
+        err
+    );
+
+    let err = db
+        .materialize_query("Sheets", "SELECT 1", false, None)
+        .unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("reserved"));
 }
 
 // ── Test 7: list_table_aliases includes temp entries ────────────────────────
@@ -320,4 +334,28 @@ fn test_replace_with_different_casing() {
     let result = db.execute_sql("SELECT * FROM mytemp", 100).unwrap();
     assert_eq!(result.row_count, 1);
     assert_eq!(result.rows[0][0], "Alice");
+}
+
+#[test]
+fn test_trailing_semicolon_in_source_sql_allowed() {
+    let mut db = make_engine_with_data();
+    let info = db
+        .materialize_query("t_semi", "SELECT * FROM sheet_1_0;", false, None)
+        .unwrap();
+    assert_eq!(info.row_count, 3);
+
+    let err = db
+        .materialize_query(
+            "t_multi",
+            "SELECT 1; SELECT 2",
+            false,
+            None,
+        )
+        .unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("multiple") || msg.contains("semicolon"),
+        "expected multi-statement rejection, got: {}",
+        err
+    );
 }

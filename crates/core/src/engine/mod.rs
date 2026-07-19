@@ -477,6 +477,19 @@ pub fn find_match_spans(mode: SearchMode, query: &str, value: &str) -> Vec<(usiz
     }
 }
 
+const RESERVED_TEMP_TABLE_NAMES: &[&str] = &[
+    "files",
+    "sheets",
+    "main",
+    "temp",
+    "information_schema",
+    "pg_catalog",
+    "sqlite_master",
+    "sqlite_sequence",
+    "sqlite_schema",
+    "sqlite_temp_master",
+];
+
 pub fn validate_temp_table_name(name: &str) -> Result<()> {
     if name.is_empty() {
         anyhow::bail!("Temp table name must not be empty");
@@ -494,12 +507,22 @@ pub fn validate_temp_table_name(name: &str) -> Result<()> {
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         anyhow::bail!("Temp table name may only contain letters, digits, and underscores");
     }
+    if RESERVED_TEMP_TABLE_NAMES
+        .iter()
+        .any(|r| name.eq_ignore_ascii_case(r))
+    {
+        anyhow::bail!("Name '{}' is reserved by the engine", name);
+    }
     Ok(())
+}
+
+pub fn normalize_materialize_sql(sql: &str) -> &str {
+    sql.trim().trim_end_matches(';').trim()
 }
 
 #[cfg(test)]
 mod temp_name_tests {
-    use super::validate_temp_table_name;
+    use super::{normalize_materialize_sql, validate_temp_table_name};
 
     #[test]
     fn accepts_simple_names() {
@@ -516,5 +539,24 @@ mod temp_name_tests {
         assert!(validate_temp_table_name("sheet_1_0").is_err());
         assert!(validate_temp_table_name("a.b").is_err());
         assert!(validate_temp_table_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn rejects_reserved_engine_names() {
+        assert!(validate_temp_table_name("files").is_err());
+        assert!(validate_temp_table_name("Sheets").is_err());
+        assert!(validate_temp_table_name("sqlite_master").is_err());
+        assert!(validate_temp_table_name("INFORMATION_SCHEMA").is_err());
+        assert!(validate_temp_table_name("temp").is_err());
+    }
+
+    #[test]
+    fn normalize_strips_trailing_semicolon_only() {
+        assert_eq!(normalize_materialize_sql("SELECT 1;"), "SELECT 1");
+        assert_eq!(normalize_materialize_sql("  SELECT 1 ;  "), "SELECT 1");
+        assert_eq!(
+            normalize_materialize_sql("SELECT 1; SELECT 2"),
+            "SELECT 1; SELECT 2"
+        );
     }
 }
