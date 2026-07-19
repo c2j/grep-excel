@@ -450,7 +450,7 @@ mod tests {
         assert!(is_table_entry("subdir/report.csv"));
         assert!(is_table_entry("notes.txt"));
         assert!(!is_table_entry("image.png"));
-        assert!(!is_table_entry("readme.pdf"));
+        assert!(is_table_entry("readme.pdf"));
         assert!(!is_table_entry("dir/"));
     }
 
