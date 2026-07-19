@@ -17,7 +17,7 @@ grep-excel provides a fast, interactive terminal interface for searching across 
 - **Multi-Engine Backend** — DuckDB (high-performance OLAP), SQLite, or pure in-memory engine; select via feature flags
 - **TUI Interactive Mode** — Keyboard-driven terminal interface with ratatui, auto-browse on import, tabbed results, detail panel, flat/table views, Ctrl+arrow file/sheet navigation
 - **HTML / Text / Markdown Tables** — Import HTML reports (e.g. WDR/AWR), plain-text tables, and GFM Markdown pipe tables as queryable sheets; encoding auto-detected (UTF-8 / meta charset / CJK fallback)
-- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 17 MCP tools for search, data exploration, statistics, editing, and export
+- **MCP Server Mode** — Integrate with AI assistants (Claude, Cursor) via 19 MCP tools for search, data exploration, statistics, editing, and export
 - **Interactive SQL REPL** — Multi-line SQL shell with `;`-terminated input, command history, and dot-commands (`.tables`, `.files`, `.output`, `.save`, `.help`); launch with `-i`
 - **CLI `--exec` Pipeline** — Execute MCP tools from the command line as single commands or multi-step JSON arrays
 - **File Editing** — Update cells, insert/delete rows, add/rename columns, save back to original or export as new file
@@ -202,6 +202,10 @@ grep_excel data.xlsx employees.xlsx -i
 #   $ .output out.csv  # redirect subsequent SQL results to CSV file
 #   $ .output          # restore terminal output
 #   $ .save out.json json  # save last SQL result (csv|json|tsv|table)
+#   $ .let t AS SELECT City, COUNT(*) AS n FROM sheet_1_0 GROUP BY City
+#                      # materialize a SQL query as a temp table "t"
+#   $ SELECT * FROM t; # query the temp table by bare name
+#   $ .drop t          # drop the temp table when done
 #   $ .help            # show dot-commands
 #   $ .exit            # quit (Ctrl+D also works)
 ```
@@ -276,7 +280,7 @@ grep_excel --exec '[
 ]'
 ```
 
-Available tools for `--exec`: `import_file`, `list_files`, `get_metadata`, `get_sheet_sample`, `get_sheet_data`, `get_sheet_statistics`, `search`, `execute_sql`, `export_query`, `save_as`, `save`, `update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`.
+Available tools for `--exec`: `import_file`, `list_files`, `get_metadata`, `get_sheet_sample`, `get_sheet_data`, `get_sheet_statistics`, `search`, `execute_sql`, `materialize_query`, `drop_temp_table`, `export_query`, `save_as`, `save`, `update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`.
 
 ## MCP Server Mode
 
@@ -297,6 +301,8 @@ grep_excel --mcp
 | `get_sheet_data` | Get rows from a sheet with pagination (`start_row`/`end_row` as numbers) and column filtering |
 | `search` | Search with fulltext/exact/wildcard/regex + aggregation + context lines + multi-condition AND filtering |
 | `execute_sql` | Execute a raw SQL `SELECT` query |
+| `materialize_query` | Materialize a read-only SQL result into a named session temp table for reuse in later `execute_sql` calls. Name: `[A-Za-z_][A-Za-z0-9_]*`. Query by bare name; aliases show as `temp.<name>` |
+| `drop_temp_table` | Drop a session temp table previously created by `materialize_query`. Cannot drop imported file tables |
 | `export_query` | Run a SQL SELECT and export results to a new .xlsx file |
 | `get_sheet_statistics` | Get per-column statistics (null counts, distinct counts, top values) for data profiling |
 | `save_as` | Save imported data to a new Excel file (Save As) |
@@ -386,6 +392,19 @@ ORDER BY headcount DESC
 **`get_sheet_data` pagination parameters are numbers, not strings:**
 `start_row` and `end_row` are optional integers. Pass them as JSON numbers (e.g. `"start_row": 0`), never as strings (`"start_row": "0"`). Omit both to fetch all rows.
 
+**Session temp tables for complex analysis:**
+Use `materialize_query` (or the REPL `.let` command) to save intermediate SQL results as a named temp table. This is especially useful when a CTE doesn't fit your workflow, or when you need to query the same derived result across multiple steps without re-running expensive subqueries:
+
+```sql
+-- Materialize a filtered subset
+materialize_query(name="dept_summary", sql="SELECT DeptId, COUNT(*) AS n FROM data.Employees GROUP BY DeptId")
+
+-- Then query it like any table (by bare name)
+SELECT * FROM dept_summary WHERE n > 10
+```
+
+Use `drop_temp_table` (or `.drop`) to clean up when the temp table is no longer needed. Temp tables are session-scoped and disappear when the process exits.
+
 **Recommended exploration workflow:**
 `import_file` → `get_metadata` → `get_sheet_sample` → `search` or `execute_sql`. Use `get_sheet_sample` instead of `get_sheet_data` whenever you only need to understand the data shape; it is significantly cheaper for large files.
 
@@ -458,7 +477,7 @@ grep-excel 提供快速的交互式终端界面，用于在多个电子表格与
 - **多引擎后端** — DuckDB（高性能 OLAP）、SQLite 或纯内存引擎；通过 feature flag 选择
 - **TUI 交互模式** — 键盘驱动的终端界面，导入后自动浏览、选项卡结果、详情面板、平铺/表格视图，支持 Ctrl+方向键切换文件/Sheet
 - **HTML / 文本 / Markdown 表格** — 导入 HTML 报告（如 WDR/AWR）、纯文本表格与 GFM Markdown 管道表为可查询 sheet；自动检测编码（UTF-8 / meta charset / CJK 回退）
-- **MCP 服务器模式** — 通过 17 个 MCP 工具与 AI 助手（Claude、Cursor）集成，支持搜索、数据探索、统计分析、编辑和导出
+- **MCP 服务器模式** — 通过 19 个 MCP 工具与 AI 助手（Claude、Cursor）集成，支持搜索、数据探索、统计分析、编辑和导出
 - **交互式 SQL REPL** — 多行 SQL 交互式 shell，支持 `;` 结束输入、命令历史和点命令（`.tables`、`.files`、`.output`、`.save`、`.help`）；用 `-i` 启动
 - **CLI `--exec` 流水线** — 在命令行中以单条命令或多步 JSON 数组执行 MCP 工具
 - **文件编辑** — 更新单元格、插入/删除行、添加/重命名列、保存回原文件或导出为新文件
@@ -643,6 +662,10 @@ grep_excel data.xlsx employees.xlsx -i
 #   $ .output out.csv  # 将后续 SQL 结果持续重定向到 CSV
 #   $ .output          # 恢复终端输出
 #   $ .save out.json json  # 保存上次 SQL 结果 (csv|json|tsv|table)
+#   $ .let t AS SELECT City, COUNT(*) AS n FROM sheet_1_0 GROUP BY City
+#                      # 将 SQL 结果物化为临时表 "t"
+#   $ SELECT * FROM t; # 按裸名称查询临时表
+#   $ .drop t          # 用完删除临时表
 #   $ .help            # 显示点命令
 #   $ .exit            # 退出（Ctrl+D 也可退出）
 ```
@@ -686,6 +709,8 @@ grep_excel data.xlsx --sql "SELECT 姓名, SQL FROM sheet_1_0 WHERE 类型='旧�
   }
 }
 ```
+
+> **提示：** 新增 `materialize_query`（将 SQL 结果物化为会话临时表）和 `drop_temp_table`（删除临时表）工具，方便在复杂分析中复用中间结果。REPL 中对应 `.let <名> AS <SQL>` 和 `.drop <名>` 命令。
 
 ## 支持的文件格式
 
