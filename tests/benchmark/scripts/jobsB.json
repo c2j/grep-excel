@@ -1,0 +1,13 @@
+[
+  {"name": "GNU grep (基线)", "cmd": "cd /tmp/bench && grep 'ZXQ-7734' bench.csv", "runs": 3},
+  {"name": "grep-excel 0.7.1", "cmd": "cd /tmp/bench && ./grep_excel bench.csv -q ZXQ-7734 -f simple", "runs": 3},
+  {"name": "grep-excel -c Note", "cmd": "cd /tmp/bench && ./grep_excel bench.csv -q ZXQ-7734 -c Note -f simple", "runs": 3},
+  {"name": "duckdb 1.4.4", "cmd": "cd /tmp/bench && python3 duck.py csv_search", "runs": 3},
+  {"name": "xsv 0.13.0", "cmd": "cd /tmp/bench && ./xsv search -s Note 'ZXQ-7734' bench.csv", "runs": 3},
+  {"name": "xsv all-columns", "cmd": "cd /tmp/bench && ./xsv search ZXQ-7734 bench.csv", "runs": 3},
+  {"name": "miller 6.20.2", "cmd": "cd /tmp/bench && ./mlr --csv filter '$Note =~ \"ZXQ-7734\"' bench.csv", "runs": 3},
+  {"name": "csvq 1.18.1", "cmd": "sh /tmp/bench/csvq_search.sh", "runs": 3},
+  {"name": "octosql 0.13.0", "cmd": "cd /tmp/bench && OCTOSQL_NO_TELEMETRY=1 ./octosql \"SELECT * FROM bench.csv WHERE \\\"Note\\\" LIKE '%ZXQ-7734%'\" -o stream_native", "runs": 3},
+  {"name": "dsq 0.23.0", "cmd": "cd /tmp/bench && ./dsq bench.csv \"SELECT * FROM {} WHERE Note LIKE '%ZXQ-7734%'\"", "runs": 3},
+  {"name": "trdsql 1.2.3", "cmd": "cd /tmp/bench && ./trdsql -ih \"SELECT * FROM bench.csv WHERE Note LIKE '%ZXQ-7734%'\"", "runs": 3}
+]

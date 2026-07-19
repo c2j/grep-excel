@@ -1,0 +1,7 @@
+[
+  {"name": "grep-excel 0.7.1", "cmd": "cd /tmp/bench && ./grep_excel bench.xlsx -q ZXQ-7734 -f simple", "runs": 3},
+  {"name": "duckdb 1.4.4 (read_xlsx)", "cmd": "cd /tmp/bench && python3 duck.py xlsx_search", "runs": 3},
+  {"name": "dsq 0.23.0", "cmd": "cd /tmp/bench && ./dsq bench.xlsx \"SELECT * FROM {} WHERE Note LIKE '%ZXQ-7734%'\"", "runs": 3},
+  {"name": "xgrep 0.2.12", "cmd": "cd /tmp/bench && xgrep 'ZXQ-7734' bench.xlsx --format csv", "runs": 2, "timeout": 600},
+  {"name": "xlsxgrep 0.0.32", "cmd": "cd /tmp/bench && xlsxgrep 'ZXQ-7734' bench.xlsx -F", "runs": 2, "timeout": 600}
+]
