@@ -10,10 +10,7 @@ pub enum Lang {
 
 pub fn init() -> Lang {
     let lang = detect();
-    LANG_ATOMIC.store(
-        if lang == Lang::Zh { 1 } else { 2 },
-        Ordering::Relaxed,
-    );
+    LANG_ATOMIC.store(if lang == Lang::Zh { 1 } else { 2 }, Ordering::Relaxed);
     lang
 }
 
@@ -143,19 +140,31 @@ pub fn appmode_detail() -> &'static str {
 // ─────────────────────────────────────────────────────────────
 
 pub fn label_search() -> &'static str {
-    match current() { Lang::Zh => "搜索", Lang::En => "Search" }
+    match current() {
+        Lang::Zh => "搜索",
+        Lang::En => "Search",
+    }
 }
 
 pub fn label_column() -> &'static str {
-    match current() { Lang::Zh => "列", Lang::En => "Col" }
+    match current() {
+        Lang::Zh => "列",
+        Lang::En => "Col",
+    }
 }
 
 pub fn label_sql() -> &'static str {
-    match current() { Lang::Zh => "SQL", Lang::En => "SQL" }
+    match current() {
+        Lang::Zh => "SQL",
+        Lang::En => "SQL",
+    }
 }
 
 pub fn label_aggregate() -> &'static str {
-    match current() { Lang::Zh => "聚合", Lang::En => "Agg" }
+    match current() {
+        Lang::Zh => "聚合",
+        Lang::En => "Agg",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -174,7 +183,10 @@ pub fn tab_all(count: usize) -> String {
 // ─────────────────────────────────────────────────────────────
 
 pub fn col_source() -> &'static str {
-    match current() { Lang::Zh => "来源", Lang::En => "Source" }
+    match current() {
+        Lang::Zh => "来源",
+        Lang::En => "Source",
+    }
 }
 
 pub fn col_auto_name(idx: usize) -> String {
@@ -189,44 +201,77 @@ pub fn col_auto_name(idx: usize) -> String {
 // ─────────────────────────────────────────────────────────────
 
 pub fn empty_no_files() -> &'static str {
-    match current() { Lang::Zh => "未加载任何文件", Lang::En => "No files loaded" }
+    match current() {
+        Lang::Zh => "未加载任何文件",
+        Lang::En => "No files loaded",
+    }
 }
 
 pub fn empty_open_hint() -> &'static str {
-    match current() { Lang::Zh => "按 o 打开文件选择器", Lang::En => "Press 'o' to open file picker" }
+    match current() {
+        Lang::Zh => "按 o 打开文件选择器",
+        Lang::En => "Press 'o' to open file picker",
+    }
 }
 
 pub fn empty_help_hint() -> &'static str {
-    match current() { Lang::Zh => "按 ? 查看帮助", Lang::En => "Press '?' for help" }
+    match current() {
+        Lang::Zh => "按 ? 查看帮助",
+        Lang::En => "Press '?' for help",
+    }
 }
 
 pub fn empty_files_title() -> &'static str {
-    match current() { Lang::Zh => "已加载的文件", Lang::En => "Loaded Files" }
+    match current() {
+        Lang::Zh => "已加载的文件",
+        Lang::En => "Loaded Files",
+    }
 }
 
 pub fn empty_sheets(count: usize) -> String {
     match current() {
         Lang::Zh => format!("{} 个 sheet", count),
-        Lang::En => if count == 1 { "1 sheet".to_string() } else { format!("{} sheets", count) },
+        Lang::En => {
+            if count == 1 {
+                "1 sheet".to_string()
+            } else {
+                format!("{} sheets", count)
+            }
+        }
     }
 }
 
 pub fn file_rows(count: usize) -> String {
     match current() {
         Lang::Zh => format!("{} 行", count),
-        Lang::En => if count == 1 { "1 row".to_string() } else { format!("{} rows", count) },
+        Lang::En => {
+            if count == 1 {
+                "1 row".to_string()
+            } else {
+                format!("{} rows", count)
+            }
+        }
     }
 }
 
 pub fn empty_sheet_rows(count: usize) -> String {
     match current() {
         Lang::Zh => format!("{} 行", count),
-        Lang::En => if count == 1 { "1 row".to_string() } else { format!("{} rows", count) },
+        Lang::En => {
+            if count == 1 {
+                "1 row".to_string()
+            } else {
+                format!("{} rows", count)
+            }
+        }
     }
 }
 
 pub fn empty_no_results() -> &'static str {
-    match current() { Lang::Zh => "无结果", Lang::En => "No results" }
+    match current() {
+        Lang::Zh => "无结果",
+        Lang::En => "No results",
+    }
 }
 
 pub fn empty_no_matches(query: &str) -> String {
@@ -244,23 +289,38 @@ pub fn empty_query_label(query: &str) -> String {
 }
 
 pub fn empty_enter_to_search() -> &'static str {
-    match current() { Lang::Zh => "按 Enter 执行搜索", Lang::En => "Press Enter to search" }
+    match current() {
+        Lang::Zh => "按 Enter 执行搜索",
+        Lang::En => "Press Enter to search",
+    }
 }
 
 pub fn empty_edit_search_hint() -> &'static str {
-    match current() { Lang::Zh => "按 / 编辑搜索", Lang::En => "Press / to edit search" }
+    match current() {
+        Lang::Zh => "按 / 编辑搜索",
+        Lang::En => "Press / to edit search",
+    }
 }
 
 pub fn empty_search_hint() -> &'static str {
-    match current() { Lang::Zh => "搜索  ", Lang::En => "search  " }
+    match current() {
+        Lang::Zh => "搜索  ",
+        Lang::En => "search  ",
+    }
 }
 
 pub fn empty_help_word() -> &'static str {
-    match current() { Lang::Zh => "帮助", Lang::En => "help" }
+    match current() {
+        Lang::Zh => "帮助",
+        Lang::En => "help",
+    }
 }
 
 pub fn press_label() -> &'static str {
-    match current() { Lang::Zh => "按 ", Lang::En => "Press " }
+    match current() {
+        Lang::Zh => "按 ",
+        Lang::En => "Press ",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -268,15 +328,24 @@ pub fn press_label() -> &'static str {
 // ─────────────────────────────────────────────────────────────
 
 pub fn detail_title() -> &'static str {
-    match current() { Lang::Zh => "详情", Lang::En => "Detail" }
+    match current() {
+        Lang::Zh => "详情",
+        Lang::En => "Detail",
+    }
 }
 
 pub fn detail_file_label() -> &'static str {
-    match current() { Lang::Zh => "文件: ", Lang::En => "File: " }
+    match current() {
+        Lang::Zh => "文件: ",
+        Lang::En => "File: ",
+    }
 }
 
 pub fn detail_sheet_label() -> &'static str {
-    match current() { Lang::Zh => "Sheet: ", Lang::En => "Sheet: " }
+    match current() {
+        Lang::Zh => "Sheet: ",
+        Lang::En => "Sheet: ",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -297,7 +366,13 @@ pub fn preview(sheet: &str) -> String {
 pub fn files_loaded(count: usize) -> String {
     match current() {
         Lang::Zh => format!("{} 个文件", count),
-        Lang::En => if count == 1 { "1 file".to_string() } else { format!("{} files", count) },
+        Lang::En => {
+            if count == 1 {
+                "1 file".to_string()
+            } else {
+                format!("{} files", count)
+            }
+        }
     }
 }
 
@@ -309,7 +384,10 @@ pub fn status_importing(path: &std::path::Path) -> String {
 }
 
 pub fn status_searching() -> &'static str {
-    match current() { Lang::Zh => "正在搜索...", Lang::En => "Searching..." }
+    match current() {
+        Lang::Zh => "正在搜索...",
+        Lang::En => "Searching...",
+    }
 }
 
 pub fn status_imported(name: &str) -> String {
@@ -327,7 +405,10 @@ pub fn status_import_error(e: &str) -> String {
 }
 
 pub fn status_import_failed() -> &'static str {
-    match current() { Lang::Zh => "导入失败", Lang::En => "Import failed" }
+    match current() {
+        Lang::Zh => "导入失败",
+        Lang::En => "Import failed",
+    }
 }
 
 pub fn status_search_error(e: &str) -> String {
@@ -338,7 +419,10 @@ pub fn status_search_error(e: &str) -> String {
 }
 
 pub fn status_search_failed() -> &'static str {
-    match current() { Lang::Zh => "搜索失败", Lang::En => "Search failed" }
+    match current() {
+        Lang::Zh => "搜索失败",
+        Lang::En => "Search failed",
+    }
 }
 
 pub fn status_progress(cur: usize, tot: usize) -> String {
@@ -350,7 +434,11 @@ pub fn status_progress(cur: usize, tot: usize) -> String {
 
 /// Progress bar for background materialization: `物化中 file [████░░░░] 40%`
 pub fn status_materializing(name: &str, cur: usize, tot: usize) -> String {
-    let pct = if tot > 0 { (cur * 100 / tot).min(100) } else { 0 };
+    let pct = if tot > 0 {
+        (cur * 100 / tot).min(100)
+    } else {
+        0
+    };
     let width = 20usize;
     let filled = (pct * width / 100).min(width);
     let bar: String = "█".repeat(filled) + &"░".repeat(width - filled);
@@ -375,7 +463,10 @@ pub fn status_materialize_error(name: &str, e: &str) -> String {
 }
 
 pub fn status_loading() -> &'static str {
-    match current() { Lang::Zh => "加载中...", Lang::En => "Loading..." }
+    match current() {
+        Lang::Zh => "加载中...",
+        Lang::En => "Loading...",
+    }
 }
 
 pub fn status_browse_loading(file: &str, sheet: &str) -> String {
@@ -414,7 +505,10 @@ pub fn status_mode_changed(mode: &str) -> String {
 }
 
 pub fn status_cleared() -> &'static str {
-    match current() { Lang::Zh => "已清除所有数据", Lang::En => "All data cleared" }
+    match current() {
+        Lang::Zh => "已清除所有数据",
+        Lang::En => "All data cleared",
+    }
 }
 
 pub fn status_matches(total: usize, duration: f64) -> String {
@@ -426,20 +520,32 @@ pub fn status_matches(total: usize, duration: f64) -> String {
 
 pub fn status_matches_truncated(total: usize, shown: usize, duration: f64) -> String {
     match current() {
-        Lang::Zh => format!("找到 {}+ 个匹配 (显示前 {}), 用时 {:.2}s — [n] 加载更多", total, shown, duration),
-        Lang::En => format!("Found {}+ matches (showing first {}), took {:.2}s — [n] load more", total, shown, duration),
+        Lang::Zh => format!(
+            "找到 {}+ 个匹配 (显示前 {}), 用时 {:.2}s — [n] 加载更多",
+            total, shown, duration
+        ),
+        Lang::En => format!(
+            "Found {}+ matches (showing first {}), took {:.2}s — [n] load more",
+            total, shown, duration
+        ),
     }
 }
 
 pub fn welcome_loaded(count: usize) -> String {
     match current() {
         Lang::Zh => format!("已加载 {} 个文件。按 'o' 查看, '/' 搜索, '?' 帮助", count),
-        Lang::En => format!("Loaded {} files. Press 'o' to view, '/' to search, '?' for help", count),
+        Lang::En => format!(
+            "Loaded {} files. Press 'o' to view, '/' to search, '?' for help",
+            count
+        ),
     }
 }
 
 pub fn welcome_empty() -> &'static str {
-    match current() { Lang::Zh => "未加载文件。按 'o' 导入, '?' 帮助", Lang::En => "No files loaded. Press 'o' to import, '?' for help" }
+    match current() {
+        Lang::Zh => "未加载文件。按 'o' 导入, '?' 帮助",
+        Lang::En => "No files loaded. Press 'o' to import, '?' for help",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -454,7 +560,10 @@ pub fn status_row_indicator(cur: usize, tot: usize) -> String {
 }
 
 pub fn status_row_empty() -> &'static str {
-    match current() { Lang::Zh => "无行", Lang::En => "No rows" }
+    match current() {
+        Lang::Zh => "无行",
+        Lang::En => "No rows",
+    }
 }
 
 pub fn status_col_range(_start: usize, end: usize, total: usize) -> String {
@@ -476,11 +585,17 @@ pub fn status_matches_label(matches: usize, rows: usize) -> String {
 // ─────────────────────────────────────────────────────────────
 
 pub fn err_no_files() -> &'static str {
-    match current() { Lang::Zh => "没有已加载的文件", Lang::En => "No files loaded" }
+    match current() {
+        Lang::Zh => "没有已加载的文件",
+        Lang::En => "No files loaded",
+    }
 }
 
 pub fn export_no_results() -> &'static str {
-    match current() { Lang::Zh => "没有可导出的结果", Lang::En => "No results to export" }
+    match current() {
+        Lang::Zh => "没有可导出的结果",
+        Lang::En => "No results to export",
+    }
 }
 
 pub fn export_done(path: &str) -> String {
@@ -491,11 +606,17 @@ pub fn export_done(path: &str) -> String {
 }
 
 pub fn export_failed() -> &'static str {
-    match current() { Lang::Zh => "导出失败", Lang::En => "Export failed" }
+    match current() {
+        Lang::Zh => "导出失败",
+        Lang::En => "Export failed",
+    }
 }
 
 pub fn export_no_dialog() -> &'static str {
-    match current() { Lang::Zh => "未启用文件对话框功能", Lang::En => "File dialog feature not enabled" }
+    match current() {
+        Lang::Zh => "未启用文件对话框功能",
+        Lang::En => "File dialog feature not enabled",
+    }
 }
 
 pub fn export_error(e: &str) -> String {
@@ -510,99 +631,171 @@ pub fn export_error(e: &str) -> String {
 // ─────────────────────────────────────────────────────────────
 
 pub fn hint_search() -> &'static str {
-    match current() { Lang::Zh => "搜索  ", Lang::En => "search " }
+    match current() {
+        Lang::Zh => "搜索  ",
+        Lang::En => "search ",
+    }
 }
 
 pub fn hint_col() -> &'static str {
-    match current() { Lang::Zh => "列  ", Lang::En => "col  " }
+    match current() {
+        Lang::Zh => "列  ",
+        Lang::En => "col  ",
+    }
 }
 
 pub fn hint_mode() -> &'static str {
-    match current() { Lang::Zh => "模式  ", Lang::En => "mode  " }
+    match current() {
+        Lang::Zh => "模式  ",
+        Lang::En => "mode  ",
+    }
 }
 
 pub fn hint_open() -> &'static str {
-    match current() { Lang::Zh => "打开  ", Lang::En => "open  " }
+    match current() {
+        Lang::Zh => "打开  ",
+        Lang::En => "open  ",
+    }
 }
 
 pub fn hint_export() -> &'static str {
-    match current() { Lang::Zh => "导出  ", Lang::En => "export " }
+    match current() {
+        Lang::Zh => "导出  ",
+        Lang::En => "export ",
+    }
 }
 
 pub fn hint_clear() -> &'static str {
-    match current() { Lang::Zh => "清除  ", Lang::En => "clear " }
+    match current() {
+        Lang::Zh => "清除  ",
+        Lang::En => "clear ",
+    }
 }
 
 pub fn hint_help() -> &'static str {
-    match current() { Lang::Zh => "帮助  ", Lang::En => "help  " }
+    match current() {
+        Lang::Zh => "帮助  ",
+        Lang::En => "help  ",
+    }
 }
 
 pub fn hint_quit() -> &'static str {
-    match current() { Lang::Zh => "退出", Lang::En => "quit" }
+    match current() {
+        Lang::Zh => "退出",
+        Lang::En => "quit",
+    }
 }
 
 pub fn hint_view() -> &'static str {
-    match current() { Lang::Zh => "视图  ", Lang::En => "view  " }
+    match current() {
+        Lang::Zh => "视图  ",
+        Lang::En => "view  ",
+    }
 }
 
 pub fn hint_aggregate() -> &'static str {
-    match current() { Lang::Zh => "聚合  ", Lang::En => "agg  " }
+    match current() {
+        Lang::Zh => "聚合  ",
+        Lang::En => "agg  ",
+    }
 }
 
 pub fn hint_execute() -> &'static str {
-    match current() { Lang::Zh => "执行  ", Lang::En => "exec  " }
+    match current() {
+        Lang::Zh => "执行  ",
+        Lang::En => "exec  ",
+    }
 }
 
 pub fn hint_cancel() -> &'static str {
-    match current() { Lang::Zh => "取消  ", Lang::En => "cancel " }
+    match current() {
+        Lang::Zh => "取消  ",
+        Lang::En => "cancel ",
+    }
 }
 
 pub fn hint_toggle_mode() -> &'static str {
-    match current() { Lang::Zh => "切换模式", Lang::En => "toggle mode" }
+    match current() {
+        Lang::Zh => "切换模式",
+        Lang::En => "toggle mode",
+    }
 }
 
 pub fn hint_confirm() -> &'static str {
-    match current() { Lang::Zh => "确认  ", Lang::En => "ok  " }
+    match current() {
+        Lang::Zh => "确认  ",
+        Lang::En => "ok  ",
+    }
 }
 
 pub fn hint_cancel_short() -> &'static str {
-    match current() { Lang::Zh => "取消", Lang::En => "cancel" }
+    match current() {
+        Lang::Zh => "取消",
+        Lang::En => "cancel",
+    }
 }
 
 pub fn hint_close_help() -> &'static str {
-    match current() { Lang::Zh => "关闭帮助", Lang::En => "close help" }
+    match current() {
+        Lang::Zh => "关闭帮助",
+        Lang::En => "close help",
+    }
 }
 
 pub fn hint_up() -> &'static str {
-    match current() { Lang::Zh => "上", Lang::En => "up" }
+    match current() {
+        Lang::Zh => "上",
+        Lang::En => "up",
+    }
 }
 
 pub fn hint_down() -> &'static str {
-    match current() { Lang::Zh => "下", Lang::En => "down" }
+    match current() {
+        Lang::Zh => "下",
+        Lang::En => "down",
+    }
 }
 
 pub fn hint_select() -> &'static str {
-    match current() { Lang::Zh => "选择", Lang::En => "select" }
+    match current() {
+        Lang::Zh => "选择",
+        Lang::En => "select",
+    }
 }
 
 pub fn hint_close() -> &'static str {
-    match current() { Lang::Zh => "关闭", Lang::En => "close" }
+    match current() {
+        Lang::Zh => "关闭",
+        Lang::En => "close",
+    }
 }
 
 pub fn hint_scroll_up() -> &'static str {
-    match current() { Lang::Zh => "上滚", Lang::En => "scroll up" }
+    match current() {
+        Lang::Zh => "上滚",
+        Lang::En => "scroll up",
+    }
 }
 
 pub fn hint_scroll_down() -> &'static str {
-    match current() { Lang::Zh => "下滚", Lang::En => "scroll down" }
+    match current() {
+        Lang::Zh => "下滚",
+        Lang::En => "scroll down",
+    }
 }
 
 pub fn status_view_flat() -> &'static str {
-    match current() { Lang::Zh => "平铺", Lang::En => "Flat" }
+    match current() {
+        Lang::Zh => "平铺",
+        Lang::En => "Flat",
+    }
 }
 
 pub fn status_view_table() -> &'static str {
-    match current() { Lang::Zh => "表格", Lang::En => "Table" }
+    match current() {
+        Lang::Zh => "表格",
+        Lang::En => "Table",
+    }
 }
 
 pub fn status_flat_sheet(file: &str, sheet: &str, index: usize, total: usize) -> String {
@@ -631,91 +824,157 @@ pub fn help_nav_file() -> &'static str {
 // ─────────────────────────────────────────────────────────────
 
 pub fn help_title() -> &'static str {
-    match current() { Lang::Zh => "帮助", Lang::En => "Help" }
+    match current() {
+        Lang::Zh => "帮助",
+        Lang::En => "Help",
+    }
 }
 
 pub fn help_close_hint() -> &'static str {
-    match current() { Lang::Zh => "按 Esc, q, ? 或 h 关闭帮助", Lang::En => "Press Esc, q, ? or h to close help" }
+    match current() {
+        Lang::Zh => "按 Esc, q, ? 或 h 关闭帮助",
+        Lang::En => "Press Esc, q, ? or h to close help",
+    }
 }
 
 pub fn help_group_nav() -> &'static str {
-    match current() { Lang::Zh => "导航", Lang::En => "Navigation" }
+    match current() {
+        Lang::Zh => "导航",
+        Lang::En => "Navigation",
+    }
 }
 
 pub fn help_nav_up() -> &'static str {
-    match current() { Lang::Zh => "上移", Lang::En => "Move up" }
+    match current() {
+        Lang::Zh => "上移",
+        Lang::En => "Move up",
+    }
 }
 
 pub fn help_nav_down() -> &'static str {
-    match current() { Lang::Zh => "下移", Lang::En => "Move down" }
+    match current() {
+        Lang::Zh => "下移",
+        Lang::En => "Move down",
+    }
 }
 
 pub fn help_nav_top() -> &'static str {
-    match current() { Lang::Zh => "跳到顶部", Lang::En => "Jump to top" }
+    match current() {
+        Lang::Zh => "跳到顶部",
+        Lang::En => "Jump to top",
+    }
 }
 
 pub fn help_nav_bottom() -> &'static str {
-    match current() { Lang::Zh => "跳到底部", Lang::En => "Jump to bottom" }
+    match current() {
+        Lang::Zh => "跳到底部",
+        Lang::En => "Jump to bottom",
+    }
 }
 
 pub fn help_nav_scroll_cols() -> &'static str {
-    match current() { Lang::Zh => "左右滚动列", Lang::En => "Scroll columns left/right" }
+    match current() {
+        Lang::Zh => "左右滚动列",
+        Lang::En => "Scroll columns left/right",
+    }
 }
 
 pub fn help_nav_tab() -> &'static str {
-    match current() { Lang::Zh => "切换标签页", Lang::En => "Switch tabs" }
+    match current() {
+        Lang::Zh => "切换标签页",
+        Lang::En => "Switch tabs",
+    }
 }
 
 pub fn help_group_search() -> &'static str {
-    match current() { Lang::Zh => "搜索", Lang::En => "Search" }
+    match current() {
+        Lang::Zh => "搜索",
+        Lang::En => "Search",
+    }
 }
 
 pub fn help_search_input() -> &'static str {
-    match current() { Lang::Zh => "输入搜索查询", Lang::En => "Enter search query" }
+    match current() {
+        Lang::Zh => "输入搜索查询",
+        Lang::En => "Enter search query",
+    }
 }
 
 pub fn help_search_col() -> &'static str {
-    match current() { Lang::Zh => "设置列过滤器", Lang::En => "Set column filter" }
+    match current() {
+        Lang::Zh => "设置列过滤器",
+        Lang::En => "Set column filter",
+    }
 }
 
 pub fn help_search_sql() -> &'static str {
-    match current() { Lang::Zh => "进入 SQL 查询模式", Lang::En => "Enter SQL query mode" }
+    match current() {
+        Lang::Zh => "进入 SQL 查询模式",
+        Lang::En => "Enter SQL query mode",
+    }
 }
 
 pub fn help_search_toggle() -> &'static str {
-    match current() { Lang::Zh => "切换搜索模式", Lang::En => "Toggle search mode" }
+    match current() {
+        Lang::Zh => "切换搜索模式",
+        Lang::En => "Toggle search mode",
+    }
 }
 
 pub fn help_search_exec() -> &'static str {
-    match current() { Lang::Zh => "执行搜索", Lang::En => "Execute search" }
+    match current() {
+        Lang::Zh => "执行搜索",
+        Lang::En => "Execute search",
+    }
 }
 
 pub fn help_group_general() -> &'static str {
-    match current() { Lang::Zh => "通用", Lang::En => "General" }
+    match current() {
+        Lang::Zh => "通用",
+        Lang::En => "General",
+    }
 }
 
 pub fn help_gen_open() -> &'static str {
-    match current() { Lang::Zh => "打开文件", Lang::En => "Open file" }
+    match current() {
+        Lang::Zh => "打开文件",
+        Lang::En => "Open file",
+    }
 }
 
 pub fn help_gen_clear() -> &'static str {
-    match current() { Lang::Zh => "清除所有数据", Lang::En => "Clear all data" }
+    match current() {
+        Lang::Zh => "清除所有数据",
+        Lang::En => "Clear all data",
+    }
 }
 
 pub fn help_gen_export() -> &'static str {
-    match current() { Lang::Zh => "导出结果为 CSV", Lang::En => "Export results to CSV" }
+    match current() {
+        Lang::Zh => "导出结果为 CSV",
+        Lang::En => "Export results to CSV",
+    }
 }
 
 pub fn help_gen_more() -> &'static str {
-    match current() { Lang::Zh => "加载更多结果", Lang::En => "Load more results" }
+    match current() {
+        Lang::Zh => "加载更多结果",
+        Lang::En => "Load more results",
+    }
 }
 
 pub fn help_gen_toggle_help() -> &'static str {
-    match current() { Lang::Zh => "切换帮助", Lang::En => "Toggle help" }
+    match current() {
+        Lang::Zh => "切换帮助",
+        Lang::En => "Toggle help",
+    }
 }
 
 pub fn help_gen_quit() -> &'static str {
-    match current() { Lang::Zh => "退出", Lang::En => "Quit" }
+    match current() {
+        Lang::Zh => "退出",
+        Lang::En => "Quit",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -759,8 +1018,14 @@ pub fn cli_no_matches(query: &str) -> String {
 
 pub fn cli_match_summary(matches: usize, rows: usize, duration_ms: u128) -> String {
     match current() {
-        Lang::Zh => format!("找到 {} 个匹配 (搜索了 {} 行, 用时 {}ms)", matches, rows, duration_ms),
-        Lang::En => format!("Found {} matches across {} rows in {}ms", matches, rows, duration_ms),
+        Lang::Zh => format!(
+            "找到 {} 个匹配 (搜索了 {} 行, 用时 {}ms)",
+            matches, rows, duration_ms
+        ),
+        Lang::En => format!(
+            "Found {} matches across {} rows in {}ms",
+            matches, rows, duration_ms
+        ),
     }
 }
 
@@ -772,7 +1037,10 @@ pub fn cli_export_done(path: &str) -> String {
 }
 
 pub fn cli_export_failed() -> &'static str {
-    match current() { Lang::Zh => "导出失败", Lang::En => "Export failed" }
+    match current() {
+        Lang::Zh => "导出失败",
+        Lang::En => "Export failed",
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -782,7 +1050,8 @@ pub fn cli_export_failed() -> &'static str {
 #[cfg(feature = "share-url")]
 fn kdocs_help_line_zh() -> String {
     "    --kdocs-cookie <COOKIE>  金山文档 (kdocs.cn) 分享链接下载专用 Cookie\n\
-     --share-hosts <HOSTS>   额外域名 (逗号分隔)，用于企业版云文档链接\n".to_string()
+     --share-hosts <HOSTS>   额外域名 (逗号分隔)，用于企业版云文档链接\n"
+        .to_string()
 }
 
 #[cfg(not(feature = "share-url"))]
@@ -793,7 +1062,8 @@ fn kdocs_help_line_zh() -> String {
 #[cfg(feature = "share-url")]
 fn kdocs_help_line_en() -> String {
     "    --kdocs-cookie <COOKIE>  Cookie for Kingsoft Docs (kdocs.cn) share URL downloads\n\
-         --share-hosts <HOSTS>   Additional comma-separated hosts for enterprise share URLs\n".to_string()
+         --share-hosts <HOSTS>   Additional comma-separated hosts for enterprise share URLs\n"
+        .to_string()
 }
 
 #[cfg(not(feature = "share-url"))]
@@ -957,7 +1227,10 @@ pub fn help_full_text() -> String {
 }
 
 pub fn status_executing_sql() -> &'static str {
-    match current() { Lang::Zh => "执行 SQL...", Lang::En => "Executing SQL..." }
+    match current() {
+        Lang::Zh => "执行 SQL...",
+        Lang::En => "Executing SQL...",
+    }
 }
 
 pub fn status_sql_done(count: usize, duration: f64) -> String {
@@ -988,11 +1261,17 @@ pub fn status_sql_error(e: &str) -> String {
 }
 
 pub fn status_sql_failed() -> &'static str {
-    match current() { Lang::Zh => "SQL 执行失败", Lang::En => "SQL execution failed" }
+    match current() {
+        Lang::Zh => "SQL 执行失败",
+        Lang::En => "SQL execution failed",
+    }
 }
 
 pub fn sql_no_results() -> &'static str {
-    match current() { Lang::Zh => "SQL 查询无结果", Lang::En => "SQL query returned no results" }
+    match current() {
+        Lang::Zh => "SQL 查询无结果",
+        Lang::En => "SQL query returned no results",
+    }
 }
 
 pub fn sql_results_title(count: usize) -> String {
@@ -1003,7 +1282,10 @@ pub fn sql_results_title(count: usize) -> String {
 }
 
 pub fn hint_sql() -> &'static str {
-    match current() { Lang::Zh => "SQL  ", Lang::En => "SQL  " }
+    match current() {
+        Lang::Zh => "SQL  ",
+        Lang::En => "SQL  ",
+    }
 }
 
 pub fn cli_sql_failed(e: &str) -> String {
@@ -1014,7 +1296,10 @@ pub fn cli_sql_failed(e: &str) -> String {
 }
 
 pub fn cli_sql_no_results() -> &'static str {
-    match current() { Lang::Zh => "SQL 查询无结果", Lang::En => "SQL query returned no results" }
+    match current() {
+        Lang::Zh => "SQL 查询无结果",
+        Lang::En => "SQL query returned no results",
+    }
 }
 
 pub fn cli_aggregate_label(col: &str) -> String {
@@ -1039,11 +1324,17 @@ pub fn filelist_meta(sheets: usize, rows: usize) -> String {
 }
 
 pub fn filelist_title() -> &'static str {
-    match current() { Lang::Zh => " 文件列表 ", Lang::En => " File List " }
+    match current() {
+        Lang::Zh => " 文件列表 ",
+        Lang::En => " File List ",
+    }
 }
 
 pub fn export_dialog_title() -> &'static str {
-    match current() { Lang::Zh => "导出结果", Lang::En => "Export Results" }
+    match current() {
+        Lang::Zh => "导出结果",
+        Lang::En => "Export Results",
+    }
 }
 
 pub fn cli_list_tables_empty() -> &'static str {
@@ -1070,7 +1361,10 @@ pub fn cli_list_tables_entry(alias: &str, table_name: &str, rows: usize, columns
 pub fn cli_list_tables_footer(count: usize) -> String {
     match current() {
         Lang::Zh => format!("共 {} 张表。在 SQL 中使用别名或内部名称进行查询。", count),
-        Lang::En => format!("{} table(s) total. Use alias or internal name in SQL queries.", count),
+        Lang::En => format!(
+            "{} table(s) total. Use alias or internal name in SQL queries.",
+            count
+        ),
     }
 }
 
@@ -1082,15 +1376,24 @@ pub fn sql_info_title() -> &'static str {
 }
 
 pub fn sql_info_col_alias() -> &'static str {
-    match current() { Lang::Zh => "别名", Lang::En => "Alias" }
+    match current() {
+        Lang::Zh => "别名",
+        Lang::En => "Alias",
+    }
 }
 
 pub fn sql_info_col_table() -> &'static str {
-    match current() { Lang::Zh => "内部名", Lang::En => "Table" }
+    match current() {
+        Lang::Zh => "内部名",
+        Lang::En => "Table",
+    }
 }
 
 pub fn sql_info_col_columns() -> &'static str {
-    match current() { Lang::Zh => "列", Lang::En => "Columns" }
+    match current() {
+        Lang::Zh => "列",
+        Lang::En => "Columns",
+    }
 }
 
 pub fn sql_info_footer() -> &'static str {
@@ -1126,7 +1429,10 @@ pub fn repl_hint() -> &'static str {
 }
 
 pub fn repl_goodbye() -> &'static str {
-    match current() { Lang::Zh => "再见", Lang::En => "Goodbye" }
+    match current() {
+        Lang::Zh => "再见",
+        Lang::En => "Goodbye",
+    }
 }
 
 pub fn repl_no_files() -> &'static str {
@@ -1145,10 +1451,7 @@ pub fn repl_history_empty() -> &'static str {
 
 pub fn repl_unknown_dot(cmd: &str) -> String {
     match current() {
-        Lang::Zh => format!(
-            "未知命令: {}。输入 .help 查看可用命令。",
-            cmd
-        ),
+        Lang::Zh => format!("未知命令: {}。输入 .help 查看可用命令。", cmd),
         Lang::En => format!(
             "Unknown command: {}. Type .help for available commands.",
             cmd
@@ -1261,7 +1564,10 @@ pub fn repl_let_usage() -> String {
 pub fn repl_let_ok(name: &str, rows: usize, cols: usize) -> String {
     match current() {
         Lang::Zh => format!("已物化临时表 '{}': {} 行, {} 列", name, rows, cols),
-        Lang::En => format!("Materialized temp table '{}': {} rows, {} cols", name, rows, cols),
+        Lang::En => format!(
+            "Materialized temp table '{}': {} rows, {} cols",
+            name, rows, cols
+        ),
     }
 }
 

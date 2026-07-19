@@ -25,11 +25,7 @@ pub trait SearchEngine: Send {
         Self::new()
     }
 
-    fn import_excel(
-        &mut self,
-        path: &Path,
-        progress: &dyn Fn(usize, usize),
-    ) -> Result<FileInfo>;
+    fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo>;
 
     /// Import pre-parsed sheets into the engine.
     /// Used when format override (`--as` flag) bypasses auto-detection.
@@ -57,7 +53,12 @@ pub trait SearchEngine: Send {
     fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo>;
 
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo>;
-    fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult>;
+    fn get_sheet_sample(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        sample_size: usize,
+    ) -> Result<SheetDataResult>;
     fn get_sheet_data(
         &self,
         file_name: &str,
@@ -67,13 +68,54 @@ pub trait SearchEngine: Send {
         columns: Option<&[String]>,
     ) -> Result<SheetDataResult>;
     fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()>;
-    fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()>;
-    fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize>;
-    fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()>;
-    fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize>;
-    fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()>;
-    fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()>;
-    fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics>;
+    fn update_cell(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        row: usize,
+        column: &str,
+        value: &str,
+    ) -> Result<()>;
+    fn update_cells(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        updates: &[(usize, String, String)],
+    ) -> Result<usize>;
+    fn insert_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        rows: Vec<Vec<String>>,
+    ) -> Result<()>;
+    fn delete_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        count: usize,
+    ) -> Result<usize>;
+    fn add_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        column_name: &str,
+        default_value: &str,
+    ) -> Result<()>;
+    fn rename_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<()>;
+    fn get_sheet_statistics(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        max_top_values: usize,
+    ) -> Result<SheetStatistics>;
 
     /// Register a file as a virtual source (metadata only, no data loaded).
     fn register_virtual(
@@ -83,11 +125,7 @@ pub trait SearchEngine: Send {
     ) -> Result<FileInfo>;
 
     /// Materialize a previously registered virtual file into a fully-loaded table.
-    fn materialize(
-        &mut self,
-        file_name: &str,
-        progress: &dyn Fn(usize, usize),
-    ) -> Result<()>;
+    fn materialize(&mut self, file_name: &str, progress: &dyn Fn(usize, usize)) -> Result<()>;
 
     /// Check materialization state of a sheet. Returns None if sheet not found.
     fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState>;
@@ -130,9 +168,7 @@ pub fn find_matched_columns(
         .filter(|&i| {
             let value = row.get(i).map(|s| s.as_str()).unwrap_or("");
             match query.mode {
-                SearchMode::FullText => value
-                    .to_lowercase()
-                    .contains(&query.text.to_lowercase()),
+                SearchMode::FullText => value.to_lowercase().contains(&query.text.to_lowercase()),
                 SearchMode::ExactMatch => value == query.text,
                 SearchMode::Wildcard => like_match(&query.text, value),
                 SearchMode::Regex => regex::Regex::new(&format!("(?i){}", query.text))
@@ -249,7 +285,13 @@ pub(crate) fn quote_ident(name: &str) -> String {
 pub(crate) fn sanitize_schema_name(name: &str) -> String {
     let sanitized: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     match sanitized.to_lowercase().as_str() {
         "main" | "information_schema" | "pg_catalog" | "sys" => {
@@ -279,10 +321,13 @@ pub fn validate_sql(sql: &str) -> Result<()> {
     //   EXPLAIN                 — query plan (including EXPLAIN ANALYZE)
     let first_word = trimmed.split_whitespace().next().unwrap_or("");
     let allowed_prefixes = [
-        "SELECT", "WITH",
-        "PIVOT", "UNPIVOT",
+        "SELECT",
+        "WITH",
+        "PIVOT",
+        "UNPIVOT",
         "FROM",
-        "DESCRIBE", "SHOW",
+        "DESCRIBE",
+        "SHOW",
         "SUMMARIZE",
         "EXPLAIN",
     ];
@@ -308,10 +353,24 @@ pub fn validate_sql(sql: &str) -> Result<()> {
     // Reject common DDL/DML keywords (check with leading space or at start)
     let upper_with_space = format!(" {} ", upper);
     for forbidden in &[
-        " INSERT ", " UPDATE ", " DELETE ", " DROP ", " CREATE ", " ALTER ",
-        " ATTACH ", " DETACH ", " COPY ", " EXPORT ",
-        " TRUNCATE ", " GRANT ", " REVOKE ", " VACUUM ", " REINDEX ",
-        " CALL ", " LOAD ", " INSTALL ",
+        " INSERT ",
+        " UPDATE ",
+        " DELETE ",
+        " DROP ",
+        " CREATE ",
+        " ALTER ",
+        " ATTACH ",
+        " DETACH ",
+        " COPY ",
+        " EXPORT ",
+        " TRUNCATE ",
+        " GRANT ",
+        " REVOKE ",
+        " VACUUM ",
+        " REINDEX ",
+        " CALL ",
+        " LOAD ",
+        " INSTALL ",
     ] {
         if upper_with_space.contains(forbidden) {
             anyhow::bail!(
@@ -340,7 +399,10 @@ pub use duckdb::DuckDbEngine as DefaultEngine;
 #[cfg(all(feature = "engine-sqlite", not(feature = "engine-duckdb")))]
 pub use sqlite::SqliteEngine as DefaultEngine;
 
-#[cfg(all(feature = "engine-memory", not(any(feature = "engine-duckdb", feature = "engine-sqlite"))))]
+#[cfg(all(
+    feature = "engine-memory",
+    not(any(feature = "engine-duckdb", feature = "engine-sqlite"))
+))]
 pub use memory::MemEngine as DefaultEngine;
 
 #[cfg(not(any(
@@ -351,38 +413,40 @@ pub use memory::MemEngine as DefaultEngine;
 compile_error!("Enable one engine feature: engine-duckdb, engine-sqlite, or engine-memory");
 
 #[cfg(feature = "mcp-server")]
-pub fn write_xlsx(
-    sheets: &[(&str, &[String], &[Vec<String>])],
-    output_path: &Path,
-) -> Result<()> {
+pub fn write_xlsx(sheets: &[(&str, &[String], &[Vec<String>])], output_path: &Path) -> Result<()> {
     use rust_xlsxwriter::Workbook;
 
     let mut workbook = Workbook::new();
 
     for (sheet_name, headers, rows) in sheets {
-        let worksheet = workbook.add_worksheet()
+        let worksheet = workbook
+            .add_worksheet()
             .set_name(*sheet_name)
             .map_err(|e| anyhow::anyhow!("Failed to create sheet '{}': {}", sheet_name, e))?;
 
         for (col_idx, header) in headers.iter().enumerate() {
-            worksheet.write_string(0, col_idx as u16, header)
+            worksheet
+                .write_string(0, col_idx as u16, header)
                 .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
         }
 
         for (row_idx, row) in rows.iter().enumerate() {
             for (col_idx, value) in row.iter().enumerate() {
                 if let Ok(num) = value.parse::<f64>() {
-                    worksheet.write_number((row_idx + 1) as u32, col_idx as u16, num)
+                    worksheet
+                        .write_number((row_idx + 1) as u32, col_idx as u16, num)
                         .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
                 } else {
-                    worksheet.write_string((row_idx + 1) as u32, col_idx as u16, value)
+                    worksheet
+                        .write_string((row_idx + 1) as u32, col_idx as u16, value)
                         .map_err(|e| anyhow::anyhow!("Write error: {}", e))?;
                 }
             }
         }
     }
 
-    workbook.save(output_path)
+    workbook
+        .save(output_path)
         .map_err(|e| anyhow::anyhow!("Failed to save xlsx: {}", e))?;
 
     Ok(())
@@ -428,9 +492,7 @@ pub fn validate_temp_table_name(name: &str) -> Result<()> {
         anyhow::bail!("Temp table name must start with a letter or underscore");
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        anyhow::bail!(
-            "Temp table name may only contain letters, digits, and underscores"
-        );
+        anyhow::bail!("Temp table name may only contain letters, digits, and underscores");
     }
     Ok(())
 }

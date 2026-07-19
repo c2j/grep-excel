@@ -196,7 +196,10 @@ fn test_list_table_aliases_includes_temps() {
     assert_eq!(entry.file_name, "<temp>");
 
     let file_count = aliases.iter().filter(|a| a.kind == TableKind::File).count();
-    assert!(file_count > 0, "imported file aliases should still be present");
+    assert!(
+        file_count > 0,
+        "imported file aliases should still be present"
+    );
 }
 
 // ── Test 8: clear() removes temps ───────────────────────────────────────────
@@ -232,10 +235,7 @@ fn test_max_rows_truncates_materialization() {
     let info = db
         .materialize_query("my_temp", "SELECT * FROM sheet_1_0", false, Some(1))
         .unwrap();
-    assert_eq!(
-        info.row_count, 1,
-        "max_rows: Some(1) should limit to 1 row"
-    );
+    assert_eq!(info.row_count, 1, "max_rows: Some(1) should limit to 1 row");
     assert_eq!(info.columns.len(), 2);
 
     let result = db.execute_sql("SELECT * FROM my_temp", 100).unwrap();

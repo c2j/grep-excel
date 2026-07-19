@@ -125,14 +125,9 @@ pub fn run<Engine: SearchEngine>(db: &mut Engine, no_history: bool) -> Result<()
                     let _ = rl.save_history(p);
                 }
 
-                    if trimmed.starts_with('.') {
-                    if handle_dot_command(
-                        trimmed,
-                        db,
-                        rl.history(),
-                        &mut output,
-                        &mut last_result,
-                    )? {
+                if trimmed.starts_with('.') {
+                    if handle_dot_command(trimmed, db, rl.history(), &mut output, &mut last_result)?
+                    {
                         // Close open output file on exit — dropping the
                         // BufWriter flushes buffered data.
                         if let OutputTarget::File(mut f) =
@@ -220,17 +215,15 @@ fn handle_output_command(args: &str, output: &mut OutputTarget) {
             println!("{}", i18n::repl_output_off());
             *output = OutputTarget::Stdout;
         }
-        ParsedOutput::File(path) => {
-            match File::create(&path) {
-                Ok(f) => {
-                    println!("{}", i18n::repl_output_on(&path));
-                    *output = OutputTarget::File(BufWriter::new(f));
-                }
-                Err(e) => {
-                    println!("{}", i18n::repl_output_open_error(&path, &e.to_string()));
-                }
+        ParsedOutput::File(path) => match File::create(&path) {
+            Ok(f) => {
+                println!("{}", i18n::repl_output_on(&path));
+                *output = OutputTarget::File(BufWriter::new(f));
             }
-        }
+            Err(e) => {
+                println!("{}", i18n::repl_output_open_error(&path, &e.to_string()));
+            }
+        },
     }
 }
 
@@ -300,7 +293,10 @@ fn handle_let_command<Engine: SearchEngine>(args: &str, db: &mut Engine) {
         }
     };
     match db.materialize_query(&name, &sql, true, None) {
-        Ok(info) => println!("{}", i18n::repl_let_ok(&info.name, info.row_count, info.columns.len())),
+        Ok(info) => println!(
+            "{}",
+            i18n::repl_let_ok(&info.name, info.row_count, info.columns.len())
+        ),
         Err(e) => println!("{}", i18n::repl_let_error(&name, &e.to_string())),
     }
 }

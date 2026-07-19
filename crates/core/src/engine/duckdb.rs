@@ -3,9 +3,9 @@
 use super::*;
 use crate::excel::for_each_sheet;
 use crate::excel::for_each_sheet_repair;
-use anyhow::Result;
-use ::duckdb::{params, Connection};
 use ::duckdb::types::ValueRef;
+use ::duckdb::{params, Connection};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
 use std::thread::available_parallelism;
@@ -52,12 +52,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
         SET enable_progress_bar = false;",
     )?;
 
-    let threads = available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(4)
-        .min(8);
-    let memory = std::env::var("GREP_EXCEL_DUCKDB_MEMORY")
-        .unwrap_or_else(|_| "4GB".to_string());
+    let threads = available_parallelism().map(|p| p.get()).unwrap_or(4).min(8);
+    let memory = std::env::var("GREP_EXCEL_DUCKDB_MEMORY").unwrap_or_else(|_| "4GB".to_string());
     let memory_ok = memory.len() <= 16
         && memory
             .chars()
@@ -87,7 +83,10 @@ impl SearchEngine for DuckDbEngine {
     {
         let conn = Connection::open_in_memory()?;
         init_schema(&conn)?;
-        Ok(DuckDbEngine { conn, temp_tables: HashMap::new() })
+        Ok(DuckDbEngine {
+            conn,
+            temp_tables: HashMap::new(),
+        })
     }
 
     fn with_path(path: &Path) -> Result<Self>
@@ -99,7 +98,10 @@ impl SearchEngine for DuckDbEngine {
         }
         let conn = Connection::open(path)?;
         init_schema(&conn)?;
-        Ok(DuckDbEngine { conn, temp_tables: HashMap::new() })
+        Ok(DuckDbEngine {
+            conn,
+            temp_tables: HashMap::new(),
+        })
     }
 
     fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
@@ -186,9 +188,9 @@ impl SearchEngine for DuckDbEngine {
                 for row in &sheet_data.rows {
                     let mut padded_row = row.clone();
                     padded_row.resize(col_names.len(), String::new());
-                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                    let param_refs: Vec<&dyn ::duckdb::ToSql> = padded_row
                         .iter()
-                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .map(|s| s as &dyn ::duckdb::ToSql)
                         .collect();
                     appender.append_row(param_refs.as_slice())?;
                     processed_rows += 1;
@@ -370,9 +372,9 @@ impl SearchEngine for DuckDbEngine {
 
             let matched_rows: Vec<(i64, Vec<Option<String>>)> = {
                 let mut search_stmt = self.conn.prepare(&sql)?;
-                let param_refs: Vec<&dyn::duckdb::ToSql> = search_values
+                let param_refs: Vec<&dyn ::duckdb::ToSql> = search_values
                     .iter()
-                    .map(|v| v as &dyn::duckdb::ToSql)
+                    .map(|v| v as &dyn ::duckdb::ToSql)
                     .collect();
                 let mapped =
                     search_stmt.query_map(param_refs.as_slice(), |row: &::duckdb::Row| {
@@ -409,7 +411,11 @@ impl SearchEngine for DuckDbEngine {
                     let n = query.context_lines.unwrap_or(0) as i64;
                     let ctx_sql = format!(
                         "SELECT {} FROM {} WHERE rowid BETWEEN ? AND ? ORDER BY rowid",
-                        meta.col_names.iter().map(|c| super::quote_ident(c)).collect::<Vec<_>>().join(", "),
+                        meta.col_names
+                            .iter()
+                            .map(|c| super::quote_ident(c))
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         super::quote_ident(&meta.table_name),
                     );
                     let mut ctx_stmt = self.conn.prepare(&ctx_sql).unwrap();
@@ -425,7 +431,10 @@ impl SearchEngine for DuckDbEngine {
                         .unwrap()
                         .filter_map(|r| r.ok())
                         .map(|row_opts| {
-                            row_opts.into_iter().map(|v| v.unwrap_or_default()).collect::<Vec<_>>()
+                            row_opts
+                                .into_iter()
+                                .map(|v| v.unwrap_or_default())
+                                .collect::<Vec<_>>()
                         })
                         .collect();
 
@@ -590,8 +599,12 @@ impl SearchEngine for DuckDbEngine {
 
         self.conn.execute("DELETE FROM sheets", [])?;
         self.conn.execute("DELETE FROM files", [])?;
-        let _ = self.conn.execute("ALTER SEQUENCE file_id_seq RESTART WITH 1", []);
-        let _ = self.conn.execute("ALTER SEQUENCE sheet_id_seq RESTART WITH 1", []);
+        let _ = self
+            .conn
+            .execute("ALTER SEQUENCE file_id_seq RESTART WITH 1", []);
+        let _ = self
+            .conn
+            .execute("ALTER SEQUENCE sheet_id_seq RESTART WITH 1", []);
 
         // Drop and clear all session temp tables
         for meta in self.temp_tables.values() {
@@ -605,56 +618,57 @@ impl SearchEngine for DuckDbEngine {
         Ok(())
     }
 
-        fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult> {
-            super::validate_sql(sql)?;
-            let start = std::time::Instant::now();
+    fn execute_sql(&self, sql: &str, limit: usize) -> Result<crate::types::SqlResult> {
+        super::validate_sql(sql)?;
+        let start = std::time::Instant::now();
 
-            // Append LIMIT if none present (avoid double-wrapping with SELECT *)
-            let has_limit = sql.to_uppercase().contains(" LIMIT ");
-            let limited_sql = if has_limit {
-                sql.to_string()
-            } else {
-                format!("{} LIMIT {}", sql, limit)
-            };
-            let mut stmt = self.conn.prepare(&limited_sql)?;
-            let mut rows = stmt.query([])?;
-            let columns = rows.as_ref().unwrap().column_names();
-            let col_count = columns.len();
+        // Append LIMIT if none present (avoid double-wrapping with SELECT *)
+        let has_limit = sql.to_uppercase().contains(" LIMIT ");
+        let limited_sql = if has_limit {
+            sql.to_string()
+        } else {
+            format!("{} LIMIT {}", sql, limit)
+        };
+        let mut stmt = self.conn.prepare(&limited_sql)?;
+        let mut rows = stmt.query([])?;
+        let columns = rows.as_ref().unwrap().column_names();
+        let col_count = columns.len();
 
-            let mut result_rows = Vec::new();
-            while let Some(row) = rows.next()? {
-                let mut values = Vec::with_capacity(col_count);
-                for i in 0..col_count {
-                    let val = Self::value_ref_to_string(row.get_ref(i)?);
-                    values.push(val);
-                }
-                result_rows.push(values);
+        let mut result_rows = Vec::new();
+        while let Some(row) = rows.next()? {
+            let mut values = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                let val = Self::value_ref_to_string(row.get_ref(i)?);
+                values.push(val);
             }
-
-            let row_count = result_rows.len();
-            let truncated = row_count >= limit;
-            let duration = start.elapsed();
-
-            Ok(crate::types::SqlResult {
-                columns,
-                rows: result_rows,
-                row_count,
-                truncated,
-                duration,
-            })
+            result_rows.push(values);
         }
 
-        fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo> {
-            let mut stmt = match self.conn.prepare(
-                "SELECT s.table_name, s.sheet_name, s.row_count, s.col_names, f.file_name
-                 FROM sheets s JOIN files f ON s.file_id = f.file_id
-                 ORDER BY f.file_id, s.sheet_id"
-            ) {
-                Ok(s) => s,
-                Err(_) => return Vec::new(),
-            };
+        let row_count = result_rows.len();
+        let truncated = row_count >= limit;
+        let duration = start.elapsed();
 
-            let rows: Vec<(String, String, i32, String, String)> = match stmt.query_map([], |row: &::duckdb::Row| {
+        Ok(crate::types::SqlResult {
+            columns,
+            rows: result_rows,
+            row_count,
+            truncated,
+            duration,
+        })
+    }
+
+    fn list_table_aliases(&self) -> Vec<crate::types::TableAliasInfo> {
+        let mut stmt = match self.conn.prepare(
+            "SELECT s.table_name, s.sheet_name, s.row_count, s.col_names, f.file_name
+                 FROM sheets s JOIN files f ON s.file_id = f.file_id
+                 ORDER BY f.file_id, s.sheet_id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let rows: Vec<(String, String, i32, String, String)> =
+            match stmt.query_map([], |row: &::duckdb::Row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -663,58 +677,66 @@ impl SearchEngine for DuckDbEngine {
                     row.get::<_, String>(4)?,
                 ))
             }) {
-                Ok(mapped) => mapped.filter_map(|r: Result<_, ::duckdb::Error>| r.ok()).collect(),
+                Ok(mapped) => mapped
+                    .filter_map(|r: Result<_, ::duckdb::Error>| r.ok())
+                    .collect(),
                 Err(_) => return Vec::new(),
             };
 
-            let mut aliases: Vec<crate::types::TableAliasInfo> = rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
-                let columns: Vec<String> = if col_names_str.is_empty() {
-                    vec![]
-                } else {
-                    col_names_str.split('\x1f').map(|s| s.to_string()).collect()
-                };
-                let file_stem = std::path::Path::new(&file_name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let alias = format!("{}.{}", file_stem, sheet_name);
-                crate::types::TableAliasInfo {
-                    table_name,
-                    alias,
-                    file_name,
-                    sheet_name,
-                    row_count: row_count as usize,
-                    columns,
-                    kind: crate::types::TableKind::File,
-                }
-            }).collect();
+        let mut aliases: Vec<crate::types::TableAliasInfo> = rows
+            .into_iter()
+            .map(
+                |(table_name, sheet_name, row_count, col_names_str, file_name)| {
+                    let columns: Vec<String> = if col_names_str.is_empty() {
+                        vec![]
+                    } else {
+                        col_names_str.split('\x1f').map(|s| s.to_string()).collect()
+                    };
+                    let file_stem = std::path::Path::new(&file_name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let alias = format!("{}.{}", file_stem, sheet_name);
+                    crate::types::TableAliasInfo {
+                        table_name,
+                        alias,
+                        file_name,
+                        sheet_name,
+                        row_count: row_count as usize,
+                        columns,
+                        kind: crate::types::TableKind::File,
+                    }
+                },
+            )
+            .collect();
 
-            // Append session temp table aliases
-            for meta in self.temp_tables.values() {
-                aliases.push(crate::types::TableAliasInfo {
-                    table_name: meta.name.clone(),
-                    alias: format!("temp.{}", meta.name),
-                    file_name: "<temp>".to_string(),
-                    sheet_name: meta.name.clone(),
-                    row_count: meta.row_count,
-                    columns: meta.columns.clone(),
-                    kind: crate::types::TableKind::Temp,
-                });
-            }
-
-            aliases
+        // Append session temp table aliases
+        for meta in self.temp_tables.values() {
+            aliases.push(crate::types::TableAliasInfo {
+                table_name: meta.name.clone(),
+                alias: format!("temp.{}", meta.name),
+                file_name: "<temp>".to_string(),
+                sheet_name: meta.name.clone(),
+                row_count: meta.row_count,
+                columns: meta.columns.clone(),
+                kind: crate::types::TableKind::Temp,
+            });
         }
 
-        fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
-            let mut stmt = self.conn.prepare(
-                "SELECT s.sheet_name, s.row_count, s.col_names
+        aliases
+    }
+
+    fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.sheet_name, s.row_count, s.col_names
                  FROM sheets s JOIN files f ON s.file_id = f.file_id
                  WHERE f.file_name = ?
-                 ORDER BY s.sheet_id"
-            )?;
+                 ORDER BY s.sheet_id",
+        )?;
 
-            let sheet_infos: Vec<SheetMetadataInfo> = stmt.query_map(params![file_name], |row| {
+        let sheet_infos: Vec<SheetMetadataInfo> = stmt
+            .query_map(params![file_name], |row| {
                 let sheet_name: String = row.get(0)?;
                 let row_count: i32 = row.get(1)?;
                 let col_names_str: String = row.get(2)?;
@@ -728,117 +750,132 @@ impl SearchEngine for DuckDbEngine {
                     row_count: row_count as usize,
                     columns,
                 })
-            })?.collect::<Result<Vec<_>, _>>()?;
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
-            if sheet_infos.is_empty() {
-                anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
-            }
-
-            Ok(FileMetadataInfo {
-                file_name: file_name.to_string(),
-                sheet_count: sheet_infos.len(),
-                sheets: sheet_infos,
-            })
-        }
-
-        fn get_sheet_sample(&self, file_name: &str, sheet_name: &str, sample_size: usize) -> Result<SheetDataResult> {
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-
-            let col_list: String = meta.col_names.iter()
-                .map(|c| quote_ident(c))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let sql = format!(
-                "SELECT {} FROM {} USING SAMPLE {}",
-                col_list,
-                quote_ident(&meta.table_name),
-                sample_size
+        if sheet_infos.is_empty() {
+            anyhow::bail!(
+                "File '{}' not found. Use list_files to see imported files.",
+                file_name
             );
-
-            let rows = self.query_rows(&sql, &meta.col_names)?;
-            let total_rows = meta.row_count;
-            let row_count = rows.len();
-
-            Ok(SheetDataResult {
-                file_name: file_name.to_string(),
-                sheet_name: sheet_name.to_string(),
-                columns: meta.col_names,
-                rows,
-                row_count,
-                total_rows,
-                truncated: row_count < total_rows,
-            })
         }
 
-        fn get_sheet_data(
-            &self,
-            file_name: &str,
-            sheet_name: &str,
-            start_row: Option<usize>,
-            end_row: Option<usize>,
-            columns: Option<&[String]>,
-        ) -> Result<SheetDataResult> {
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        Ok(FileMetadataInfo {
+            file_name: file_name.to_string(),
+            sheet_count: sheet_infos.len(),
+            sheets: sheet_infos,
+        })
+    }
 
-            let selected_cols: Vec<String> = if let Some(cols) = columns {
-                cols.to_vec()
-            } else {
-                meta.col_names.clone()
-            };
+    fn get_sheet_sample(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        sample_size: usize,
+    ) -> Result<SheetDataResult> {
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
 
-            let col_indices: Vec<usize> = selected_cols.iter()
-                .filter_map(|c| meta.col_names.iter().position(|h| h == c))
-                .collect();
-            let col_names: Vec<String> = col_indices.iter()
-                .map(|&i| meta.col_names[i].clone())
-                .collect();
+        let col_list: String = meta
+            .col_names
+            .iter()
+            .map(|c| quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
 
-            let col_list: String = col_names.iter()
-                .map(|c| quote_ident(c))
-                .collect::<Vec<_>>()
-                .join(", ");
+        let sql = format!(
+            "SELECT {} FROM {} USING SAMPLE {}",
+            col_list,
+            quote_ident(&meta.table_name),
+            sample_size
+        );
 
-            let start = start_row.unwrap_or(0);
-            let limit = end_row.unwrap_or(meta.row_count).saturating_sub(start);
+        let rows = self.query_rows(&sql, &meta.col_names)?;
+        let total_rows = meta.row_count;
+        let row_count = rows.len();
 
-            let sql = format!(
-                "SELECT {} FROM {} LIMIT {} OFFSET {}",
-                col_list,
-                quote_ident(&meta.table_name),
-                limit,
-                start
-            );
+        Ok(SheetDataResult {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            columns: meta.col_names,
+            rows,
+            row_count,
+            total_rows,
+            truncated: row_count < total_rows,
+        })
+    }
 
-            let rows = self.query_rows(&sql, &col_names)?;
-            let row_count = rows.len();
-            let total_rows = meta.row_count;
+    fn get_sheet_data(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: Option<usize>,
+        end_row: Option<usize>,
+        columns: Option<&[String]>,
+    ) -> Result<SheetDataResult> {
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
 
-            Ok(SheetDataResult {
-                file_name: file_name.to_string(),
-                sheet_name: sheet_name.to_string(),
-                columns: col_names,
-                rows,
-                row_count,
-                total_rows,
-                truncated: false,
-            })
-        }
+        let selected_cols: Vec<String> = if let Some(cols) = columns {
+            cols.to_vec()
+        } else {
+            meta.col_names.clone()
+        };
 
-        #[allow(unused_variables)]
-        fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
-            #[cfg(feature = "mcp-server")]
-            {
-                use crate::engine::write_xlsx;
+        let col_indices: Vec<usize> = selected_cols
+            .iter()
+            .filter_map(|c| meta.col_names.iter().position(|h| h == c))
+            .collect();
+        let col_names: Vec<String> = col_indices
+            .iter()
+            .map(|&i| meta.col_names[i].clone())
+            .collect();
 
-                let mut stmt = self.conn.prepare(
-                    "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
+        let col_list: String = col_names
+            .iter()
+            .map(|c| quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let start = start_row.unwrap_or(0);
+        let limit = end_row.unwrap_or(meta.row_count).saturating_sub(start);
+
+        let sql = format!(
+            "SELECT {} FROM {} LIMIT {} OFFSET {}",
+            col_list,
+            quote_ident(&meta.table_name),
+            limit,
+            start
+        );
+
+        let rows = self.query_rows(&sql, &col_names)?;
+        let row_count = rows.len();
+        let total_rows = meta.row_count;
+
+        Ok(SheetDataResult {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            columns: col_names,
+            rows,
+            row_count,
+            total_rows,
+            truncated: false,
+        })
+    }
+
+    #[allow(unused_variables)]
+    fn save_as(&self, file_name: &str, output_path: &Path) -> Result<()> {
+        #[cfg(feature = "mcp-server")]
+        {
+            use crate::engine::write_xlsx;
+
+            let mut stmt = self.conn.prepare(
+                "SELECT s.sheet_name, s.table_name, s.col_names, s.row_count
                      FROM sheets s JOIN files f ON s.file_id = f.file_id
                      WHERE f.file_name = ?
-                     ORDER BY s.sheet_id"
-                )?;
+                     ORDER BY s.sheet_id",
+            )?;
 
-                let sheet_rows: Vec<(String, String, Vec<String>)> = stmt.query_map(params![file_name], |row| {
+            let sheet_rows: Vec<(String, String, Vec<String>)> = stmt
+                .query_map(params![file_name], |row| {
                     let sheet_name: String = row.get(0)?;
                     let table_name: String = row.get(1)?;
                     let col_names_str: String = row.get(2)?;
@@ -848,214 +885,371 @@ impl SearchEngine for DuckDbEngine {
                         col_names_str.split('\x1f').map(|s| s.to_string()).collect()
                     };
                     Ok((sheet_name, table_name, col_names))
-                })?.collect::<Result<Vec<_>, _>>()?;
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
 
-                if sheet_rows.is_empty() {
-                    anyhow::bail!("File '{}' not found. Use list_files to see imported files.", file_name);
-                }
-
-                let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
-                for (sheet_name, table_name, col_names) in &sheet_rows {
-                    let col_list: String = col_names.iter()
-                        .map(|c| quote_ident(c))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
-                    let rows = self.query_rows(&sql, col_names)?;
-                    sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
-                }
-
-                let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data.iter()
-                    .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
-                    .collect();
-
-                write_xlsx(&refs, output_path)
-            }
-            #[cfg(not(feature = "mcp-server"))]
-            anyhow::bail!("save_as requires the mcp-server feature")
-        }
-
-        fn update_cell(&mut self, file_name: &str, sheet_name: &str, row: usize, column: &str, value: &str) -> Result<()> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            let col_idx = meta.col_names.iter().position(|h| h == column)
-                .ok_or_else(|| anyhow::anyhow!(
-                    "Column '{}' not found. Available columns: {}",
-                    column, meta.col_names.join(", ")
-                ))?;
-            let quoted_col = quote_ident(&meta.col_names[col_idx]);
-            let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
-            let affected = self.conn.execute(&sql, params![value, row as i64])?;
-            if affected == 0 {
-                anyhow::bail!("Row {} out of range (sheet has {} rows)", row, meta.row_count);
-            }
-            Ok(())
-        }
-
-        fn update_cells(&mut self, file_name: &str, sheet_name: &str, updates: &[(usize, String, String)]) -> Result<usize> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            let mut count = 0usize;
-            for (row, column, value) in updates {
-                if let Some(col_idx) = meta.col_names.iter().position(|h| h == column) {
-                    let quoted_col = quote_ident(&meta.col_names[col_idx]);
-                    let sql = format!("UPDATE {} SET {} = ? WHERE rowid = ?", quote_ident(&meta.table_name), quoted_col);
-                    if self.conn.execute(&sql, params![value, *row as i64])? > 0 {
-                        count += 1;
-                    }
-                }
-            }
-            Ok(count)
-        }
-
-        fn insert_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, rows: Vec<Vec<String>>) -> Result<()> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            let total = meta.row_count;
-            let start = start_row.min(total);
-            let col_count = meta.col_names.len();
-            let col_list = meta.col_names.iter().map(|c| quote_ident(c)).collect::<Vec<_>>().join(", ");
-
-            let temp_table = format!("{}_edit_temp", meta.table_name);
-
-            let _ = self.conn.execute(&format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_table)), []);
-
-            let col_defs: Vec<String> = meta.col_names.iter().map(|c| format!("{} TEXT", quote_ident(c))).collect();
-            self.conn.execute(&format!("CREATE TABLE {} ({})", quote_ident(&temp_table), col_defs.join(", ")), [])?;
-
-            if start > 0 {
-                self.conn.execute(&format!(
-                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid <= {}",
-                    quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
-                ), [])?;
-            }
-
-            let placeholders: Vec<&str> = (0..col_count).map(|_| "?").collect();
-            let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", quote_ident(&temp_table), col_list, placeholders.join(", "));
-            for row in &rows {
-                let mut padded = row.clone();
-                padded.resize(col_count, String::new());
-                let param_refs: Vec<&dyn ::duckdb::ToSql> = padded.iter().map(|s| s as &dyn ::duckdb::ToSql).collect();
-                self.conn.execute(&insert_sql, param_refs.as_slice())?;
-            }
-
-            if start < total {
-                self.conn.execute(&format!(
-                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid > {}",
-                    quote_ident(&temp_table), col_list, col_list, quote_ident(&meta.table_name), start
-                ), [])?;
-            }
-
-            self.conn.execute(&format!("DROP TABLE {}", quote_ident(&meta.table_name)), [])?;
-            self.conn.execute(&format!("ALTER TABLE {} RENAME TO {}", quote_ident(&temp_table), quote_ident(&meta.table_name)), [])?;
-
-            let new_count = total + rows.len();
-            self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
-
-            Ok(())
-        }
-
-        fn delete_rows(&mut self, file_name: &str, sheet_name: &str, start_row: usize, count: usize) -> Result<usize> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            if start_row >= meta.row_count {
-                return Ok(0);
-            }
-            let end = (start_row + count).min(meta.row_count);
-            let actual_count = end - start_row;
-
-            // DuckDB rowid is 1-based; our start_row is 0-based
-            let sql = format!(
-                "DELETE FROM {} WHERE rowid > ? AND rowid <= ?",
-                quote_ident(&meta.table_name)
-            );
-            self.conn.execute(&sql, params![start_row as i64, end as i64])?;
-
-            let new_count = meta.row_count - actual_count;
-            self.conn.execute("UPDATE sheets SET row_count = ? WHERE table_name = ?", params![new_count as i32, &meta.table_name])?;
-
-            Ok(actual_count)
-        }
-
-        fn add_column(&mut self, file_name: &str, sheet_name: &str, column_name: &str, default_value: &str) -> Result<()> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            if meta.col_names.iter().any(|h| h == column_name) {
-                anyhow::bail!("Column '{}' already exists in sheet '{}'", column_name, sheet_name);
-            }
-
-            let quoted_col = quote_ident(column_name);
-            self.conn.execute(&format!(
-                "ALTER TABLE {} ADD COLUMN {} TEXT",
-                quote_ident(&meta.table_name), quoted_col
-            ), [])?;
-
-            if !default_value.is_empty() {
-                self.conn.execute(&format!(
-                    "UPDATE {} SET {} = ? WHERE {} IS NULL",
-                    quote_ident(&meta.table_name), quoted_col, quoted_col
-                ), params![default_value])?;
-            }
-
-            let mut new_col_names = meta.col_names.clone();
-            new_col_names.push(column_name.to_string());
-            let col_names_str = new_col_names.join("\x1f");
-            self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
-
-            Ok(())
-        }
-
-        fn rename_column(&mut self, file_name: &str, sheet_name: &str, old_name: &str, new_name: &str) -> Result<()> {
-            self.ensure_materialized(file_name)?;
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            let col_idx = meta.col_names.iter().position(|h| h == old_name)
-                .ok_or_else(|| anyhow::anyhow!(
-                    "Column '{}' not found. Available columns: {}",
-                    old_name, meta.col_names.join(", ")
-                ))?;
-
-            if old_name != new_name && meta.col_names.iter().any(|h| h == new_name) {
-                anyhow::bail!("Column '{}' already exists in sheet '{}'", new_name, sheet_name);
-            }
-
-            self.conn.execute(&format!(
-                "ALTER TABLE {} RENAME COLUMN {} TO {}",
-                quote_ident(&meta.table_name), quote_ident(old_name), quote_ident(new_name)
-            ), [])?;
-
-            let mut new_col_names = meta.col_names.clone();
-            new_col_names[col_idx] = new_name.to_string();
-            let col_names_str = new_col_names.join("\x1f");
-            self.conn.execute("UPDATE sheets SET col_names = ? WHERE table_name = ?", params![&col_names_str, &meta.table_name])?;
-
-            Ok(())
-        }
-
-        fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
-            let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
-            let mut columns = Vec::new();
-            let total_count = meta.row_count;
-
-            for col_name in &meta.col_names {
-                let quoted = super::quote_ident(col_name);
-
-                let count_sql = format!(
-                    "SELECT COUNT({}) AS non_null, COUNT(DISTINCT {}) AS distinct_cnt FROM {}",
-                    quoted, quoted, super::quote_ident(&meta.table_name)
+            if sheet_rows.is_empty() {
+                anyhow::bail!(
+                    "File '{}' not found. Use list_files to see imported files.",
+                    file_name
                 );
-                let (non_null_count, distinct_count): (usize, usize) = self.conn.query_row(
-                    &count_sql, [], |row| Ok((
+            }
+
+            let mut sheets_data: Vec<(String, Vec<String>, Vec<Vec<String>>)> = Vec::new();
+            for (sheet_name, table_name, col_names) in &sheet_rows {
+                let col_list: String = col_names
+                    .iter()
+                    .map(|c| quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!("SELECT {} FROM {}", col_list, quote_ident(table_name));
+                let rows = self.query_rows(&sql, col_names)?;
+                sheets_data.push((sheet_name.clone(), col_names.clone(), rows));
+            }
+
+            let refs: Vec<(&str, &[String], &[Vec<String>])> = sheets_data
+                .iter()
+                .map(|(name, headers, rows)| (name.as_str(), &headers[..], &rows[..]))
+                .collect();
+
+            write_xlsx(&refs, output_path)
+        }
+        #[cfg(not(feature = "mcp-server"))]
+        anyhow::bail!("save_as requires the mcp-server feature")
+    }
+
+    fn update_cell(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        row: usize,
+        column: &str,
+        value: &str,
+    ) -> Result<()> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let col_idx = meta
+            .col_names
+            .iter()
+            .position(|h| h == column)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    column,
+                    meta.col_names.join(", ")
+                )
+            })?;
+        let quoted_col = quote_ident(&meta.col_names[col_idx]);
+        let sql = format!(
+            "UPDATE {} SET {} = ? WHERE rowid = ?",
+            quote_ident(&meta.table_name),
+            quoted_col
+        );
+        let affected = self.conn.execute(&sql, params![value, row as i64])?;
+        if affected == 0 {
+            anyhow::bail!(
+                "Row {} out of range (sheet has {} rows)",
+                row,
+                meta.row_count
+            );
+        }
+        Ok(())
+    }
+
+    fn update_cells(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        updates: &[(usize, String, String)],
+    ) -> Result<usize> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let mut count = 0usize;
+        for (row, column, value) in updates {
+            if let Some(col_idx) = meta.col_names.iter().position(|h| h == column) {
+                let quoted_col = quote_ident(&meta.col_names[col_idx]);
+                let sql = format!(
+                    "UPDATE {} SET {} = ? WHERE rowid = ?",
+                    quote_ident(&meta.table_name),
+                    quoted_col
+                );
+                if self.conn.execute(&sql, params![value, *row as i64])? > 0 {
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    fn insert_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        rows: Vec<Vec<String>>,
+    ) -> Result<()> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let total = meta.row_count;
+        let start = start_row.min(total);
+        let col_count = meta.col_names.len();
+        let col_list = meta
+            .col_names
+            .iter()
+            .map(|c| quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let temp_table = format!("{}_edit_temp", meta.table_name);
+
+        let _ = self.conn.execute(
+            &format!("DROP TABLE IF EXISTS {}", quote_ident(&temp_table)),
+            [],
+        );
+
+        let col_defs: Vec<String> = meta
+            .col_names
+            .iter()
+            .map(|c| format!("{} TEXT", quote_ident(c)))
+            .collect();
+        self.conn.execute(
+            &format!(
+                "CREATE TABLE {} ({})",
+                quote_ident(&temp_table),
+                col_defs.join(", ")
+            ),
+            [],
+        )?;
+
+        if start > 0 {
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid <= {}",
+                    quote_ident(&temp_table),
+                    col_list,
+                    col_list,
+                    quote_ident(&meta.table_name),
+                    start
+                ),
+                [],
+            )?;
+        }
+
+        let placeholders: Vec<&str> = (0..col_count).map(|_| "?").collect();
+        let insert_sql = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            quote_ident(&temp_table),
+            col_list,
+            placeholders.join(", ")
+        );
+        for row in &rows {
+            let mut padded = row.clone();
+            padded.resize(col_count, String::new());
+            let param_refs: Vec<&dyn ::duckdb::ToSql> =
+                padded.iter().map(|s| s as &dyn ::duckdb::ToSql).collect();
+            self.conn.execute(&insert_sql, param_refs.as_slice())?;
+        }
+
+        if start < total {
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO {} ({}) SELECT {} FROM {} WHERE rowid > {}",
+                    quote_ident(&temp_table),
+                    col_list,
+                    col_list,
+                    quote_ident(&meta.table_name),
+                    start
+                ),
+                [],
+            )?;
+        }
+
+        self.conn
+            .execute(&format!("DROP TABLE {}", quote_ident(&meta.table_name)), [])?;
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} RENAME TO {}",
+                quote_ident(&temp_table),
+                quote_ident(&meta.table_name)
+            ),
+            [],
+        )?;
+
+        let new_count = total + rows.len();
+        self.conn.execute(
+            "UPDATE sheets SET row_count = ? WHERE table_name = ?",
+            params![new_count as i32, &meta.table_name],
+        )?;
+
+        Ok(())
+    }
+
+    fn delete_rows(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        start_row: usize,
+        count: usize,
+    ) -> Result<usize> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        if start_row >= meta.row_count {
+            return Ok(0);
+        }
+        let end = (start_row + count).min(meta.row_count);
+        let actual_count = end - start_row;
+
+        // DuckDB rowid is 1-based; our start_row is 0-based
+        let sql = format!(
+            "DELETE FROM {} WHERE rowid > ? AND rowid <= ?",
+            quote_ident(&meta.table_name)
+        );
+        self.conn
+            .execute(&sql, params![start_row as i64, end as i64])?;
+
+        let new_count = meta.row_count - actual_count;
+        self.conn.execute(
+            "UPDATE sheets SET row_count = ? WHERE table_name = ?",
+            params![new_count as i32, &meta.table_name],
+        )?;
+
+        Ok(actual_count)
+    }
+
+    fn add_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        column_name: &str,
+        default_value: &str,
+    ) -> Result<()> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        if meta.col_names.iter().any(|h| h == column_name) {
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'",
+                column_name,
+                sheet_name
+            );
+        }
+
+        let quoted_col = quote_ident(column_name);
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} ADD COLUMN {} TEXT",
+                quote_ident(&meta.table_name),
+                quoted_col
+            ),
+            [],
+        )?;
+
+        if !default_value.is_empty() {
+            self.conn.execute(
+                &format!(
+                    "UPDATE {} SET {} = ? WHERE {} IS NULL",
+                    quote_ident(&meta.table_name),
+                    quoted_col,
+                    quoted_col
+                ),
+                params![default_value],
+            )?;
+        }
+
+        let mut new_col_names = meta.col_names.clone();
+        new_col_names.push(column_name.to_string());
+        let col_names_str = new_col_names.join("\x1f");
+        self.conn.execute(
+            "UPDATE sheets SET col_names = ? WHERE table_name = ?",
+            params![&col_names_str, &meta.table_name],
+        )?;
+
+        Ok(())
+    }
+
+    fn rename_column(
+        &mut self,
+        file_name: &str,
+        sheet_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        self.ensure_materialized(file_name)?;
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let col_idx = meta
+            .col_names
+            .iter()
+            .position(|h| h == old_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Column '{}' not found. Available columns: {}",
+                    old_name,
+                    meta.col_names.join(", ")
+                )
+            })?;
+
+        if old_name != new_name && meta.col_names.iter().any(|h| h == new_name) {
+            anyhow::bail!(
+                "Column '{}' already exists in sheet '{}'",
+                new_name,
+                sheet_name
+            );
+        }
+
+        self.conn.execute(
+            &format!(
+                "ALTER TABLE {} RENAME COLUMN {} TO {}",
+                quote_ident(&meta.table_name),
+                quote_ident(old_name),
+                quote_ident(new_name)
+            ),
+            [],
+        )?;
+
+        let mut new_col_names = meta.col_names.clone();
+        new_col_names[col_idx] = new_name.to_string();
+        let col_names_str = new_col_names.join("\x1f");
+        self.conn.execute(
+            "UPDATE sheets SET col_names = ? WHERE table_name = ?",
+            params![&col_names_str, &meta.table_name],
+        )?;
+
+        Ok(())
+    }
+
+    fn get_sheet_statistics(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+        max_top_values: usize,
+    ) -> Result<SheetStatistics> {
+        let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
+        let mut columns = Vec::new();
+        let total_count = meta.row_count;
+
+        for col_name in &meta.col_names {
+            let quoted = super::quote_ident(col_name);
+
+            let count_sql = format!(
+                "SELECT COUNT({}) AS non_null, COUNT(DISTINCT {}) AS distinct_cnt FROM {}",
+                quoted,
+                quoted,
+                super::quote_ident(&meta.table_name)
+            );
+            let (non_null_count, distinct_count): (usize, usize) =
+                self.conn.query_row(&count_sql, [], |row| {
+                    Ok((
                         row.get::<_, i64>(0)? as usize,
                         row.get::<_, i64>(1)? as usize,
                     ))
-                )?;
+                })?;
 
-                let top_sql = format!(
+            let top_sql = format!(
                     "SELECT {}, COUNT(*) AS cnt FROM {} WHERE {} IS NOT NULL AND {} != '' GROUP BY {} ORDER BY cnt DESC LIMIT {}",
                     quoted, super::quote_ident(&meta.table_name), quoted, quoted, quoted, max_top_values
                 );
-                let mut top_stmt = self.conn.prepare(&top_sql)?;
-                let top_values: Vec<(String, usize)> = top_stmt.query_map([], |row| {
+            let mut top_stmt = self.conn.prepare(&top_sql)?;
+            let top_values: Vec<(String, usize)> = top_stmt
+                .query_map([], |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?.unwrap_or_default(),
                         row.get::<_, i64>(1)? as usize,
@@ -1064,63 +1258,67 @@ impl SearchEngine for DuckDbEngine {
                 .filter_map(|r| r.ok())
                 .collect();
 
-                let null_count = total_count.saturating_sub(non_null_count);
+            let null_count = total_count.saturating_sub(non_null_count);
 
-                columns.push(ColumnStatistics {
-                    column_name: col_name.clone(),
-                    total_count,
-                    non_null_count,
-                    null_count,
-                    distinct_count,
-                    top_values,
-                });
-            }
-
-            Ok(SheetStatistics {
-                file_name: file_name.to_string(),
-                sheet_name: sheet_name.to_string(),
-                row_count: total_count,
-                column_count: columns.len(),
-                columns,
-            })
+            columns.push(ColumnStatistics {
+                column_name: col_name.clone(),
+                total_count,
+                non_null_count,
+                null_count,
+                distinct_count,
+                top_values,
+            });
         }
 
-        fn register_virtual(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
+        Ok(SheetStatistics {
+            file_name: file_name.to_string(),
+            sheet_name: sheet_name.to_string(),
+            row_count: total_count,
+            column_count: columns.len(),
+            columns,
+        })
+    }
 
-            if ext == "csv" {
-                self.register_csv_virtual(path, progress)
-            } else {
-                self.register_lazy_virtual(path, progress)
-            }
+    fn register_virtual(
+        &mut self,
+        path: &Path,
+        progress: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        if ext == "csv" {
+            self.register_csv_virtual(path, progress)
+        } else {
+            self.register_lazy_virtual(path, progress)
         }
+    }
 
-        fn materialize(&mut self, file_name: &str, progress: &dyn Fn(usize, usize)) -> Result<()> {
-            self.materialize_impl(file_name, progress)
-        }
+    fn materialize(&mut self, file_name: &str, progress: &dyn Fn(usize, usize)) -> Result<()> {
+        self.materialize_impl(file_name, progress)
+    }
 
-        fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState> {
-            let state: String = self
-                .conn
-                .query_row(
-                    "SELECT s.state FROM sheets s
+    fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState> {
+        let state: String = self
+            .conn
+            .query_row(
+                "SELECT s.state FROM sheets s
                      JOIN files f ON s.file_id = f.file_id
                      WHERE f.file_name = ? AND s.sheet_name = ?",
-                    params![file_name, sheet_name],
-                    |row| row.get(0),
-                )
-                .ok()?;
-            match state.as_str() {
-                "virtual" => Some(SheetState::Virtual),
-                "materializing" => Some(SheetState::Materializing),
-                "materialized" => Some(SheetState::Materialized),
-                _ => Some(SheetState::Materialized),
-            }
+                params![file_name, sheet_name],
+                |row| row.get(0),
+            )
+            .ok()?;
+        match state.as_str() {
+            "virtual" => Some(SheetState::Virtual),
+            "materializing" => Some(SheetState::Materializing),
+            "materialized" => Some(SheetState::Materialized),
+            _ => Some(SheetState::Materialized),
         }
+    }
 
     fn materialize_query(
         &mut self,
@@ -1171,7 +1369,10 @@ impl SearchEngine for DuckDbEngine {
         if exists_temp && replace {
             let existing_meta = self.temp_tables.get(&lower).unwrap();
             self.conn.execute(
-                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&existing_meta.name)),
+                &format!(
+                    "DROP TABLE IF EXISTS {}",
+                    super::quote_ident(&existing_meta.name)
+                ),
                 [],
             )?;
             self.temp_tables.remove(&lower);
@@ -1188,10 +1389,8 @@ impl SearchEngine for DuckDbEngine {
                 [],
             )?;
         } else {
-            self.conn.execute(
-                &format!("CREATE TABLE {} AS {}", qname, sql),
-                [],
-            )?;
+            self.conn
+                .execute(&format!("CREATE TABLE {} AS {}", qname, sql), [])?;
         }
 
         // Introspect columns
@@ -1204,16 +1403,14 @@ impl SearchEngine for DuckDbEngine {
             ))
             .ok()
             .map(|mut stmt| {
-                stmt.query_map(params![name], |row: &::duckdb::Row| {
-                    row.get::<_, String>(0)
-                })
-                .ok()
-                .map(|mapped| {
-                    mapped
-                        .filter_map(|r: std::result::Result<String, ::duckdb::Error>| r.ok())
-                        .collect()
-                })
-                .unwrap_or_default()
+                stmt.query_map(params![name], |row: &::duckdb::Row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|mapped| {
+                        mapped
+                            .filter_map(|r: std::result::Result<String, ::duckdb::Error>| r.ok())
+                            .collect()
+                    })
+                    .unwrap_or_default()
             })
             .unwrap_or_default();
 
@@ -1551,11 +1748,7 @@ impl DuckDbEngine {
         })
     }
 
-    fn materialize_impl(
-        &mut self,
-        file_name: &str,
-        progress: &dyn Fn(usize, usize),
-    ) -> Result<()> {
+    fn materialize_impl(&mut self, file_name: &str, progress: &dyn Fn(usize, usize)) -> Result<()> {
         let candidates: Vec<(String, String, String)> = {
             let mut stmt = self.conn.prepare(
                 "SELECT s.sheet_name, s.table_name, COALESCE(s.source_path, '')
@@ -1963,9 +2156,9 @@ impl DuckDbEngine {
                 for row in &sheet_data.rows {
                     let mut padded_row = row.clone();
                     padded_row.resize(col_names.len(), String::new());
-                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                    let param_refs: Vec<&dyn ::duckdb::ToSql> = padded_row
                         .iter()
-                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .map(|s| s as &dyn ::duckdb::ToSql)
                         .collect();
                     appender.append_row(param_refs.as_slice())?;
                     *processed_rows_capture += 1;
@@ -2099,9 +2292,9 @@ impl DuckDbEngine {
                 for row in &sheet_data.rows {
                     let mut padded_row = row.clone();
                     padded_row.resize(col_names.len(), String::new());
-                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                    let param_refs: Vec<&dyn ::duckdb::ToSql> = padded_row
                         .iter()
-                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .map(|s| s as &dyn ::duckdb::ToSql)
                         .collect();
                     appender.append_row(param_refs.as_slice())?;
                     *processed_rows_capture += 1;
@@ -2183,7 +2376,7 @@ impl DuckDbEngine {
         format: crate::archive::ArchiveFormat,
         progress: &dyn Fn(usize, usize),
     ) -> Result<FileInfo> {
-        use crate::archive::{is_table_entry, list_entries, extract_entry};
+        use crate::archive::{extract_entry, is_table_entry, list_entries};
 
         let entries = list_entries(archive_path, format)?;
         let table_entries: Vec<_> = entries
@@ -2282,9 +2475,9 @@ impl DuckDbEngine {
                 for row in &sheet_data.rows {
                     let mut padded_row = row.clone();
                     padded_row.resize(col_names.len(), String::new());
-                    let param_refs: Vec<&dyn::duckdb::ToSql> = padded_row
+                    let param_refs: Vec<&dyn ::duckdb::ToSql> = padded_row
                         .iter()
-                        .map(|s| s as &dyn::duckdb::ToSql)
+                        .map(|s| s as &dyn ::duckdb::ToSql)
                         .collect();
                     appender.append_row(param_refs.as_slice())?;
                     *processed_rows_capture += 1;
@@ -2359,7 +2552,11 @@ impl DuckDbEngine {
         })
     }
 
-    fn get_sheet_metadata_query(&self, file_name: &str, sheet_name: &str) -> Result<SheetQueryMeta> {
+    fn get_sheet_metadata_query(
+        &self,
+        file_name: &str,
+        sheet_name: &str,
+    ) -> Result<SheetQueryMeta> {
         let result = self.conn.query_row(
             "SELECT s.table_name, s.col_names, s.row_count
              FROM sheets s JOIN files f ON s.file_id = f.file_id
@@ -2375,14 +2572,19 @@ impl DuckDbEngine {
                 };
                 let row_count: i32 = row.get(2)?;
                 Ok((table_name, col_names, row_count as usize))
-            }
+            },
         );
 
         match result {
-            Ok((table_name, col_names, row_count)) => Ok(SheetQueryMeta { table_name, col_names, row_count }),
+            Ok((table_name, col_names, row_count)) => Ok(SheetQueryMeta {
+                table_name,
+                col_names,
+                row_count,
+            }),
             Err(_) => anyhow::bail!(
                 "Sheet '{}' in file '{}' not found. Use get_metadata to discover sheets.",
-                sheet_name, file_name
+                sheet_name,
+                file_name
             ),
         }
     }
@@ -2390,13 +2592,15 @@ impl DuckDbEngine {
     fn query_rows(&self, sql: &str, col_names: &[String]) -> Result<Vec<Vec<String>>> {
         let mut stmt = self.conn.prepare(sql)?;
         let col_count = col_names.len();
-        let rows: Vec<Vec<String>> = stmt.query_map([], |row| {
-            let mut values = Vec::with_capacity(col_count);
-            for i in 0..col_count {
-                values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
-            }
-            Ok(values)
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let rows: Vec<Vec<String>> = stmt
+            .query_map([], |row| {
+                let mut values = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    values.push(row.get::<_, Option<String>>(i)?.unwrap_or_default());
+                }
+                Ok(values)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -2454,7 +2658,11 @@ impl DuckDbEngine {
             (true, true) => "1=0".to_string(),
             (false, true) => or_parts.join(" OR "),
             (true, false) => and_parts.join(" AND "),
-            (false, false) => format!("({}) AND ({})", or_parts.join(" OR "), and_parts.join(" AND ")),
+            (false, false) => format!(
+                "({}) AND ({})",
+                or_parts.join(" OR "),
+                and_parts.join(" AND ")
+            ),
         };
         (where_sql, values)
     }
@@ -2481,7 +2689,11 @@ impl DuckDbEngine {
             ValueRef::Timestamp(_, ts) => ts.to_string(),
             ValueRef::Date32(d) => d.to_string(),
             ValueRef::Time64(_, t) => t.to_string(),
-            ValueRef::Interval { months, days, nanos } => {
+            ValueRef::Interval {
+                months,
+                days,
+                nanos,
+            } => {
                 format!("{} months, {} days, {} nanos", months, days, nanos)
             }
             ValueRef::Text(bytes) => String::from_utf8_lossy(bytes).into_owned(),
@@ -2491,9 +2703,10 @@ impl DuckDbEngine {
             ValueRef::Array(_, _) => "[ARRAY]".to_string(),
             ValueRef::Map(_, _) => "[MAP]".to_string(),
             ValueRef::Union(_, _) => "[UNION]".to_string(),
-            ValueRef::Enum(_, _) => {
-                v.as_str().map(|s| s.to_string()).unwrap_or_else(|_| "[ENUM]".to_string())
-            }
+            ValueRef::Enum(_, _) => v
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| "[ENUM]".to_string()),
         }
     }
 }

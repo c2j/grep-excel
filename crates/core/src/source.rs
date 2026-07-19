@@ -362,15 +362,13 @@ pub mod download {
                 sid,
                 original_url,
             } => {
-                let a = auth.ok_or_else(|| {
-                    anyhow!("{}", crate::i18n::share_needs_auth(&original_url))
-                })?;
+                let a = auth
+                    .ok_or_else(|| anyhow!("{}", crate::i18n::share_needs_auth(&original_url)))?;
                 download_share(&provider, &sid, &original_url, a)
             }
-            SourceKind::UnsupportedRemote { url } => Err(anyhow!(
-                "{}",
-                crate::i18n::share_unsupported_url(&url)
-            )),
+            SourceKind::UnsupportedRemote { url } => {
+                Err(anyhow!("{}", crate::i18n::share_unsupported_url(&url)))
+            }
         }
     }
 
@@ -410,12 +408,16 @@ pub mod download {
             eprintln!("[share-url] api_url: {}", api_url);
             eprintln!("[share-url] origin: {}", origin);
             eprintln!("[share-url] referer: {}", referer);
-            eprintln!("[share-url] cookie present: {} ({} chars)", !auth.cookie.is_empty(), auth.cookie.len());
+            eprintln!(
+                "[share-url] cookie present: {} ({} chars)",
+                !auth.cookie.is_empty(),
+                auth.cookie.len()
+            );
             eprintln!("[share-url] insecure (skip TLS verify): {}", insecure);
         }
 
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30));
+        let mut client_builder =
+            reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30));
         if insecure {
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
@@ -463,8 +465,9 @@ pub mod download {
             ));
         }
 
-        let json: serde_json::Value =
-            resp.json().context("Share API returned non-JSON response")?;
+        let json: serde_json::Value = resp
+            .json()
+            .context("Share API returned non-JSON response")?;
 
         // Extract download URL: try "url" then "download_url"
         let dl_url = json
@@ -504,10 +507,7 @@ pub mod download {
             .with_context(|| format!("Failed to download file from temporary URL"))?;
 
         if !file_resp.status().is_success() {
-            return Err(anyhow!(
-                "File download failed: HTTP {}",
-                file_resp.status()
-            ));
+            return Err(anyhow!("File download failed: HTTP {}", file_resp.status()));
         }
 
         let bytes = file_resp.bytes().context("Failed to read file bytes")?;

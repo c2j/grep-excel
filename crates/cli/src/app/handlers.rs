@@ -176,8 +176,11 @@ impl App {
                         self.navigate_flat_next_sheet_in_file();
                     }
                 } else if browsing {
-                    let total_cols = self.browse_data.as_ref()
-                        .map(|d| d.columns.len()).unwrap_or(0);
+                    let total_cols = self
+                        .browse_data
+                        .as_ref()
+                        .map(|d| d.columns.len())
+                        .unwrap_or(0);
                     if self.browse_col_offset < total_cols.saturating_sub(1) {
                         self.browse_col_offset += 1;
                     }
@@ -251,8 +254,7 @@ impl App {
             }
             KeyCode::Char('G') => {
                 if browsing {
-                    let total_rows = self.browse_data.as_ref()
-                        .map(|d| d.rows.len()).unwrap_or(0);
+                    let total_rows = self.browse_data.as_ref().map(|d| d.rows.len()).unwrap_or(0);
                     let last = total_rows.saturating_sub(1);
                     self.table_state.select(Some(last));
                     self.browse_scroll_offset = last;
@@ -283,8 +285,11 @@ impl App {
             }
             KeyCode::Char('L') => {
                 if browsing {
-                    let total_cols = self.browse_data.as_ref()
-                        .map(|d| d.columns.len()).unwrap_or(0);
+                    let total_cols = self
+                        .browse_data
+                        .as_ref()
+                        .map(|d| d.columns.len())
+                        .unwrap_or(0);
                     if self.browse_col_offset < total_cols.saturating_sub(1) {
                         self.browse_col_offset += 1;
                     }
@@ -718,9 +723,15 @@ impl App {
     fn format_flat_sheet_status(&self) -> String {
         let sheet_keys = self.get_ordered_sheet_list();
         if self.flat_selected_sheet < sheet_keys.len() {
-            let (file_name, sheet_name) = App::parse_sheet_key(&sheet_keys[self.flat_selected_sheet]);
+            let (file_name, sheet_name) =
+                App::parse_sheet_key(&sheet_keys[self.flat_selected_sheet]);
             let total = sheet_keys.len();
-            crate::i18n::status_flat_sheet(file_name, sheet_name, self.flat_selected_sheet + 1, total)
+            crate::i18n::status_flat_sheet(
+                file_name,
+                sheet_name,
+                self.flat_selected_sheet + 1,
+                total,
+            )
         } else {
             String::new()
         }
@@ -758,8 +769,7 @@ impl App {
         self.results = vec![fake_result];
         self.results_by_sheet.clear();
         let key = format!("{}::{}", data.file_name, data.sheet_name);
-        self.results_by_sheet
-            .insert(key, self.results.clone());
+        self.results_by_sheet.insert(key, self.results.clone());
         self.tab_state = 1;
         self.detail_scroll = 0;
         self.table_state.select(Some(0));

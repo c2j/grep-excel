@@ -1,4 +1,6 @@
-use grep_excel_core::excel::{for_each_sheet, for_each_sheet_repair, parse_excel, parse_file_repair};
+use grep_excel_core::excel::{
+    for_each_sheet, for_each_sheet_repair, parse_excel, parse_file_repair,
+};
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::PathBuf;
@@ -18,8 +20,7 @@ fn write_merged_region_xlsx(path: &std::path::Path) {
     let mut buf = Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut buf);
-        let opts = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         zip.start_file("[Content_Types].xml", opts).unwrap();
         zip.write_all(

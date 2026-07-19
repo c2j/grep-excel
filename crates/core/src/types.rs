@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlResult {
@@ -22,11 +22,20 @@ pub enum SearchMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct SearchCondition {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Column name to compare"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Column name to compare")
+    )]
     pub column: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Comparison operator: =, !=, ILIKE, LIKE, >, <, >=, <="))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Comparison operator: =, !=, ILIKE, LIKE, >, <, >=, <=")
+    )]
     pub operator: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Value to compare against"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Value to compare against")
+    )]
     pub value: String,
 }
 
@@ -157,7 +166,10 @@ pub struct TempTableInfo {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct ImportFileParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Absolute or relative path to the Excel/CSV file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Absolute or relative path to the Excel/CSV file")
+    )]
     pub file_path: String,
 }
 
@@ -166,21 +178,43 @@ pub struct ImportFileParams {
 pub struct SearchParams {
     #[cfg_attr(feature = "mcp-server", schemars(description = "Search query string"))]
     pub query: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Filter to a specific column name"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Filter to a specific column name")
+    )]
     pub column: Option<String>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Filter to a specific sheet name"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Filter to a specific sheet name")
+    )]
     pub sheet: Option<String>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Search mode: fulltext, exact, wildcard, regex"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Search mode: fulltext, exact, wildcard, regex")
+    )]
     pub mode: Option<String>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Maximum results to return (default: 100)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Maximum results to return (default: 100)")
+    )]
     pub limit: Option<usize>,
     #[cfg_attr(feature = "mcp-server", schemars(description = "Aggregate column"))]
     pub aggregate: Option<String>,
     #[cfg_attr(feature = "mcp-server", schemars(description = "Invert match"))]
     pub invert: Option<bool>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Number of rows to include before and after each match (grep -C style). 0 or omit for no context. MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Number of rows to include before and after each match (grep -C style). 0 or omit for no context. MUST be a number, not a string."
+        )
+    )]
     pub context_lines: Option<usize>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Additional AND conditions. Each is {column, operator, value}. Operators: =, !=, ILIKE, LIKE, >, <, >=, <="))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Additional AND conditions. Each is {column, operator, value}. Operators: =, !=, ILIKE, LIKE, >, <, >=, <="
+        )
+    )]
     pub conditions: Option<Vec<SearchCondition>>,
 }
 
@@ -196,142 +230,291 @@ pub struct SqlQueryParams {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct GetMetadataParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "If provided, returns metadata only for this file; otherwise returns metadata for all imported files"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "If provided, returns metadata only for this file; otherwise returns metadata for all imported files"
+        )
+    )]
     pub file_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct GetSheetSampleParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Number of evenly-spaced rows to sample (default: 10). Pass as a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Number of evenly-spaced rows to sample (default: 10). Pass as a number, not a string."
+        )
+    )]
     pub sample_size: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct GetSheetDataParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index to start from (inclusive). Omit or pass 0 to start at the beginning. MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "0-based row index to start from (inclusive). Omit or pass 0 to start at the beginning. MUST be a number, not a string."
+        )
+    )]
     pub start_row: Option<usize>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index to end at (exclusive). Omit to read through the end. MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "0-based row index to end at (exclusive). Omit to read through the end. MUST be a number, not a string."
+        )
+    )]
     pub end_row: Option<usize>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Optional list of column names to include (other columns are filtered out). Omit to return all columns."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Optional list of column names to include (other columns are filtered out). Omit to return all columns."
+        )
+    )]
     pub columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct SaveAsParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the already-imported file whose data should be saved"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the already-imported file whose data should be saved")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Absolute or relative path for the output .xlsx file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Absolute or relative path for the output .xlsx file")
+    )]
     pub output_path: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "If provided, saves only this sheet; otherwise saves all sheets"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "If provided, saves only this sheet; otherwise saves all sheets")
+    )]
     pub sheet_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct SaveParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file to overwrite (its original on-disk path)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Name of the imported file to overwrite (its original on-disk path)"
+        )
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "If provided, saves only this sheet; otherwise saves all sheets"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "If provided, saves only this sheet; otherwise saves all sheets")
+    )]
     pub sheet_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct UpdateCellParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index (header row is not counted). MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "0-based row index (header row is not counted). MUST be a number, not a string."
+        )
+    )]
     pub row: usize,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Column name (matches header text)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Column name (matches header text)")
+    )]
     pub column: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "New cell value (always passed as a string; numeric formatting is preserved on write)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "New cell value (always passed as a string; numeric formatting is preserved on write)"
+        )
+    )]
     pub value: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct UpdateCellsParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "List of cell updates to apply atomically"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "List of cell updates to apply atomically")
+    )]
     pub updates: Vec<CellUpdate>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct CellUpdate {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index (header row is not counted). MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "0-based row index (header row is not counted). MUST be a number, not a string."
+        )
+    )]
     pub row: usize,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Column name (matches header text)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Column name (matches header text)")
+    )]
     pub column: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "New cell value (always passed as a string)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "New cell value (always passed as a string)")
+    )]
     pub value: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct InsertRowsParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index where the first new row should be inserted. Existing rows at and after this index are shifted down. MUST be a number."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "0-based row index where the first new row should be inserted. Existing rows at and after this index are shifted down. MUST be a number."
+        )
+    )]
     pub start_row: usize,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Array of new rows; each row is an array of string cell values in column order"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Array of new rows; each row is an array of string cell values in column order"
+        )
+    )]
     pub rows: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct DeleteRowsParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "0-based row index of the first row to delete. MUST be a number."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "0-based row index of the first row to delete. MUST be a number.")
+    )]
     pub start_row: usize,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Number of rows to delete. MUST be a number."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Number of rows to delete. MUST be a number.")
+    )]
     pub count: usize,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct AddColumnParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name for the new column (must not duplicate an existing column name)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Name for the new column (must not duplicate an existing column name)"
+        )
+    )]
     pub column_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Default value written to every existing row in the new column. Omit for empty strings."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Default value written to every existing row in the new column. Omit for empty strings."
+        )
+    )]
     pub default_value: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct RenameColumnParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Current column name (must match an existing header)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Current column name (must match an existing header)")
+    )]
     pub old_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "New column name (must not duplicate an existing column name)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "New column name (must not duplicate an existing column name)")
+    )]
     pub new_name: String,
 }
 
@@ -357,41 +540,80 @@ pub struct SheetStatistics {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct ExportQueryParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "SQL SELECT query whose result will be exported"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "SQL SELECT query whose result will be exported")
+    )]
     pub sql: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Absolute or relative path for the output .xlsx file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Absolute or relative path for the output .xlsx file")
+    )]
     pub output_path: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Sheet name in the output file (default: \"Sheet1\")"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Sheet name in the output file (default: \"Sheet1\")")
+    )]
     pub sheet_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct GetSheetStatisticsParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the imported file (basename, e.g. \"data.xlsx\")")
+    )]
     pub file_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the sheet within the file"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the sheet within the file")
+    )]
     pub sheet_name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Max number of top values to return per column (default 5). MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Max number of top values to return per column (default 5). MUST be a number, not a string."
+        )
+    )]
     pub max_top_values: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct MaterializeQueryParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Session table name: [A-Za-z_][A-Za-z0-9_]{0,63}"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Session table name: [A-Za-z_][A-Za-z0-9_]{0,63}")
+    )]
     pub name: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Read-only SQL (SELECT/WITH/...) whose full result is stored as a session table"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Read-only SQL (SELECT/WITH/...) whose full result is stored as a session table"
+        )
+    )]
     pub sql: String,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Replace existing temp table with the same name (default true)"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Replace existing temp table with the same name (default true)")
+    )]
     pub replace: Option<bool>,
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Optional safety cap on rows materialized. MUST be a number, not a string."))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(
+            description = "Optional safety cap on rows materialized. MUST be a number, not a string."
+        )
+    )]
     pub max_rows: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 pub struct DropTempTableParams {
-    #[cfg_attr(feature = "mcp-server", schemars(description = "Name of the session temp table to drop"))]
+    #[cfg_attr(
+        feature = "mcp-server",
+        schemars(description = "Name of the session temp table to drop")
+    )]
     pub name: String,
 }

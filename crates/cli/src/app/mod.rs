@@ -9,8 +9,8 @@ use crate::engine::{
 use crate::event::{AppEvent, EventReceiver, EventSender};
 use crate::types::SheetDataResult;
 use anyhow::Result;
-use grep_excel_core::format::FileFormat;
 use crossterm::event::{self, Event, KeyEventKind};
+use grep_excel_core::format::FileFormat;
 use parking_lot::Mutex;
 use ratatui::widgets::{ScrollbarState, TableState};
 use std::collections::HashMap;
@@ -172,7 +172,9 @@ impl App {
         }
 
         let file_name = self.file_list[self.browse_file_index].name.clone();
-        let sheet_name = self.file_list[self.browse_file_index].sheets[self.browse_sheet_index].0.clone();
+        let sheet_name = self.file_list[self.browse_file_index].sheets[self.browse_sheet_index]
+            .0
+            .clone();
 
         self.browse_loading = true;
         self.status_message = crate::i18n::status_browse_loading(&file_name, &sheet_name);
@@ -183,7 +185,9 @@ impl App {
         std::thread::spawn(move || {
             let result = {
                 let db_guard = db.lock();
-                db_guard.0.get_sheet_data(&file_name, &sheet_name, Some(0), Some(500), None)
+                db_guard
+                    .0
+                    .get_sheet_data(&file_name, &sheet_name, Some(0), Some(500), None)
             };
             let _ = tx.send(AppEvent::BrowseDataLoaded(result));
         });
@@ -400,7 +404,8 @@ impl App {
                         self.error_message = None;
                     }
                     Err(e) => {
-                        self.error_message = Some(crate::i18n::status_browse_load_error(&e.to_string()));
+                        self.error_message =
+                            Some(crate::i18n::status_browse_load_error(&e.to_string()));
                         self.status_message = crate::i18n::status_browse_load_failed().to_string();
                     }
                 }
@@ -546,14 +551,20 @@ impl App {
             return (0, 0);
         }
         let (file_name, _) = Self::parse_sheet_key(&ordered[index]);
-        let start = ordered.iter().position(|k| {
-            let (f, _) = Self::parse_sheet_key(k);
-            f == file_name
-        }).unwrap_or(0);
-        let end = ordered.iter().rposition(|k| {
-            let (f, _) = Self::parse_sheet_key(k);
-            f == file_name
-        }).unwrap_or(start);
+        let start = ordered
+            .iter()
+            .position(|k| {
+                let (f, _) = Self::parse_sheet_key(k);
+                f == file_name
+            })
+            .unwrap_or(0);
+        let end = ordered
+            .iter()
+            .rposition(|k| {
+                let (f, _) = Self::parse_sheet_key(k);
+                f == file_name
+            })
+            .unwrap_or(start);
         (start, end)
     }
 

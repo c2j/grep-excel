@@ -172,11 +172,15 @@ impl From<FileMetadataInfo> for McpFileMetadata {
         McpFileMetadata {
             file_name: m.file_name,
             sheet_count: m.sheet_count,
-            sheets: m.sheets.into_iter().map(|s| McpSheetMetadata {
-                sheet_name: s.sheet_name,
-                row_count: s.row_count,
-                columns: s.columns,
-            }).collect(),
+            sheets: m
+                .sheets
+                .into_iter()
+                .map(|s| McpSheetMetadata {
+                    sheet_name: s.sheet_name,
+                    row_count: s.row_count,
+                    columns: s.columns,
+                })
+                .collect(),
         }
     }
 }
@@ -256,7 +260,9 @@ pub struct GrepExcelServer {
 
 #[tool_router(server_handler)]
 impl GrepExcelServer {
-    #[tool(description = "Import a tabular file (Excel/CSV/HTML/text/Markdown) or an archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .zip.001) containing table files. Archive entries are automatically extracted and imported.")]
+    #[tool(
+        description = "Import a tabular file (Excel/CSV/HTML/text/Markdown) or an archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .zip.001) containing table files. Archive entries are automatically extracted and imported."
+    )]
     pub async fn import_file(
         &self,
         Parameters(params): Parameters<ImportFileParams>,
@@ -270,7 +276,11 @@ impl GrepExcelServer {
                 Ok(grep_excel_core::source::download::ResolvedSource::Local(path)) => {
                     return self.do_import(&path, &file_path_str).await;
                 }
-                Ok(grep_excel_core::source::download::ResolvedSource::Downloaded { path, display_name, _guard }) => {
+                Ok(grep_excel_core::source::download::ResolvedSource::Downloaded {
+                    path,
+                    display_name,
+                    _guard,
+                }) => {
                     let result = self.do_import(&path, &display_name).await;
                     drop(_guard);
                     return result;
@@ -323,7 +333,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Search across all imported Excel/CSV files. Supports fulltext, exact, wildcard, and regex modes.")]
+    #[tool(
+        description = "Search across all imported Excel/CSV files. Supports fulltext, exact, wildcard, and regex modes."
+    )]
     pub async fn search(
         &self,
         Parameters(params): Parameters<SearchParams>,
@@ -352,7 +364,8 @@ impl GrepExcelServer {
                 .search(&query)
                 .map(|(results, stats)| {
                     let aggregate = aggregate_col.and_then(|col| {
-                        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+                        let mut counts: std::collections::HashMap<String, usize> =
+                            std::collections::HashMap::new();
                         for result in &results {
                             if let Some(col_idx) = result.col_names.iter().position(|c| c == &col) {
                                 if let Some(value) = result.row.get(col_idx) {
@@ -369,7 +382,10 @@ impl GrepExcelServer {
                             sorted.sort_by(|a, b| b.1.cmp(&a.1));
                             Some(McpAggregateStats {
                                 column: col,
-                                counts: sorted.into_iter().map(|(value, count)| McpAggregateCount { value, count }).collect(),
+                                counts: sorted
+                                    .into_iter()
+                                    .map(|(value, count)| McpAggregateCount { value, count })
+                                    .collect(),
                             })
                         }
                     });
@@ -392,12 +408,8 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         let result = tokio::task::spawn_blocking(move || {
             let guard = db.lock();
-            let files: Vec<McpFileInfo> = guard
-                .0
-                .list_files()
-                .into_iter()
-                .map(Into::into)
-                .collect();
+            let files: Vec<McpFileInfo> =
+                guard.0.list_files().into_iter().map(Into::into).collect();
             McpFileListResponse { files }
         })
         .await;
@@ -407,7 +419,9 @@ impl GrepExcelServer {
         }
     }
 
-    #[tool(description = "Execute a SQL SELECT query against imported Excel/CSV data. Only SELECT statements are allowed. Table names follow pattern: sheet_{file_id}_{sheet_idx}. Use list_files to discover tables and their schemas. Supports standard SQL plus engine-specific functions (DuckDB: ILIKE, :: casts, window functions; SQLite: LIKE, regexp()).")]
+    #[tool(
+        description = "Execute a SQL SELECT query against imported Excel/CSV data. Only SELECT statements are allowed. Table names follow pattern: sheet_{file_id}_{sheet_idx}. Use list_files to discover tables and their schemas. Supports standard SQL plus engine-specific functions (DuckDB: ILIKE, :: casts, window functions; SQLite: LIKE, regexp())."
+    )]
     pub async fn execute_sql(
         &self,
         Parameters(params): Parameters<SqlQueryParams>,
@@ -431,7 +445,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Run a SQL SELECT query and export the result rows to a new .xlsx file. Combines execute_sql + save_as for filtered exports. Note: the memory engine does not support SQL queries.")]
+    #[tool(
+        description = "Run a SQL SELECT query and export the result rows to a new .xlsx file. Combines execute_sql + save_as for filtered exports. Note: the memory engine does not support SQL queries."
+    )]
     pub async fn export_query(
         &self,
         Parameters(params): Parameters<ExportQueryParams>,
@@ -442,7 +458,9 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         let result: Result<String, String> = tokio::task::spawn_blocking(move || {
             let guard = db.lock();
-            let sql_result = guard.0.execute_sql(&sql, 10000)
+            let sql_result = guard
+                .0
+                .execute_sql(&sql, 10000)
                 .map_err(|e| format!("SQL execution failed: {}", e))?;
             if sql_result.rows.is_empty() {
                 return Err("Query returned no rows; nothing to export".into());
@@ -450,7 +468,12 @@ impl GrepExcelServer {
             let sheet_tuple: (&str, &[String], &[Vec<String>]) =
                 (&sheet_name, &sql_result.columns, &sql_result.rows);
             crate::engine::write_xlsx(&[sheet_tuple], std::path::Path::new(&output_path))
-                .map(|_| format!("Exported {} rows to '{}'", sql_result.row_count, output_path))
+                .map(|_| {
+                    format!(
+                        "Exported {} rows to '{}'",
+                        sql_result.row_count, output_path
+                    )
+                })
                 .map_err(|e| format!("Failed to write xlsx: {}", e))
         })
         .await
@@ -458,7 +481,9 @@ impl GrepExcelServer {
         result
     }
 
-    #[tool(description = "Materialize a read-only SQL result into a named session temp table for reuse in later execute_sql calls. Source SQL must pass the same read-only checks as execute_sql. Name: [A-Za-z_][A-Za-z0-9_]*. Query the table by bare name; aliases show as temp.<name>. Does not write files. Not supported on the memory engine.")]
+    #[tool(
+        description = "Materialize a read-only SQL result into a named session temp table for reuse in later execute_sql calls. Source SQL must pass the same read-only checks as execute_sql. Name: [A-Za-z_][A-Za-z0-9_]*. Query the table by bare name; aliases show as temp.<name>. Does not write files. Not supported on the memory engine."
+    )]
     pub async fn materialize_query(
         &self,
         Parameters(params): Parameters<MaterializeQueryParams>,
@@ -483,7 +508,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Drop a session temp table created by materialize_query. Cannot drop imported file tables.")]
+    #[tool(
+        description = "Drop a session temp table created by materialize_query. Cannot drop imported file tables."
+    )]
     pub async fn drop_temp_table(
         &self,
         Parameters(params): Parameters<DropTempTableParams>,
@@ -502,7 +529,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Get detailed metadata for imported files, including sheet names and column names. If file_name is omitted, returns metadata for all imported files.")]
+    #[tool(
+        description = "Get detailed metadata for imported files, including sheet names and column names. If file_name is omitted, returns metadata for all imported files."
+    )]
     pub async fn get_metadata(
         &self,
         Parameters(params): Parameters<GetMetadataParams>,
@@ -511,12 +540,13 @@ impl GrepExcelServer {
         tokio::task::spawn_blocking(move || {
             let guard = db.lock();
             if let Some(file_name) = params.file_name {
-                guard.0.get_metadata(&file_name)
+                guard
+                    .0
+                    .get_metadata(&file_name)
                     .map(|m| {
                         let mcp: McpFileMetadata = m.into();
-                        serde_json::to_string_pretty(&McpMetadataResponse {
-                            files: vec![mcp],
-                        }).unwrap_or_else(|_| "Metadata retrieved".to_string())
+                        serde_json::to_string_pretty(&McpMetadataResponse { files: vec![mcp] })
+                            .unwrap_or_else(|_| "Metadata retrieved".to_string())
                     })
                     .map_err(|e| format!("Failed to get metadata: {}", e))
             } else {
@@ -530,14 +560,17 @@ impl GrepExcelServer {
                 }
                 Ok(serde_json::to_string_pretty(&McpMetadataResponse {
                     files: all_metadata,
-                }).unwrap_or_else(|_| "Metadata retrieved".to_string()))
+                })
+                .unwrap_or_else(|_| "Metadata retrieved".to_string()))
             }
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Get a sample of rows from a specific sheet. Uses deterministic evenly-spaced sampling.")]
+    #[tool(
+        description = "Get a sample of rows from a specific sheet. Uses deterministic evenly-spaced sampling."
+    )]
     pub async fn get_sheet_sample(
         &self,
         Parameters(params): Parameters<GetSheetSampleParams>,
@@ -548,7 +581,9 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let guard = db.lock();
-            guard.0.get_sheet_sample(&file_name, &sheet_name, sample_size)
+            guard
+                .0
+                .get_sheet_sample(&file_name, &sheet_name, sample_size)
                 .map(|r| {
                     let mcp: McpSheetData = r.into();
                     serde_json::to_string_pretty(&mcp)
@@ -560,7 +595,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Get rows from a specific sheet with pagination and column filtering. Supports start_row/end_row for pagination and optional column selection.")]
+    #[tool(
+        description = "Get rows from a specific sheet with pagination and column filtering. Supports start_row/end_row for pagination and optional column selection."
+    )]
     pub async fn get_sheet_data(
         &self,
         Parameters(params): Parameters<GetSheetDataParams>,
@@ -573,7 +610,15 @@ impl GrepExcelServer {
         let columns = params.columns;
         tokio::task::spawn_blocking(move || {
             let guard = db.lock();
-            guard.0.get_sheet_data(&file_name, &sheet_name, start_row, end_row, columns.as_deref())
+            guard
+                .0
+                .get_sheet_data(
+                    &file_name,
+                    &sheet_name,
+                    start_row,
+                    end_row,
+                    columns.as_deref(),
+                )
                 .map(|r| {
                     let mcp: McpSheetData = r.into();
                     serde_json::to_string_pretty(&mcp)
@@ -585,7 +630,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Get per-column statistics for a sheet: null counts, distinct counts, top values. Useful for data profiling.")]
+    #[tool(
+        description = "Get per-column statistics for a sheet: null counts, distinct counts, top values. Useful for data profiling."
+    )]
     pub async fn get_sheet_statistics(
         &self,
         Parameters(params): Parameters<GetSheetStatisticsParams>,
@@ -596,7 +643,9 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let guard = db.lock();
-            guard.0.get_sheet_statistics(&file_name, &sheet_name, max_top)
+            guard
+                .0
+                .get_sheet_statistics(&file_name, &sheet_name, max_top)
                 .map(|r| {
                     let mcp: McpSheetStatistics = r.into();
                     serde_json::to_string_pretty(&mcp)
@@ -608,7 +657,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Save imported data to a new Excel file (Save As). Does not modify the original file.")]
+    #[tool(
+        description = "Save imported data to a new Excel file (Save As). Does not modify the original file."
+    )]
     pub async fn save_as(
         &self,
         Parameters(params): Parameters<SaveAsParams>,
@@ -620,16 +671,28 @@ impl GrepExcelServer {
         let result: Result<String, String> = tokio::task::spawn_blocking(move || {
             let guard = db.lock();
             if let Some(ref sheet_name) = sheet_name {
-                let data = guard.0.get_sheet_data(&file_name, sheet_name, None, None, None)
+                let data = guard
+                    .0
+                    .get_sheet_data(&file_name, sheet_name, None, None, None)
                     .map_err(|e| format!("Failed to read sheet data: {}", e))?;
                 use crate::engine::write_xlsx;
                 let headers = &data.columns;
                 let rows = &data.rows;
-                write_xlsx(&[(sheet_name.as_str(), headers.as_slice(), rows.as_slice())], std::path::Path::new(&output_path))
-                    .map(|_| format!("Successfully saved sheet '{}' to '{}'", sheet_name, output_path))
-                    .map_err(|e| format!("Failed to save: {}", e))
+                write_xlsx(
+                    &[(sheet_name.as_str(), headers.as_slice(), rows.as_slice())],
+                    std::path::Path::new(&output_path),
+                )
+                .map(|_| {
+                    format!(
+                        "Successfully saved sheet '{}' to '{}'",
+                        sheet_name, output_path
+                    )
+                })
+                .map_err(|e| format!("Failed to save: {}", e))
             } else {
-                guard.0.save_as(&file_name, std::path::Path::new(&output_path))
+                guard
+                    .0
+                    .save_as(&file_name, std::path::Path::new(&output_path))
                     .map(|_| format!("Successfully saved '{}' to '{}'", file_name, output_path))
                     .map_err(|e| format!("Failed to save: {}", e))
             }
@@ -639,7 +702,9 @@ impl GrepExcelServer {
         result
     }
 
-    #[tool(description = "Update a single cell value. Row index is 0-based. Column is identified by name.")]
+    #[tool(
+        description = "Update a single cell value. Row index is 0-based. Column is identified by name."
+    )]
     pub async fn update_cell(
         &self,
         Parameters(params): Parameters<UpdateCellParams>,
@@ -647,27 +712,46 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let mut guard = db.lock();
-            guard.0.update_cell(&params.file_name, &params.sheet_name, params.row, &params.column, &params.value)
-                .map(|_| format!("Updated cell at row {}, column '{}' to '{}'", params.row, params.column, params.value))
+            guard
+                .0
+                .update_cell(
+                    &params.file_name,
+                    &params.sheet_name,
+                    params.row,
+                    &params.column,
+                    &params.value,
+                )
+                .map(|_| {
+                    format!(
+                        "Updated cell at row {}, column '{}' to '{}'",
+                        params.row, params.column, params.value
+                    )
+                })
                 .map_err(|e| format!("Failed to update cell: {}", e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Batch update multiple cells. Each update specifies row (0-based index), column (name), and value.")]
+    #[tool(
+        description = "Batch update multiple cells. Each update specifies row (0-based index), column (name), and value."
+    )]
     pub async fn update_cells(
         &self,
         Parameters(params): Parameters<UpdateCellsParams>,
     ) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
-            let updates: Vec<(usize, String, String)> = params.updates.into_iter()
+            let updates: Vec<(usize, String, String)> = params
+                .updates
+                .into_iter()
                 .map(|u| (u.row, u.column, u.value))
                 .collect();
             let total = updates.len();
             let mut guard = db.lock();
-            guard.0.update_cells(&params.file_name, &params.sheet_name, &updates)
+            guard
+                .0
+                .update_cells(&params.file_name, &params.sheet_name, &updates)
                 .map(|count| format!("Updated {}/{} cells", count, total))
                 .map_err(|e| format!("Failed to update cells: {}", e))
         })
@@ -675,7 +759,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Insert rows at a specified position. Existing rows at and after start_row are shifted down. Each row is an array of string values.")]
+    #[tool(
+        description = "Insert rows at a specified position. Existing rows at and after start_row are shifted down. Each row is an array of string values."
+    )]
     pub async fn insert_rows(
         &self,
         Parameters(params): Parameters<InsertRowsParams>,
@@ -684,7 +770,14 @@ impl GrepExcelServer {
         tokio::task::spawn_blocking(move || {
             let count = params.rows.len();
             let mut guard = db.lock();
-            guard.0.insert_rows(&params.file_name, &params.sheet_name, params.start_row, params.rows)
+            guard
+                .0
+                .insert_rows(
+                    &params.file_name,
+                    &params.sheet_name,
+                    params.start_row,
+                    params.rows,
+                )
                 .map(|_| format!("Inserted {} rows at position {}", count, params.start_row))
                 .map_err(|e| format!("Failed to insert rows: {}", e))
         })
@@ -692,7 +785,9 @@ impl GrepExcelServer {
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Delete rows starting at start_row (0-based). Returns the actual number of rows deleted.")]
+    #[tool(
+        description = "Delete rows starting at start_row (0-based). Returns the actual number of rows deleted."
+    )]
     pub async fn delete_rows(
         &self,
         Parameters(params): Parameters<DeleteRowsParams>,
@@ -700,15 +795,29 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let mut guard = db.lock();
-            guard.0.delete_rows(&params.file_name, &params.sheet_name, params.start_row, params.count)
-                .map(|actual| format!("Deleted {} rows starting at row {}", actual, params.start_row))
+            guard
+                .0
+                .delete_rows(
+                    &params.file_name,
+                    &params.sheet_name,
+                    params.start_row,
+                    params.count,
+                )
+                .map(|actual| {
+                    format!(
+                        "Deleted {} rows starting at row {}",
+                        actual, params.start_row
+                    )
+                })
                 .map_err(|e| format!("Failed to delete rows: {}", e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Add a new column to a sheet. All existing rows are filled with the default value.")]
+    #[tool(
+        description = "Add a new column to a sheet. All existing rows are filled with the default value."
+    )]
     pub async fn add_column(
         &self,
         Parameters(params): Parameters<AddColumnParams>,
@@ -717,8 +826,20 @@ impl GrepExcelServer {
         tokio::task::spawn_blocking(move || {
             let default = params.default_value.unwrap_or_default();
             let mut guard = db.lock();
-            guard.0.add_column(&params.file_name, &params.sheet_name, &params.column_name, &default)
-                .map(|_| format!("Added column '{}' with default value '{}'", params.column_name, default))
+            guard
+                .0
+                .add_column(
+                    &params.file_name,
+                    &params.sheet_name,
+                    &params.column_name,
+                    &default,
+                )
+                .map(|_| {
+                    format!(
+                        "Added column '{}' with default value '{}'",
+                        params.column_name, default
+                    )
+                })
                 .map_err(|e| format!("Failed to add column: {}", e))
         })
         .await
@@ -733,19 +854,30 @@ impl GrepExcelServer {
         let db = Arc::clone(&self.db);
         tokio::task::spawn_blocking(move || {
             let mut guard = db.lock();
-            guard.0.rename_column(&params.file_name, &params.sheet_name, &params.old_name, &params.new_name)
-                .map(|_| format!("Renamed column '{}' to '{}'", params.old_name, params.new_name))
+            guard
+                .0
+                .rename_column(
+                    &params.file_name,
+                    &params.sheet_name,
+                    &params.old_name,
+                    &params.new_name,
+                )
+                .map(|_| {
+                    format!(
+                        "Renamed column '{}' to '{}'",
+                        params.old_name, params.new_name
+                    )
+                })
                 .map_err(|e| format!("Failed to rename column: {}", e))
         })
         .await
         .map_err(|e| format!("Task error: {}", e))?
     }
 
-    #[tool(description = "Save changes back to the original imported file (overwrite). Use save_as to save to a different file.")]
-    pub async fn save(
-        &self,
-        Parameters(params): Parameters<SaveParams>,
-    ) -> Result<String, String> {
+    #[tool(
+        description = "Save changes back to the original imported file (overwrite). Use save_as to save to a different file."
+    )]
+    pub async fn save(&self, Parameters(params): Parameters<SaveParams>) -> Result<String, String> {
         let db = Arc::clone(&self.db);
         let import_paths = Arc::clone(&self.import_paths);
         let result: Result<String, String> = tokio::task::spawn_blocking(move || {

@@ -269,11 +269,9 @@ pub fn find_match_spans_cached(
         return vec![];
     }
     match mode {
-        SearchMode::FullText | SearchMode::Regex => {
-            compiled_regex
-                .map(|re| re.find_iter(value).map(|m| (m.start(), m.end())).collect())
-                .unwrap_or_default()
-        }
+        SearchMode::FullText | SearchMode::Regex => compiled_regex
+            .map(|re| re.find_iter(value).map(|m| (m.start(), m.end())).collect())
+            .unwrap_or_default(),
         SearchMode::ExactMatch => vec![(0, value.len())],
         SearchMode::Wildcard => vec![(0, value.len())],
     }
@@ -308,10 +306,7 @@ pub fn make_highlighted_spans(
         last_end = end.max(last_end);
     }
     if last_end < value.len() {
-        result.push(Span::styled(
-            value[last_end..].to_string(),
-            normal_style,
-        ));
+        result.push(Span::styled(value[last_end..].to_string(), normal_style));
     }
     result
 }

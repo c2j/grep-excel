@@ -36,9 +36,7 @@ fn wrap_docx_body(inner: &str) -> String {
 }
 
 fn cell(text: &str) -> String {
-    format!(
-        "<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"
-    )
+    format!("<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>")
 }
 
 fn row(cells: &[&str]) -> String {
@@ -111,7 +109,10 @@ fn skips_docx_table_with_only_header_row() {
     let path = build_docx(&xml);
 
     let sheets = parse_file(&path).expect("should parse");
-    assert!(sheets.is_empty(), "table with only header row should be skipped");
+    assert!(
+        sheets.is_empty(),
+        "table with only header row should be skipped"
+    );
 
     let _ = std::fs::remove_file(&path);
 }
