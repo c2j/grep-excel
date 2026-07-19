@@ -1609,8 +1609,9 @@ impl SearchEngine for SqliteEngine {
 
         // Drop existing if replacing
         if exists_temp && replace {
+            let existing_meta = self.temp_tables.get(&lower).unwrap();
             self.conn.execute(
-                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(name)),
+                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&existing_meta.name)),
                 [],
             )?;
             self.temp_tables.remove(&lower);
@@ -1670,9 +1671,9 @@ impl SearchEngine for SqliteEngine {
         let lower = name.to_lowercase();
 
         match self.temp_tables.remove(&lower) {
-            Some(_) => {
+            Some(meta) => {
                 self.conn.execute(
-                    &format!("DROP TABLE IF EXISTS {}", super::quote_ident(name)),
+                    &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&meta.name)),
                     [],
                 )?;
                 Ok(())
