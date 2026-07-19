@@ -31,7 +31,7 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
                 let headers = string_table[0].clone();
                 let rows = string_table[1..].to_vec();
                 let name = if page_count == 1 {
-                    format!("Table_1")
+                    "Table_1".to_string()
                 } else {
                     format!("Page_{}_Table_{}", page_num, all_tables.len() + 1)
                 };
