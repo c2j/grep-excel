@@ -14,8 +14,15 @@ struct SheetQueryMeta {
     row_count: usize,
 }
 
+struct TempTableMeta {
+    name: String,
+    columns: Vec<String>,
+    row_count: usize,
+}
+
 pub struct SqliteEngine {
     conn: Connection,
+    temp_tables: HashMap<String, TempTableMeta>,
 }
 
 impl SqliteEngine {
@@ -681,7 +688,7 @@ impl SearchEngine for SqliteEngine {
 
         Self::add_regexp_fn(&conn)?;
 
-        Ok(SqliteEngine { conn })
+        Ok(SqliteEngine { conn, temp_tables: HashMap::new() })
     }
 
     fn import_excel(&mut self, path: &Path, progress: &dyn Fn(usize, usize)) -> Result<FileInfo> {
@@ -1113,6 +1120,16 @@ impl SearchEngine for SqliteEngine {
         self.conn.execute("DELETE FROM sheets", [])?;
         self.conn.execute("DELETE FROM files", [])?;
         let _ = self.conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('files', 'sheets')", []);
+
+        // Drop and clear all session temp tables
+        for meta in self.temp_tables.values() {
+            let _ = self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(&meta.name)),
+                [],
+            );
+        }
+        self.temp_tables.clear();
+
         Ok(())
     }
 
@@ -1177,7 +1194,7 @@ impl SearchEngine for SqliteEngine {
             Err(_) => return Vec::new(),
         };
 
-        rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
+        let mut aliases: Vec<crate::types::TableAliasInfo> = rows.into_iter().map(|(table_name, sheet_name, row_count, col_names_str, file_name)| {
             let columns: Vec<String> = if col_names_str.is_empty() {
                 vec![]
             } else {
@@ -1198,7 +1215,22 @@ impl SearchEngine for SqliteEngine {
                 columns,
                 kind: crate::types::TableKind::File,
             }
-        }).collect()
+        }).collect();
+
+        // Append session temp table aliases
+        for meta in self.temp_tables.values() {
+            aliases.push(crate::types::TableAliasInfo {
+                table_name: meta.name.clone(),
+                alias: format!("temp.{}", meta.name),
+                file_name: "<temp>".to_string(),
+                sheet_name: meta.name.clone(),
+                row_count: meta.row_count,
+                columns: meta.columns.clone(),
+                kind: crate::types::TableKind::Temp,
+            });
+        }
+
+        aliases
     }
 
     fn get_metadata(&self, file_name: &str) -> Result<FileMetadataInfo> {
@@ -1536,22 +1568,141 @@ impl SearchEngine for SqliteEngine {
 
     fn materialize_query(
         &mut self,
-        _name: &str,
-        _sql: &str,
-        _replace: bool,
-        _max_rows: Option<usize>,
+        name: &str,
+        sql: &str,
+        replace: bool,
+        max_rows: Option<usize>,
     ) -> Result<crate::types::TempTableInfo> {
-        anyhow::bail!(
-            "Session temp tables are not supported with this engine version. \
-             Rebuild with the latest version."
-        );
+        super::validate_temp_table_name(name)?;
+        super::validate_sql(sql)?;
+
+        let lower = name.to_lowercase();
+
+        // Check collision with any import table_name from sheets catalog
+        let sheet_table_names: Vec<String> = self
+            .conn
+            .prepare("SELECT table_name FROM sheets")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        for tn in &sheet_table_names {
+            if tn.to_lowercase() == lower {
+                anyhow::bail!(
+                    "Name '{}' collides with an imported table sheet. Choose a different name.",
+                    name
+                );
+            }
+        }
+
+        let exists_temp = self.temp_tables.contains_key(&lower);
+        if exists_temp && !replace {
+            anyhow::bail!(
+                "Temp table '{}' already exists. Use replace: true to overwrite.",
+                name
+            );
+        }
+
+        // Drop existing if replacing
+        if exists_temp && replace {
+            self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", super::quote_ident(name)),
+                [],
+            )?;
+            self.temp_tables.remove(&lower);
+        }
+
+        // CTAS
+        let qname = super::quote_ident(name);
+        if let Some(limit) = max_rows {
+            self.conn.execute(
+                &format!(
+                    "CREATE TABLE {} AS SELECT * FROM ({}) LIMIT {}",
+                    qname, sql, limit
+                ),
+                [],
+            )?;
+        } else {
+            self.conn.execute(
+                &format!("CREATE TABLE {} AS {}", qname, sql),
+                [],
+            )?;
+        }
+
+        // Introspect columns via PRAGMA table_info
+        let mut pragma_stmt = self.conn.prepare(&format!("PRAGMA table_info({})", qname))?;
+        let columns: Vec<String> = pragma_stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let row_count: usize = self
+            .conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {}", qname),
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize;
+
+        let meta = TempTableMeta {
+            name: name.to_string(),
+            columns: columns.clone(),
+            row_count,
+        };
+        self.temp_tables.insert(lower, meta);
+
+        Ok(crate::types::TempTableInfo {
+            name: name.to_string(),
+            alias: format!("temp.{}", name),
+            row_count,
+            columns,
+            replaced: exists_temp,
+        })
     }
 
-    fn drop_temp_table(&mut self, _name: &str) -> Result<()> {
-        anyhow::bail!(
-            "Session temp tables are not supported with this engine version. \
-             Rebuild with the latest version."
-        );
+    fn drop_temp_table(&mut self, name: &str) -> Result<()> {
+        super::validate_temp_table_name(name)?;
+        let lower = name.to_lowercase();
+
+        match self.temp_tables.remove(&lower) {
+            Some(_) => {
+                self.conn.execute(
+                    &format!("DROP TABLE IF EXISTS {}", super::quote_ident(name)),
+                    [],
+                )?;
+                Ok(())
+            }
+            None => {
+                // Check if it's an import table (for better error message)
+                let is_import: bool = self
+                    .conn
+                    .prepare("SELECT table_name FROM sheets")
+                    .ok()
+                    .map(|mut stmt| {
+                        stmt.query_map([], |row| row.get::<_, String>(0))
+                            .ok()
+                            .map(|mut mapped| {
+                                mapped.any(|r| r.map(|tn| tn.to_lowercase() == lower).unwrap_or(false))
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
+                if is_import {
+                    anyhow::bail!(
+                        "'{}' is an imported file table, not a session temp table. Cannot drop.",
+                        name
+                    );
+                }
+
+                anyhow::bail!("Unknown temp table: '{}'", name);
+            }
+        }
     }
 
     fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
