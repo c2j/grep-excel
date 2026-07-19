@@ -91,6 +91,20 @@ pub trait SearchEngine: Send {
 
     /// Check materialization state of a sheet. Returns None if sheet not found.
     fn sheet_state(&self, file_name: &str, sheet_name: &str) -> Option<SheetState>;
+
+    /// Materialize a read-only SQL result into a session-scoped table.
+    /// Source `sql` is validated with `validate_sql`. Does not open general DDL to callers.
+    fn materialize_query(
+        &mut self,
+        name: &str,
+        sql: &str,
+        replace: bool,
+        max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo>;
+
+    /// Drop a session temp table previously created by `materialize_query`.
+    /// Must refuse to drop imported file tables.
+    fn drop_temp_table(&mut self, name: &str) -> Result<()>;
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────

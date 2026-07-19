@@ -1089,6 +1089,26 @@ impl SearchEngine for DuckDbEngine {
                 _ => Some(SheetState::Materialized),
             }
         }
+
+    fn materialize_query(
+        &mut self,
+        _name: &str,
+        _sql: &str,
+        _replace: bool,
+        _max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo> {
+        anyhow::bail!(
+            "Session temp tables are not supported with this engine version. \
+             Rebuild with the latest version."
+        );
+    }
+
+    fn drop_temp_table(&mut self, _name: &str) -> Result<()> {
+        anyhow::bail!(
+            "Session temp tables are not supported with this engine version. \
+             Rebuild with the latest version."
+        );
+    }
 }
 
 impl DuckDbEngine {

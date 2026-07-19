@@ -1534,6 +1534,26 @@ impl SearchEngine for SqliteEngine {
         Some(SheetState::Materialized)
     }
 
+    fn materialize_query(
+        &mut self,
+        _name: &str,
+        _sql: &str,
+        _replace: bool,
+        _max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo> {
+        anyhow::bail!(
+            "Session temp tables are not supported with this engine version. \
+             Rebuild with the latest version."
+        );
+    }
+
+    fn drop_temp_table(&mut self, _name: &str) -> Result<()> {
+        anyhow::bail!(
+            "Session temp tables are not supported with this engine version. \
+             Rebuild with the latest version."
+        );
+    }
+
     fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
         let meta = self.get_sheet_metadata_query(file_name, sheet_name)?;
         let mut columns = Vec::new();

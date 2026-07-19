@@ -588,6 +588,26 @@ impl SearchEngine for MemEngine {
         Some(SheetState::Materialized)
     }
 
+    fn materialize_query(
+        &mut self,
+        _name: &str,
+        _sql: &str,
+        _replace: bool,
+        _max_rows: Option<usize>,
+    ) -> Result<crate::types::TempTableInfo> {
+        anyhow::bail!(
+            "Session temp tables are not supported with the memory engine. \
+             Rebuild with --features engine-duckdb or engine-sqlite."
+        );
+    }
+
+    fn drop_temp_table(&mut self, _name: &str) -> Result<()> {
+        anyhow::bail!(
+            "Session temp tables are not supported with the memory engine. \
+             Rebuild with --features engine-duckdb or engine-sqlite."
+        );
+    }
+
     fn get_sheet_statistics(&self, file_name: &str, sheet_name: &str, max_top_values: usize) -> Result<SheetStatistics> {
         let sheet = self.sheets.iter()
             .find(|s| s.file_name == file_name && s.sheet_name == sheet_name)
