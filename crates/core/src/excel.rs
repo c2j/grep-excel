@@ -1,4 +1,5 @@
 use crate::format::FileFormat;
+use crate::pdf_table::parse_pdf;
 use anyhow::Result;
 use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
 use chrono::{Datelike, Duration};
@@ -93,6 +94,7 @@ pub fn parse_file_as(path: &Path, format: Option<FileFormat>) -> Result<Vec<Shee
         FileFormat::Xml => parse_xml(path),
         FileFormat::Docx => parse_docx(path),
         FileFormat::Pptx => parse_pptx(path),
+        FileFormat::Pdf => parse_pdf(path),
         FileFormat::Excel => parse_excel(path),
     }
 }
@@ -726,7 +728,7 @@ pub fn parse_file_metadata(path: &Path) -> Result<Vec<SheetMetadata>> {
         Some(FileFormat::Tsv) => parse_delimited_metadata(path, b'\t'),
         Some(FileFormat::Html) => parse_html_metadata(path),
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text_metadata(path),
-        Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => metadata_from_full_parse(path),
+        Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) | Some(FileFormat::Pdf) => metadata_from_full_parse(path),
         Some(FileFormat::Excel) => parse_excel_metadata(path),
         None => parse_excel_metadata(path),
     }
@@ -1033,6 +1035,7 @@ pub fn parse_file_repair(path: &Path) -> Result<Vec<SheetData>> {
         Some(FileFormat::Text) | Some(FileFormat::Markdown) => parse_text(path),
         Some(FileFormat::Docx) => parse_docx(path),
         Some(FileFormat::Pptx) => parse_pptx(path),
+        Some(FileFormat::Pdf) => parse_pdf(path),
         _ => parse_xlsx_repair(path),
     }
 }
@@ -1043,7 +1046,7 @@ where
     F: FnMut(SheetData, usize) -> Result<()>,
 {
     match FileFormat::from_path(path) {
-        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) => {
+        Some(FileFormat::Csv) | Some(FileFormat::Tsv) | Some(FileFormat::Dbf) | Some(FileFormat::Xml) | Some(FileFormat::Docx) | Some(FileFormat::Pptx) | Some(FileFormat::Pdf) => {
             let sheets = parse_file(path)?;
             let mut info = Vec::new();
             for (idx, sheet) in sheets.into_iter().enumerate() {
