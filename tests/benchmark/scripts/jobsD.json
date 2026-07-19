@@ -1,0 +1,5 @@
+[
+  {"name": "grep-excel 0.7.1", "cmd": "cd /tmp/bench && ./grep_excel bench.csv depts.xlsx -x \"SELECT d.DeptName, COUNT(*) FROM bench.bench b JOIN depts.Sheet1 d ON b.Dept = d.Dept GROUP BY d.DeptName\" -f simple", "runs": 3},
+  {"name": "duckdb 1.4.4", "cmd": "cd /tmp/bench && python3 duck.py join", "runs": 3},
+  {"name": "dsq 0.23.0", "cmd": "cd /tmp/bench && ./dsq bench.csv depts.xlsx \"SELECT d.DeptName, COUNT(*) FROM {0} b JOIN {1} d ON b.Dept = d.Dept GROUP BY d.DeptName\"", "runs": 3}
+]

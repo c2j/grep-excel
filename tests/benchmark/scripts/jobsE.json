@@ -1,0 +1,6 @@
+[
+  {"name": "grep-excel 0.7.1 (DuckDB)", "cmd": "cd /tmp/bench && ./grep_excel bench_topk.csv -x \"SELECT * FROM bench_topk.bench_topk ORDER BY val DESC LIMIT 100\" -f simple", "runs": 3},
+  {"name": "DuckDB 1.4.4 (read_csv)", "cmd": "cd /tmp/bench && python3 topk_duck.py bench_topk.csv 100", "runs": 3},
+  {"name": "Python heapq (O(n log k))", "cmd": "cd /tmp/bench && python3 topk_heap.py bench_topk.csv 100", "runs": 3},
+  {"name": "Unix sort|head (O(n log n))", "cmd": "cd /tmp/bench && tail -n +2 bench_topk.csv | sort -rn | head -100", "runs": 1, "timeout": 600}
+]

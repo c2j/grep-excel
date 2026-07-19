@@ -1,0 +1,9 @@
+[
+  {"name": "grep-excel 0.7.1", "cmd": "cd /tmp/bench && ./grep_excel bench.csv -x \"SELECT Dept, COUNT(*), AVG(Amount) FROM bench.bench GROUP BY Dept ORDER BY 2 DESC\" -f simple", "runs": 3},
+  {"name": "duckdb 1.4.4", "cmd": "cd /tmp/bench && python3 duck.py csv_agg", "runs": 3},
+  {"name": "csvq 1.18.1", "cmd": "sh /tmp/bench/csvq_agg.sh", "runs": 3},
+  {"name": "octosql 0.13.0", "cmd": "cd /tmp/bench && OCTOSQL_NO_TELEMETRY=1 ./octosql \"SELECT Dept, COUNT(*), AVG(Amount) FROM bench.csv GROUP BY Dept ORDER BY 2 DESC\" -o stream_native", "runs": 3},
+  {"name": "dsq 0.23.0", "cmd": "cd /tmp/bench && ./dsq bench.csv \"SELECT Dept, COUNT(*), AVG(Amount) FROM {} GROUP BY Dept ORDER BY 2 DESC\"", "runs": 3},
+  {"name": "trdsql 1.2.3", "cmd": "cd /tmp/bench && ./trdsql -ih \"SELECT Dept, COUNT(*), AVG(Amount) FROM bench.csv GROUP BY Dept ORDER BY 2 DESC\"", "runs": 3},
+  {"name": "miller 6.20.2 (DSL)", "cmd": "cd /tmp/bench && ./mlr --csv stats1 -a count,mean -f Amount -g Dept bench.csv", "runs": 3}
+]
