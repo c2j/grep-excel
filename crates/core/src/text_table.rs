@@ -162,10 +162,10 @@ fn parse_pipe_row(line: &str) -> Vec<String> {
     // Strip leading and trailing pipe
     let inner = if trimmed.starts_with('|') && trimmed.ends_with('|') {
         &trimmed[1..trimmed.len() - 1]
-    } else if trimmed.starts_with('|') {
-        &trimmed[1..]
-    } else if trimmed.ends_with('|') {
-        &trimmed[..trimmed.len() - 1]
+    } else if let Some(stripped) = trimmed.strip_prefix('|') {
+        stripped
+    } else if let Some(stripped) = trimmed.strip_suffix('|') {
+        stripped
     } else {
         trimmed
     };

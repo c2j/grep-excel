@@ -1,12 +1,13 @@
 # grep-excel 用户手册
 
-grep-excel 是一款基于 DuckDB 的高性能多格式表格文件搜索工具（Excel / CSV / HTML / 文本 / Markdown），支持终端交互（TUI）、命令行（CLI）、MCP 服务器和批量执行等多种使用方式。
+grep-excel 是一款基于 DuckDB 的高性能多格式表格文件搜索工具（Excel / CSV / TSV / HTML / 文本 / Markdown / Word / PowerPoint / DBF / XML），支持终端交互（TUI）、命令行（CLI）、MCP 服务器和批量执行等多种使用方式。
 
 ## 目录
 
 - [快速开始](#快速开始)
 - [支持的文件格式](#支持的文件格式)
 - [CLI 命令行模式](#cli-命令行模式)
+- [归档文件与云文档链接导入](#归档文件与云文档链接导入)
 - [交互式 SQL REPL（-i）](#交互式-sql-repl-i)
 - [TUI 交互模式](#tui-交互模式)
 - [MCP 服务器模式](#mcp-服务器模式)
@@ -66,11 +67,18 @@ cargo build --release --features full
 |--------|------|
 | `.xlsx` / `.xls` / `.xlsm` / `.xlsb` / `.ods` | Excel / OpenDocument 电子表格 |
 | `.csv` | 逗号分隔值 |
+| `.tsv` / `.tab` | 制表符分隔值 |
 | `.html` / `.htm` | HTML 表格；每个 `<table>` 导入为一个 sheet；自动检测编码（UTF-8 / `<meta charset>` / CJK 回退） |
 | `.txt` | 纯文本表格（按章节、短横线分隔或列对齐启发式提取） |
 | `.md` / `.markdown` | GFM Markdown 管道表（`\| col \|`） |
+| `.dbf` | dBase 数据库文件 |
+| `.xml` | XML 数据文件（扁平约定：根元素下重复的同名子元素作为行，其子标签作为列） |
+| `.docx` | Word 文档；从 word/document.xml 提取表格，sheet 名取自表格前的标题段落，合并单元格自动前向填充；**只读**，不支持编辑 |
+| `.pptx` | PowerPoint 演示文稿；每页幻灯片的表格导入为一个 sheet，合并单元格自动填充；**只读**，不支持编辑 |
+| `.zip` / `.tar` / `.tar.gz` / `.tgz` / `.tar.bz2` / `.tar.xz` / `.tar.zst` | 归档文件；自动提取内部所有可识别的表格文件（见 [归档文件与云文档链接导入](#归档文件与云文档链接导入)） |
+| `.zip.001` / `.zip.002` | 分卷 ZIP 压缩包 |
 
-HTML / 文本 / Markdown 与 Excel 用法相同：
+其他格式与 Excel 用法相同：
 
 ```bash
 # 搜索 HTML 报告（如 openGauss WDR）
@@ -81,6 +89,16 @@ grep_excel awr.md -x "SELECT * FROM sheet_1_0 LIMIT 10"
 
 # 列出文本文件中提取到的表
 grep_excel data.txt -t
+
+# Word 文档中的表格
+grep_excel report.docx -q "预算"
+
+# PowerPoint：每页幻灯片一个 sheet
+grep_excel slides.pptx -t
+
+# dBase / XML 数据文件
+grep_excel legacy.dbf -q "Smith"
+grep_excel data.xml -x "SELECT * FROM data LIMIT 10"
 ```
 
 > 运行 `grep_excel --help` 可查看与当前版本一致的格式列表与选项说明（中英文随 `LANG` 自动切换）。
@@ -172,6 +190,59 @@ grep_excel data.xlsx employees.xlsx -t
 #   data.Sheet1 → sheet_1_0 (150 行) [姓名, 部门, 职位]
 #   employees.Sheet1 → sheet_2_0 (200 行) [姓名, 工号, 薪资]
 ```
+
+### 强制指定格式（--as）
+
+扩展名缺失或具有误导性时，用 `--as` 显式指定解析格式。`--as` 是**粘性**选项：对命令行中其后的所有文件生效，直到下一个 `--as`；未跟在任何 `--as` 之后的文件仍按扩展名自动检测。
+
+```bash
+# access.log 按 CSV 解析，dump.dat 按 Excel 解析
+grep_excel --as csv access.log --as excel dump.dat -t
+
+# 无扩展名文件
+grep_excel --as tsv exported_data -q "关键词"
+```
+
+可选值：`csv`、`tsv`、`html`、`txt`、`md`、`dbf`、`xml`、`excel`、`docx`、`pptx`。
+
+---
+
+## 归档文件与云文档链接导入
+
+### 归档文件
+
+直接传入归档文件，grep-excel 自动提取内部所有可识别的表格文件并逐个导入，条目以 `archive::路径/文件名` 命名：
+
+```bash
+# 搜索 ZIP 中的表格文件
+grep_excel audit_2026.zip -q "异常交易"
+
+# 查询 tar.gz 中的 CSV
+grep_excel db_dump.tar.gz -x "SELECT * FROM sheet_1_0 LIMIT 10"
+
+# 分卷 ZIP（传入第一卷即可）
+grep_excel big_data.zip.001 -t
+```
+
+支持的归档格式：`.zip`、`.tar`、`.tar.gz` / `.tgz`、`.tar.bz2`、`.tar.xz`、`.tar.zst`、分卷 `.zip.001` / `.zip.002`。
+
+> 需要 `archive-support` feature（`--features full` 已包含）。
+
+### 云文档链接导入
+
+直接传入金山文档 / WPS（kdocs.cn）分享链接，通过登录 Cookie 下载：
+
+```bash
+export KDOCS_COOKIE='wps_sid=...; ...'
+grep_excel 'https://www.kdocs.cn/l/xxxx' -q "关键词"
+
+# 或直接传入 Cookie
+grep_excel --kdocs-cookie "$KDOCS_COOKIE" 'https://www.kdocs.cn/l/xxxx' -t
+```
+
+企业版域名：设置 `SHARE_HOSTS` 环境变量（逗号分隔），或使用 `--share-hosts` 选项。
+
+> 需要 `share-url` feature（`--features full` 已包含）。
 
 ---
 
@@ -740,6 +811,8 @@ grep_excel data.xlsx --exec '{"tool":"save_as","params":{"file_name":"data.xlsx"
 
 > **注意**：`save` 会覆盖原始文件，建议先用 `save_as` 另存备份。`save` 功能需要 `rust_xlsxwriter` feature flag。
 
+> **只读格式**：`.docx` 和 `.pptx` 仅支持导入、搜索与查询导出（`export_query` / `--export`），所有编辑与保存类工具（`update_cell`、`update_cells`、`insert_rows`、`delete_rows`、`add_column`、`rename_column`、`save`、`save_as`）会直接报错拒绝。
+
 ---
 
 ## 输出格式
@@ -796,7 +869,7 @@ data	Sheet1	张三	工程部
 
 ### Q: 支持哪些文件格式？
 
-A: `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`、`.html`/`.htm`、`.txt`、`.md`/`.markdown`。HTML 与文本文件会自动检测编码；详见 [支持的文件格式](#支持的文件格式)。
+A: `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`、`.tsv`/`.tab`、`.html`/`.htm`、`.txt`、`.md`/`.markdown`、`.dbf`、`.xml`、`.docx`、`.pptx`，以及 `.zip`、`.tar` 系列归档和 `.zip.001` 分卷压缩包。HTML 与文本文件会自动检测编码；扩展名缺失或误导时可用 `--as` 强制指定格式；详见 [支持的文件格式](#支持的文件格式)。
 
 ### Q: 如何加速大文件搜索？
 

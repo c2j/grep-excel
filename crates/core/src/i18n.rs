@@ -434,11 +434,7 @@ pub fn status_progress(cur: usize, tot: usize) -> String {
 
 /// Progress bar for background materialization: `物化中 file [████░░░░] 40%`
 pub fn status_materializing(name: &str, cur: usize, tot: usize) -> String {
-    let pct = if tot > 0 {
-        (cur * 100 / tot).min(100)
-    } else {
-        0
-    };
+    let pct = (cur * 100).checked_div(tot).map_or(0, |v| v.min(100));
     let width = 20usize;
     let filled = (pct * width / 100).min(width);
     let bar: String = "█".repeat(filled) + &"░".repeat(width - filled);
@@ -1111,6 +1107,7 @@ pub fn help_full_text() -> String {
                      .txt   .md   .markdown              (文本/Markdown 表格)\n\
                      .dbf                                (dBase 数据库)\n\
                      .xml                                (XML 数据)\n\
+                     .docx  .pptx                        (Word/PowerPoint 表格, 只读)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (归档文件, 自动提取内部表格)\n\
                      .zip.001                            (分卷 ZIP)\n\n\
@@ -1185,6 +1182,7 @@ pub fn help_full_text() -> String {
                      .txt   .md   .markdown             (Text / Markdown tables)\n\
                      .dbf                               (dBase database)\n\
                      .xml                               (XML data)\n\
+                     .docx  .pptx                       (Word/PowerPoint tables, read-only)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (Archives, table files extracted automatically)\n\
                      .zip.001                           (Split ZIP volumes)\n\n\

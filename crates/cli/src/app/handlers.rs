@@ -328,7 +328,7 @@ impl App {
             KeyCode::Char('n') => {
                 if browsing {
                     self.load_more_browse_data();
-                } else if self.stats.as_ref().map_or(false, |s| s.truncated) {
+                } else if self.stats.as_ref().is_some_and(|s| s.truncated) {
                     self.result_limit = self.result_limit.saturating_add(5000);
                     self.execute_search();
                 }
