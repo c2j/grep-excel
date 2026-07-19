@@ -1,0 +1,42 @@
+=== grep-excel Benchmark Results ===
+Date: 2026-07-19
+Platform: macOS arm64 (Apple Silicon)
+grep-excel: v0.7.1 (debug build with --features full)
+DuckDB: 1.4.4 (Python driver)
+xlsxgrep: 0.0.32 (pip)
+xsv: 0.13.0 (Homebrew)
+Miller (mlr): 6.20.2 (Homebrew)
+
+Data: bench.csv (16MB, 200001 lines), bench.xlsx (12MB), depts.xlsx (5KB)
+Needle: ZXQ-7734, 285 hits (verified via grep -c)
+MD5(bench.csv): b3fd130f786c908ecaabd9939de3ad79
+
+=== Correctness Verification ===
+grep -c ZXQ-7734 bench.csv: 285 ✓
+grep-excel bench.csv -q ZXQ-7734 -f simple: 285 ✓
+grep-excel bench.xlsx -q ZXQ-7734 -f simple: 285 ✓
+DuckDB read_xlsx: 285 ✓
+DuckDB read_csv_auto: 285 ✓
+
+=== Group A: xlsx Fulltext Search (min of 3) ===
+grep-excel 0.7.1           min=   1.371s
+duckdb 1.4.4 (read_xlsx)   min=   0.994s
+xlsxgrep 0.0.32            min=  19.574s
+
+=== Group B: CSV Fulltext Search (min of 3) ===
+xsv 0.13.0 (all-columns)    min=   0.037s
+xsv 0.13.0 (single column)  min=   0.038s
+duckdb 1.4.4                min=   0.124s
+GNU grep (基线)             min=   0.129s
+grep-excel -c Note          min=   0.130s
+grep-excel 0.7.1            min=   0.181s
+miller 6.20.2               min=   0.230s
+
+=== Group C: CSV SQL Aggregation (min of 3) ===
+miller 6.20.2 (DSL)         min=   0.071s
+duckdb 1.4.4                min=   0.126s
+grep-excel 0.7.1            min=   0.128s
+
+=== Group D: Cross-file JOIN (CSV x xlsx, min of 3) ===
+grep-excel 0.7.1            min=   0.119s
+duckdb 1.4.4                min=   0.127s

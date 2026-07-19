@@ -1,0 +1,49 @@
+=== grep-excel Top-K Benchmark Results ===
+Date: 2026-07-19
+Platform: macOS arm64 (Apple Silicon, 16GB RAM)
+grep-excel: v0.7.1 (cargo build --features engine-duckdb,file-dialog --release)
+DuckDB: 1.4.4 (Python driver)
+
+Problem: Find the largest K=100 values from n rows of random floats.
+Complexity: n = total rows, K = top values to return (K=100)
+
+=== Algorithm Complexity ===
+| Approach            | Time        | Space   | Notes                    |
+|---------------------|-------------|---------|--------------------------|
+| Full sort (sort|head)| O(n log n) | O(n)    | Sorts ALL data           |
+| Min-heap (Python)   | O(n log K) | O(K)    | Single pass, heap size K |
+| DuckDB ORDER LIMIT  | O(n log K) | O(n)*   | Internal Top-N heap opt  |
+  * DuckDB loads CSV into columnar memory structure (O(n) space)
+
+=== 1M rows (18.4 MB) ===
+grep-excel (DuckDB)   min=   0.074s
+DuckDB 1.4.4          min=   0.123s
+Python heapq           min=   0.400s
+Unix sort|head         min=   2.508s
+
+=== 10M rows (183.8 MB) ===
+grep-excel (DuckDB)   min=   0.180s
+DuckDB 1.4.4          min=   0.186s
+Python heapq           min=   3.652s
+Unix sort|head         min=  32.620s
+
+=== 50M rows (918.9 MB) ===
+DuckDB 1.4.4          min=   0.503s
+grep-excel (DuckDB)   min=   0.611s
+Python heapq           min=  18.426s
+Unix sort|head         min= ~175s (estimated from 10M O(n log n) extrapolation)
+
+=== 1B rows (extrapolated, ~18 GB) ===
+DuckDB/grep-excel     ~10-12s   (O(n log K) heap in C++)
+Python heapq          ~370s     (O(n log K) heap in Python)
+Unix sort|head        > 1 hour  (O(n log n) full sort)
+
+=== Scaling Analysis ===
+For K=100, n=50M:
+  log K ≈ 7, log n ≈ 26
+  Heap comparisons: n * log K = 350M
+  Sort comparisons: n * log n = 1.3B
+  → Heap only needs 27% of the comparisons
+
+=== Correctness Verification ===
+All tools returned identical top-100 values: 999.099 descending to 999.0 ✓
