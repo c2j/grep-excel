@@ -458,6 +458,50 @@ impl GrepExcelServer {
         result
     }
 
+    #[tool(description = "Materialize a read-only SQL result into a named session temp table for reuse in later execute_sql calls. Source SQL must pass the same read-only checks as execute_sql. Name: [A-Za-z_][A-Za-z0-9_]*. Query the table by bare name; aliases show as temp.<name>. Does not write files. Not supported on the memory engine.")]
+    pub async fn materialize_query(
+        &self,
+        Parameters(params): Parameters<MaterializeQueryParams>,
+    ) -> Result<String, String> {
+        let name = params.name;
+        let sql = params.sql;
+        let replace = params.replace.unwrap_or(true);
+        let max_rows = params.max_rows;
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = db.lock();
+            guard
+                .0
+                .materialize_query(&name, &sql, replace, max_rows)
+                .map(|info| {
+                    serde_json::to_string_pretty(&info)
+                        .unwrap_or_else(|_| format!("Materialized '{}'", name))
+                })
+                .map_err(|e| format!("Failed to materialize query: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
+    #[tool(description = "Drop a session temp table created by materialize_query. Cannot drop imported file tables.")]
+    pub async fn drop_temp_table(
+        &self,
+        Parameters(params): Parameters<DropTempTableParams>,
+    ) -> Result<String, String> {
+        let name = params.name;
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = db.lock();
+            guard
+                .0
+                .drop_temp_table(&name)
+                .map(|_| format!("Dropped temp table '{}'", name))
+                .map_err(|e| format!("Failed to drop temp table: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
+    }
+
     #[tool(description = "Get detailed metadata for imported files, including sheet names and column names. If file_name is omitted, returns metadata for all imported files.")]
     pub async fn get_metadata(
         &self,
