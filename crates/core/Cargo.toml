@@ -32,6 +32,9 @@ rayon = "1.10"
 # Optional: PDF table extraction
 pdfsink-rs = { version = "0.2", optional = true }
 
+# Optional: Parquet columnar format reader
+parquet = { version = "53", optional = true, default-features = false, features = ["arrow", "snap"] }
+
 # Optional: cloud share URL download
 reqwest = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
@@ -66,3 +69,4 @@ mcp-server = ["dep:schemars"]
 share-url = ["dep:reqwest", "dep:tempfile"]
 archive-support = ["dep:tar", "dep:flate2", "dep:bzip2", "dep:xz2", "dep:zstd", "dep:tempfile"]
 pdf-support = ["dep:pdfsink-rs"]
+parquet-support = ["dep:parquet"]
