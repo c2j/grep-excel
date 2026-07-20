@@ -5,17 +5,17 @@ use crate::excel::SheetData;
 /// Parse tables from a PDF file.
 ///
 /// Extraction uses a three-phase approach:
-/// 1. **Quick pre-check**: count vertical and horizontal edges per page via
-///    [`Page::edges`]; pages with fewer than 2 edges in either direction are
-///    skipped, since lattice table detection requires a grid of lines.
-/// 2. **Parallel extraction**: remaining candidate pages are processed in
-///    parallel via rayon, then tables on consecutive pages with matching
-///    column counts are merged into single sheets.
-/// 3. **Consecutive-page merge**: tables spanning multiple pages are merged
+/// 1. **Parallel extraction with cheap pre-check**: pages are processed in
+///    parallel via rayon. Pages with fewer than 4 lines/rects/curves combined
+///    are skipped — lattice table detection requires enough graphical objects
+///    to form a grid.
+/// 2. **Consecutive-page merge**: tables spanning multiple pages are merged
 ///    when they share the same column count and appear on consecutive pages.
+/// 3. **Header dedup**: if a continuation page repeats the header row, that
+///    row is skipped during merge.
 #[cfg(feature = "pdf-support")]
 pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
-    use pdfsink_rs::{Orientation, PdfDocument, TableSettings};
+    use pdfsink_rs::{PdfDocument, TableSettings};
     use rayon::prelude::*;
 
     let pdf = PdfDocument::open(path)
@@ -23,24 +23,17 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
 
     let pages = pdf.pages();
 
-    // Phase 1: Quick pre-check — skip pages unlikely to have tables.
-    // Lattice strategy needs at least 2 vertical + 2 horizontal edges
-    // to form a 1×1 cell grid.
-    let candidates: Vec<(usize, &pdfsink_rs::Page)> = pages
-        .iter()
-        .enumerate()
-        .filter(|(_, page)| {
-            let edges = page.edges();
-            let v_edges = edges.iter().filter(|e| e.orientation == Orientation::Vertical).count();
-            let h_edges = edges.iter().filter(|e| e.orientation == Orientation::Horizontal).count();
-            v_edges >= 2 && h_edges >= 2
-        })
-        .collect();
-
-    // Phase 2: Parallel table extraction on candidate pages only
-    let results: Vec<Option<(usize, SheetData)>> = candidates
+    // Phase 1: Parallel extraction with cheap object-count pre-check.
+    // Using raw Vec lengths is O(1) per page, avoiding the expensive
+    // Edge construction that extract_table() already performs internally.
+    let results: Vec<Option<(usize, SheetData)>> = pages
         .par_iter()
+        .enumerate()
         .map(|(page_idx, page)| {
+            let line_count = page.lines.len() + page.rects.len() + page.curves.len();
+            if line_count < 4 {
+                return None;
+            }
             let page_num = page_idx + 1;
             match page.extract_table(TableSettings::default()) {
                 Ok(Some(table)) => {
@@ -68,7 +61,6 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
     let mut page_tables: Vec<(usize, SheetData)> = results.into_iter().flatten().collect();
     page_tables.sort_by_key(|(page_num, _)| *page_num);
 
-    // Phase 3: Merge consecutive-page tables
     let merged = merge_consecutive_tables(page_tables);
 
     if merged.is_empty() {
