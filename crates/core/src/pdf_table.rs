@@ -2,6 +2,17 @@ use std::path::Path;
 
 use crate::excel::SheetData;
 
+/// Parse tables from a PDF file.
+///
+/// Extraction uses a three-phase approach:
+/// 1. **Quick pre-check**: count vertical and horizontal edges per page via
+///    [`Page::edges`]; pages with fewer than 2 edges in either direction are
+///    skipped, since lattice table detection requires a grid of lines.
+/// 2. **Parallel extraction**: remaining candidate pages are processed in
+///    parallel via rayon, then tables on consecutive pages with matching
+///    column counts are merged into single sheets.
+/// 3. **Consecutive-page merge**: tables spanning multiple pages are merged
+///    when they share the same column count and appear on consecutive pages.
 #[cfg(feature = "pdf-support")]
 pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
     use pdfsink_rs::{Orientation, PdfDocument, TableSettings};
