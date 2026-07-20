@@ -11,7 +11,6 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
         .map_err(|e| anyhow::anyhow!("failed to open PDF '{}': {}", path.display(), e))?;
 
     let pages = pdf.pages();
-    let page_count = pages.len();
 
     // Phase 1: Quick pre-check — skip pages unlikely to have tables.
     // Lattice strategy needs at least 2 vertical + 2 horizontal edges
@@ -57,15 +56,6 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
 
     let mut page_tables: Vec<(usize, SheetData)> = results.into_iter().flatten().collect();
     page_tables.sort_by_key(|(page_num, _)| *page_num);
-
-    // Rename sequentially before merge (merge_consecutive_tables will rename again)
-    for (i, (page_num, table)) in page_tables.iter_mut().enumerate() {
-        table.name = if page_count == 1 {
-            "Table_1".to_string()
-        } else {
-            format!("Page_{}_Table_{}", page_num, i + 1)
-        };
-    }
 
     // Phase 3: Merge consecutive-page tables
     let merged = merge_consecutive_tables(page_tables);
