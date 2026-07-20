@@ -27,6 +27,8 @@ encoding_rs.workspace = true
 scraper = "0.21"
 dbase = "0.8"
 
+rayon = "1.10"
+
 # Optional: PDF table extraction
 pdfsink-rs = { version = "0.2", optional = true }
 
