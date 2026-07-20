@@ -1107,7 +1107,8 @@ pub fn help_full_text() -> String {
                      .txt   .md   .markdown              (文本/Markdown 表格)\n\
                      .dbf                                (dBase 数据库)\n\
                      .xml                                (XML 数据)\n\
-                     .docx  .pptx                        (Word/PowerPoint 表格, 只读)\n\
+                      .docx  .pptx                        (Word/PowerPoint 表格, 只读)\n\
+                      .parquet                         (Parquet 列式存储，只读)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (归档文件, 自动提取内部表格)\n\
                      .zip.001                            (分卷 ZIP)\n\n\
@@ -1182,7 +1183,8 @@ pub fn help_full_text() -> String {
                      .txt   .md   .markdown             (Text / Markdown tables)\n\
                      .dbf                               (dBase database)\n\
                      .xml                               (XML data)\n\
-                     .docx  .pptx                       (Word/PowerPoint tables, read-only)\n\
+                      .docx  .pptx                       (Word/PowerPoint tables, read-only)\n\
+                      .parquet                         (Parquet columnar format, read-only)\n\
                      .zip  .tar  .tar.gz  .tgz  .tar.bz2  .tar.xz  .tar.zst\n\
                                                         (Archives, table files extracted automatically)\n\
                      .zip.001                           (Split ZIP volumes)\n\n\
@@ -1708,5 +1710,29 @@ pub fn pdf_not_enabled() -> &'static str {
     match current() {
         Lang::Zh => "PDF 支持未启用。请使用 --features pdf-support 重新编译以启用 PDF 表格提取。",
         Lang::En => "PDF support is not enabled. Rebuild with --features pdf-support to enable PDF table extraction.",
+    }
+}
+
+pub fn parquet_no_data(path: &str) -> String {
+    match current() {
+        Lang::Zh => format!("Parquet 文件 '{}' 不包含数据行，或所有列均为 NULL。", path),
+        Lang::En => format!(
+            "Parquet file '{}' contains no data rows, or all columns are NULL.",
+            path
+        ),
+    }
+}
+
+pub fn parquet_not_enabled() -> &'static str {
+    match current() {
+        Lang::Zh => "Parquet 支持未启用。请使用 --features parquet-support 重新编译以启用 Parquet 读取。",
+        Lang::En => "Parquet support is not enabled. Rebuild with --features parquet-support to enable Parquet reading.",
+    }
+}
+
+pub fn parquet_repair_not_supported() -> &'static str {
+    match current() {
+        Lang::Zh => "Parquet 文件不支持 --repair（仅 xlsx 支持）。",
+        Lang::En => "--repair is not supported for Parquet files (xlsx only).",
     }
 }

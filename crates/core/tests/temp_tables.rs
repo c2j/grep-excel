@@ -345,12 +345,7 @@ fn test_trailing_semicolon_in_source_sql_allowed() {
     assert_eq!(info.row_count, 3);
 
     let err = db
-        .materialize_query(
-            "t_multi",
-            "SELECT 1; SELECT 2",
-            false,
-            None,
-        )
+        .materialize_query("t_multi", "SELECT 1; SELECT 2", false, None)
         .unwrap_err();
     let msg = err.to_string().to_lowercase();
     assert!(

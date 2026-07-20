@@ -261,7 +261,7 @@ pub struct GrepExcelServer {
 #[tool_router(server_handler)]
 impl GrepExcelServer {
     #[tool(
-        description = "Import a tabular file (Excel/CSV/HTML/text/Markdown) or an archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .zip.001) containing table files. Archive entries are automatically extracted and imported."
+        description = "Import a tabular file (Excel/CSV/TSV/HTML/text/Markdown/docx/pptx/DBF/XML/PDF/Parquet) or an archive (.zip, .tar, .tar.gz, .tar.bz2, .tar.xz, .zip.001) containing table files. Archive entries are automatically extracted and imported."
     )]
     pub async fn import_file(
         &self,
@@ -334,7 +334,7 @@ impl GrepExcelServer {
     }
 
     #[tool(
-        description = "Search across all imported Excel/CSV files. Supports fulltext, exact, wildcard, and regex modes."
+        description = "Search across all imported files. Supports fulltext, exact, wildcard, and regex modes."
     )]
     pub async fn search(
         &self,
@@ -420,7 +420,7 @@ impl GrepExcelServer {
     }
 
     #[tool(
-        description = "Execute a SQL SELECT query against imported Excel/CSV data. Only SELECT statements are allowed. Table names follow pattern: sheet_{file_id}_{sheet_idx}. Use list_files to discover tables and their schemas. Supports standard SQL plus engine-specific functions (DuckDB: ILIKE, :: casts, window functions; SQLite: LIKE, regexp())."
+        description = "Execute a SQL SELECT query against imported data. Only SELECT statements are allowed. Table names follow pattern: sheet_{file_id}_{sheet_idx}. Use list_files to discover tables and their schemas. Supports standard SQL plus engine-specific functions (DuckDB: ILIKE, :: casts, window functions; SQLite: LIKE, regexp())."
     )]
     pub async fn execute_sql(
         &self,

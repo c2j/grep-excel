@@ -24,7 +24,7 @@ fn check_not_readonly(file_name: &str) -> Result<()> {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext == "docx" || ext == "pptx" {
+    if ext == "docx" || ext == "pptx" || ext == "parquet" {
         anyhow::bail!(
             "Editing is not supported for {} files. Only spreadsheet formats (.xlsx/.xls/.xlsm/.xlsb/.ods) can be edited.",
             ext.to_uppercase()

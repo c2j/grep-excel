@@ -7,8 +7,8 @@ pub fn parse_docx(path: &Path) -> anyhow::Result<Vec<SheetData>> {
     let file = std::fs::File::open(path)
         .map_err(|e| anyhow::anyhow!("failed to open docx '{}': {}", path.display(), e))?;
     let reader = std::io::BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| anyhow::anyhow!("invalid docx ZIP: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| anyhow::anyhow!("invalid docx ZIP: {}", e))?;
 
     let xml = read_entry(&mut archive, "word/document.xml")?;
     let doc = roxmltree::Document::parse(&xml)
@@ -80,9 +80,15 @@ struct CellMeta {
 fn parse_table(tbl: roxmltree::Node, name: String) -> Option<SheetData> {
     let mut raw_rows: Vec<Vec<CellMeta>> = Vec::new();
 
-    for tr in tbl.children().filter(|n| n.is_element() && n.has_tag_name("tr")) {
+    for tr in tbl
+        .children()
+        .filter(|n| n.is_element() && n.has_tag_name("tr"))
+    {
         let mut row: Vec<CellMeta> = Vec::new();
-        for tc in tr.children().filter(|n| n.is_element() && n.has_tag_name("tc")) {
+        for tc in tr
+            .children()
+            .filter(|n| n.is_element() && n.has_tag_name("tc"))
+        {
             let text = extract_cell_text(tc);
             let (grid_span, v_merge_restart, v_merge_continue) = parse_tc_pr(tc);
             row.push(CellMeta {
@@ -184,8 +190,7 @@ fn is_heading_paragraph(p: roxmltree::Node) -> bool {
     p.children()
         .find(|n| n.is_element() && n.has_tag_name("pPr"))
         .map(|p_pr| {
-            p_pr
-                .children()
+            p_pr.children()
                 .find(|n| n.is_element() && n.has_tag_name("pStyle"))
                 .and_then(|style| find_attr(style, "val"))
                 .map(|v| v.starts_with("Heading") || v == "Title")
@@ -206,7 +211,13 @@ fn p_text(p: roxmltree::Node) -> String {
 fn sanitize_name(raw: &str) -> String {
     let mut s: String = raw
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(80)
         .collect();
     s.truncate(s.trim_end().len());
@@ -215,7 +226,10 @@ fn sanitize_name(raw: &str) -> String {
 
 fn extract_cell_text(tc: roxmltree::Node) -> String {
     let mut paragraphs: Vec<String> = Vec::new();
-    for p in tc.children().filter(|n| n.is_element() && n.has_tag_name("p")) {
+    for p in tc
+        .children()
+        .filter(|n| n.is_element() && n.has_tag_name("p"))
+    {
         let mut text = String::new();
         for descendant in p.descendants() {
             if !descendant.is_element() {

@@ -121,6 +121,10 @@ impl SearchEngine for DuckDbEngine {
         if ext == "csv" {
             return self.import_csv_direct(path, progress);
         }
+        #[cfg(feature = "parquet-support")]
+        if ext == "parquet" {
+            return self.import_parquet_direct(path, progress);
+        }
 
         self.import_excel_sheets(path, progress)
     }
@@ -138,6 +142,10 @@ impl SearchEngine for DuckDbEngine {
 
         if ext == "csv" {
             return self.import_csv_direct(path, progress);
+        }
+        #[cfg(feature = "parquet-support")]
+        if ext == "parquet" {
+            return self.import_parquet_direct(path, progress);
         }
 
         self.import_excel_sheets_repair(path, progress)
@@ -1404,10 +1412,7 @@ impl SearchEngine for DuckDbEngine {
                 .query_map(params![name], |row: &::duckdb::Row| row.get::<_, String>(0))?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             if columns.is_empty() {
-                anyhow::bail!(
-                    "Failed to introspect columns for temp table '{}'",
-                    name
-                );
+                anyhow::bail!("Failed to introspect columns for temp table '{}'", name);
             }
             let row_count: i64 = self.conn.query_row(
                 &format!("SELECT COUNT(*) FROM {}", qname),
@@ -2004,6 +2009,115 @@ impl DuckDbEngine {
                     e2
                 )
             })?;
+        }
+
+        let row_count: i64 = self.conn.query_row(
+            &format!("SELECT COUNT(*) FROM {}", quote_ident(&table_name)),
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let col_names: Vec<String> = self.get_view_columns(&table_name)?;
+
+        let sample_rows = self.get_sample_rows(&table_name, &col_names, 3)?;
+
+        progress_callback(row_count as usize, row_count as usize);
+
+        let col_names_str = col_names.join("\x1f");
+        self.conn.execute(
+            "INSERT INTO sheets (file_id, sheet_name, table_name, row_count, col_names, col_widths) VALUES (?, ?, ?, ?, ?, ?)",
+            params![file_id, &sheet_name, &table_name, row_count as i32, &col_names_str, ""],
+        )?;
+
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let safe_schema = sanitize_schema_name(&file_stem);
+        let _ = self.conn.execute(
+            &format!("CREATE SCHEMA IF NOT EXISTS {}", quote_ident(&safe_schema)),
+            [],
+        );
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {}.{} AS SELECT * FROM {}",
+                quote_ident(&safe_schema),
+                quote_ident(&sheet_name),
+                quote_ident(&table_name),
+            ),
+            [],
+        );
+        let dotted_alias = format!("{}.{}", file_stem, sheet_name);
+        let _ = self.conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS {} AS SELECT * FROM {}",
+                quote_ident(&dotted_alias),
+                quote_ident(&table_name),
+            ),
+            [],
+        );
+
+        Ok(FileInfo {
+            name: file_name,
+            sheets: vec![(sheet_name.clone(), row_count as usize)],
+            total_rows: row_count as usize,
+            sample: if sample_rows.is_empty() {
+                None
+            } else {
+                Some(FileSample {
+                    sheet_name,
+                    headers: col_names,
+                    rows: sample_rows,
+                })
+            },
+        })
+    }
+
+    #[cfg(feature = "parquet-support")]
+    fn import_parquet_direct(
+        &mut self,
+        path: &Path,
+        progress_callback: &dyn Fn(usize, usize),
+    ) -> Result<FileInfo> {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let sheet_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("parquet")
+            .to_string();
+
+        self.conn.execute(
+            "INSERT INTO files (file_name) VALUES (?)",
+            params![&file_name],
+        )?;
+        let file_id: i64 = self.conn.query_row(
+            "SELECT currval('file_id_seq')",
+            [],
+            |row: &::duckdb::Row| row.get::<_, i64>(0),
+        )?;
+
+        let table_name = format!("sheet_{}_0", file_id);
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid file path encoding"))?;
+
+        let create_sql = format!(
+            "CREATE TABLE {} AS SELECT * FROM read_parquet('{}')",
+            quote_ident(&table_name),
+            path_str.replace('\'', "''"),
+        );
+        if let Err(e) = self.conn.execute(&create_sql, []) {
+            let _ = self.conn.execute(
+                &format!("DROP TABLE IF EXISTS {}", quote_ident(&table_name)),
+                [],
+            );
+            anyhow::bail!("Failed to import parquet file '{}': {}", path.display(), e);
         }
 
         let row_count: i64 = self.conn.query_row(
