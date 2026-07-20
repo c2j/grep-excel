@@ -27,16 +27,15 @@ pub enum FileFormat {
     Pptx,
     /// PDF documents (pdfsink-rs): .pdf — table extraction via lattice/text strategies
     Pdf,
+    /// Parquet columnar format (Apache Arrow): .parquet — read-only
+    Parquet,
 }
 
 impl FileFormat {
     /// Detect format from file extension. Returns `None` for unknown extensions
     /// (caller should fall back to calamine as a last resort).
     pub fn from_path(path: &Path) -> Option<Self> {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         if ext.eq_ignore_ascii_case("csv") {
             Some(Self::Csv)
@@ -58,6 +57,8 @@ impl FileFormat {
             Some(Self::Pptx)
         } else if ext.eq_ignore_ascii_case("pdf") {
             Some(Self::Pdf)
+        } else if ext.eq_ignore_ascii_case("parquet") {
+            Some(Self::Parquet)
         } else if ext.eq_ignore_ascii_case("xlsx")
             || ext.eq_ignore_ascii_case("xls")
             || ext.eq_ignore_ascii_case("xlsm")
@@ -83,6 +84,7 @@ impl FileFormat {
             "docx" => Some(Self::Docx),
             "pptx" => Some(Self::Pptx),
             "pdf" => Some(Self::Pdf),
+            "parquet" => Some(Self::Parquet),
             "excel" | "xlsx" | "xls" => Some(Self::Excel),
             _ => None,
         }
@@ -90,20 +92,14 @@ impl FileFormat {
 
     /// Human-readable names accepted by `from_name()`, for help text.
     pub const ALL_NAMES: &[&str] = &[
-        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel", "docx", "pptx", "pdf",
+        "csv", "tsv", "html", "txt", "md", "dbf", "xml", "excel", "docx", "pptx", "pdf", "parquet",
     ];
 
     /// All extensions recognized as table files (for archive filtering).
     /// Derived at compile time from the same extension→format mapping.
     pub const TABLE_EXTENSIONS: &[&str] = &[
-        "xlsx", "xls", "xlsm", "xlsb", "ods",
-        "csv", "tsv", "tab",
-        "html", "htm",
-        "txt", "md", "markdown",
-        "dbf",
-        "xml",
-        "docx", "pptx",
-        "pdf",
+        "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "tsv", "tab", "html", "htm", "txt", "md",
+        "markdown", "dbf", "xml", "docx", "pptx", "pdf", "parquet",
     ];
 }
 
@@ -130,10 +126,22 @@ mod tests {
     #[test]
     fn from_path_docx_pptx() {
         use std::path::Path;
-        assert_eq!(FileFormat::from_path(Path::new("a.docx")), Some(FileFormat::Docx));
-        assert_eq!(FileFormat::from_path(Path::new("A.DOCX")), Some(FileFormat::Docx));
-        assert_eq!(FileFormat::from_path(Path::new("report.pptx")), Some(FileFormat::Pptx));
-        assert_eq!(FileFormat::from_path(Path::new("DECK.PPTX")), Some(FileFormat::Pptx));
+        assert_eq!(
+            FileFormat::from_path(Path::new("a.docx")),
+            Some(FileFormat::Docx)
+        );
+        assert_eq!(
+            FileFormat::from_path(Path::new("A.DOCX")),
+            Some(FileFormat::Docx)
+        );
+        assert_eq!(
+            FileFormat::from_path(Path::new("report.pptx")),
+            Some(FileFormat::Pptx)
+        );
+        assert_eq!(
+            FileFormat::from_path(Path::new("DECK.PPTX")),
+            Some(FileFormat::Pptx)
+        );
     }
 
     #[test]
@@ -157,8 +165,14 @@ mod tests {
     #[test]
     fn from_path_pdf() {
         use std::path::Path;
-        assert_eq!(FileFormat::from_path(Path::new("report.pdf")), Some(FileFormat::Pdf));
-        assert_eq!(FileFormat::from_path(Path::new("REPORT.PDF")), Some(FileFormat::Pdf));
+        assert_eq!(
+            FileFormat::from_path(Path::new("report.pdf")),
+            Some(FileFormat::Pdf)
+        );
+        assert_eq!(
+            FileFormat::from_path(Path::new("REPORT.PDF")),
+            Some(FileFormat::Pdf)
+        );
     }
 
     #[test]
