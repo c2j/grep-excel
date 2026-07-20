@@ -3174,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "grep-excel"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3202,7 +3202,7 @@ dependencies = [
 
 [[package]]
 name = "grep-excel-core"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "bzip2 0.4.4",
@@ -3215,6 +3215,7 @@ dependencies = [
  "flate2",
  "parking_lot",
  "pdfsink-rs",
+ "rayon",
  "regex",
  "reqwest",
  "roxmltree",
