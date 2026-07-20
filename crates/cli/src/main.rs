@@ -1431,7 +1431,8 @@ fn run_exec_shell(args: &Args, format_overrides: &HashMap<String, FileFormat>) -
     let mut fail_count = 0;
 
     for result in &results {
-        let expanded_cmd = match expand_exec_template(exec_template, &result.col_names, &result.row) {
+        let expanded_cmd = match expand_exec_template(exec_template, &result.col_names, &result.row)
+        {
             Ok(cmd) => cmd,
             Err(e) => {
                 eprintln!(

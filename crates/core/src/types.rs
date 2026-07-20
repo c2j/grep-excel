@@ -129,17 +129,12 @@ pub struct SheetDataResult {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TableKind {
+    #[default]
     File,
     Temp,
-}
-
-impl Default for TableKind {
-    fn default() -> Self {
-        Self::File
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

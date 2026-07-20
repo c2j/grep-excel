@@ -14,15 +14,8 @@ fn test_dbf_parse_roundtrip() {
     // Write a DBF file with two fields
     {
         let mut writer = dbase::TableWriterBuilder::new()
-            .add_character_field(
-                dbase::FieldName::try_from("Name").unwrap(),
-                50,
-            )
-            .add_numeric_field(
-                dbase::FieldName::try_from("Age").unwrap(),
-                20,
-                10,
-            )
+            .add_character_field(dbase::FieldName::try_from("Name").unwrap(), 50)
+            .add_numeric_field(dbase::FieldName::try_from("Age").unwrap(), 20, 10)
             .build_with_file_dest(&dbf_path)
             .expect("should create DBF writer");
 
@@ -31,10 +24,7 @@ fn test_dbf_parse_roundtrip() {
             "Name".to_string(),
             dbase::FieldValue::Character(Some("Alice".to_string())),
         );
-        record1.insert(
-            "Age".to_string(),
-            dbase::FieldValue::Numeric(Some(30.0)),
-        );
+        record1.insert("Age".to_string(), dbase::FieldValue::Numeric(Some(30.0)));
         writer
             .write_record(&record1)
             .expect("should write record 1");
@@ -44,10 +34,7 @@ fn test_dbf_parse_roundtrip() {
             "Name".to_string(),
             dbase::FieldValue::Character(Some("Bob".to_string())),
         );
-        record2.insert(
-            "Age".to_string(),
-            dbase::FieldValue::Numeric(Some(25.5)),
-        );
+        record2.insert("Age".to_string(), dbase::FieldValue::Numeric(Some(25.5)));
         writer
             .write_record(&record2)
             .expect("should write record 2");
@@ -62,18 +49,21 @@ fn test_dbf_parse_roundtrip() {
     assert_eq!(sheets[0].name, "test", "sheet name should be file stem");
     // Headers come from reader.fields() in file (insertion) order
     assert_eq!(
-        sheets[0].headers, vec!["Name", "Age"],
+        sheets[0].headers,
+        vec!["Name", "Age"],
         "should have correct headers (file order)"
     );
     assert_eq!(sheets[0].rows.len(), 2, "should have 2 data rows");
 
     // Verify data
     assert_eq!(
-        sheets[0].rows[0], vec!["Alice", "30"],
+        sheets[0].rows[0],
+        vec!["Alice", "30"],
         "first row should have correct values"
     );
     assert_eq!(
-        sheets[0].rows[1], vec!["Bob", "25.5"],
+        sheets[0].rows[1],
+        vec!["Bob", "25.5"],
         "second row should have correct values"
     );
 

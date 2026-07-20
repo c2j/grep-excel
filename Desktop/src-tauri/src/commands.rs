@@ -22,7 +22,9 @@ impl AppState {
 pub fn import_file(path: String, state: State<'_, AppState>) -> Result<FileInfo, String> {
     let p = Path::new(&path);
     let mut engine = state.engine.lock();
-    engine.import_excel(p, &|_, _| {}).map_err(|e| e.to_string())
+    engine
+        .import_excel(p, &|_, _| {})
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

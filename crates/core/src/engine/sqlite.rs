@@ -1852,16 +1852,13 @@ impl SearchEngine for SqliteEngine {
                 .query_map([], |row| row.get::<_, String>(1))?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             if columns.is_empty() {
-                anyhow::bail!(
-                    "Failed to introspect columns for temp table '{}'",
-                    name
-                );
+                anyhow::bail!("Failed to introspect columns for temp table '{}'", name);
             }
-            let row_count: i64 = self.conn.query_row(
-                &format!("SELECT COUNT(*) FROM {}", qname),
-                [],
-                |row| row.get(0),
-            )?;
+            let row_count: i64 =
+                self.conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {}", qname), [], |row| {
+                        row.get(0)
+                    })?;
             Ok((columns, row_count as usize))
         })();
 

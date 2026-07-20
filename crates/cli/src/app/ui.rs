@@ -130,10 +130,7 @@ impl App {
         if self.mode == AppMode::EditingSql || !self.sql_input.value().is_empty() {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(7),
-                    Constraint::Min(20),
-                ])
+                .constraints([Constraint::Length(7), Constraint::Min(20)])
                 .split(area);
 
             let label_area = Rect {
@@ -396,7 +393,11 @@ impl App {
                 vec![
                     Line::from(""),
                     Line::from(Span::styled(
-                        format!("{} {}", spinner_chars[char_idx], crate::i18n::status_loading()),
+                        format!(
+                            "{} {}",
+                            spinner_chars[char_idx],
+                            crate::i18n::status_loading()
+                        ),
                         Style::default().fg(theme().label),
                     )),
                 ]
@@ -404,7 +405,10 @@ impl App {
                 if self.file_list.is_empty() {
                     vec![
                         Line::from(""),
-                        Line::from(Span::styled(crate::i18n::empty_no_files(), Style::default().fg(theme().text_dim))),
+                        Line::from(Span::styled(
+                            crate::i18n::empty_no_files(),
+                            Style::default().fg(theme().text_dim),
+                        )),
                         Line::from(""),
                         Line::from(Span::styled(
                             crate::i18n::empty_open_hint(),
@@ -458,7 +462,10 @@ impl App {
                             };
                             lines.push(Line::from(vec![
                                 Span::styled(prefix, Style::default().fg(theme().text_dim)),
-                                Span::styled(sheet_name.clone(), Style::default().fg(theme().text_dim)),
+                                Span::styled(
+                                    sheet_name.clone(),
+                                    Style::default().fg(theme().text_dim),
+                                ),
                                 Span::styled(
                                     format!("  {}", crate::i18n::empty_sheet_rows(*row_count)),
                                     Style::default().fg(theme().text_dim),
@@ -480,12 +487,21 @@ impl App {
 
                     lines.push(Line::from(vec![
                         Span::styled("  ", Style::default().fg(theme().text_dim)),
-                        Span::styled(crate::i18n::press_label(), Style::default().fg(theme().text_dim)),
+                        Span::styled(
+                            crate::i18n::press_label(),
+                            Style::default().fg(theme().text_dim),
+                        ),
                         Span::styled("[/]", Style::default().fg(theme().label)),
-                        Span::styled(crate::i18n::empty_search_hint(), Style::default().fg(theme().text_dim)),
+                        Span::styled(
+                            crate::i18n::empty_search_hint(),
+                            Style::default().fg(theme().text_dim),
+                        ),
                         Span::styled("·  ", Style::default().fg(theme().text_dim)),
                         Span::styled("[?]", Style::default().fg(theme().label)),
-                        Span::styled(crate::i18n::empty_help_word(), Style::default().fg(theme().text_dim)),
+                        Span::styled(
+                            crate::i18n::empty_help_word(),
+                            Style::default().fg(theme().text_dim),
+                        ),
                     ]));
 
                     lines
@@ -552,7 +568,9 @@ impl App {
             .map(|r| r.col_names.clone())
             .unwrap_or_else(|| {
                 let max_cols = results.iter().map(|r| r.row.len()).max().unwrap_or(0);
-                (0..max_cols).map(|i| crate::i18n::col_auto_name(i + 1)).collect()
+                (0..max_cols)
+                    .map(|i| crate::i18n::col_auto_name(i + 1))
+                    .collect()
             });
 
         let total_cols = col_names.len();
@@ -629,11 +647,9 @@ impl App {
             .bottom_margin(1);
 
         let compiled_regex = match self.search_mode {
-            SearchMode::FullText => regex::Regex::new(&format!(
-                "(?i){}",
-                regex::escape(self.search_input.value())
-            ))
-            .ok(),
+            SearchMode::FullText => {
+                regex::Regex::new(&format!("(?i){}", regex::escape(self.search_input.value()))).ok()
+            }
             SearchMode::Regex => {
                 regex::Regex::new(&format!("(?i){}", self.search_input.value())).ok()
             }
@@ -763,11 +779,7 @@ impl App {
             }
 
             let is_selected = sheet_idx == selected_sheet;
-            let results: Vec<SearchResult> = self
-                .results_by_sheet
-                .get(sheet_key)
-                .unwrap()
-                .clone();
+            let results: Vec<SearchResult> = self.results_by_sheet.get(sheet_key).unwrap().clone();
 
             let (file_name, sheet_name) = App::parse_sheet_key(sheet_key);
             let display_name = if self.file_list.len() > 1 {
@@ -805,8 +817,7 @@ impl App {
                 };
 
                 let text = format!("▶ {} ({})", display_name, results.len());
-                let paragraph =
-                    Paragraph::new(text).style(Style::default().fg(theme().text_dim));
+                let paragraph = Paragraph::new(text).style(Style::default().fg(theme().text_dim));
                 frame.render_widget(paragraph, sheet_area);
                 current_y += collapsed_height;
             }
@@ -832,7 +843,9 @@ impl App {
             .map(|r| r.col_names.clone())
             .unwrap_or_else(|| {
                 let max_cols = results.iter().map(|r| r.row.len()).max().unwrap_or(0);
-                (0..max_cols).map(|i| crate::i18n::col_auto_name(i + 1)).collect()
+                (0..max_cols)
+                    .map(|i| crate::i18n::col_auto_name(i + 1))
+                    .collect()
             });
 
         let total_cols = col_names.len();
@@ -896,18 +909,20 @@ impl App {
             .bottom_margin(1);
 
         let compiled_regex = match self.search_mode {
-            SearchMode::FullText => regex::Regex::new(&format!(
-                "(?i){}",
-                regex::escape(self.search_input.value())
-            ))
-            .ok(),
+            SearchMode::FullText => {
+                regex::Regex::new(&format!("(?i){}", regex::escape(self.search_input.value()))).ok()
+            }
             SearchMode::Regex => {
                 regex::Regex::new(&format!("(?i){}", self.search_input.value())).ok()
             }
             _ => None,
         };
 
-        let scroll_offset = if is_selected { self.flat_scroll_offset } else { 0 };
+        let scroll_offset = if is_selected {
+            self.flat_scroll_offset
+        } else {
+            0
+        };
         let visible_row_count = area.height.saturating_sub(3) as usize;
 
         let rows: Vec<_> = results
@@ -970,7 +985,9 @@ impl App {
 
         let mut title_spans = vec![Span::styled(
             format!(" {} ", display_name),
-            Style::default().fg(theme().label).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme().label)
+                .add_modifier(Modifier::BOLD),
         )];
         if col_offset > 0 {
             title_spans.push(Span::styled(" ◄ ", Style::default().fg(theme().highlight)));
@@ -1223,11 +1240,7 @@ impl App {
             .unwrap_or(0);
         if total_sheets > 1 {
             title_spans.push(Span::styled(
-                format!(
-                    " [Sheet {}/{}]",
-                    self.browse_sheet_index + 1,
-                    total_sheets
-                ),
+                format!(" [Sheet {}/{}]", self.browse_sheet_index + 1, total_sheets),
                 Style::default().fg(theme().info),
             ));
         }
@@ -1241,9 +1254,11 @@ impl App {
 
         let table = Table::new(rows, constraints)
             .header(header_row)
-            .block(Block::default().borders(Borders::ALL).title(
-                Line::from(title_spans),
-            ))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(Line::from(title_spans)),
+            )
             .row_highlight_style(
                 Style::default()
                     .fg(theme().highlight)
@@ -1253,7 +1268,9 @@ impl App {
 
         let absolute_selected = self.table_state.selected().unwrap_or(0);
         let relative_selected = absolute_selected.saturating_sub(scroll_offset);
-        let visible_len = total_rows.saturating_sub(scroll_offset).min(visible_row_count);
+        let visible_len = total_rows
+            .saturating_sub(scroll_offset)
+            .min(visible_row_count);
         let relative_selected = if visible_len == 0 {
             0
         } else {
@@ -1267,8 +1284,7 @@ impl App {
             .orientation(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
-        let mut scrollbar_state = ScrollbarState::new(total_rows)
-            .position(scroll_offset);
+        let mut scrollbar_state = ScrollbarState::new(total_rows).position(scroll_offset);
         frame.render_stateful_widget(
             scrollbar,
             area.inner(ratatui::layout::Margin::new(0, 1)),
@@ -1278,11 +1294,9 @@ impl App {
 
     fn draw_detail_panel(&self, frame: &mut Frame, area: Rect, result: &SearchResult) {
         let compiled_regex = match self.search_mode {
-            SearchMode::FullText => regex::Regex::new(&format!(
-                "(?i){}",
-                regex::escape(self.search_input.value())
-            ))
-            .ok(),
+            SearchMode::FullText => {
+                regex::Regex::new(&format!("(?i){}", regex::escape(self.search_input.value()))).ok()
+            }
             SearchMode::Regex => {
                 regex::Regex::new(&format!("(?i){}", self.search_input.value())).ok()
             }
@@ -1292,7 +1306,10 @@ impl App {
         let mut lines: Vec<Line<'_>> = Vec::new();
 
         lines.push(Line::from(vec![
-            Span::styled(crate::i18n::detail_file_label(), Style::default().fg(theme().text_dim)),
+            Span::styled(
+                crate::i18n::detail_file_label(),
+                Style::default().fg(theme().text_dim),
+            ),
             Span::styled(
                 &result.file_name,
                 Style::default()
@@ -1301,7 +1318,10 @@ impl App {
             ),
         ]));
         lines.push(Line::from(vec![
-            Span::styled(crate::i18n::detail_sheet_label(), Style::default().fg(theme().text_dim)),
+            Span::styled(
+                crate::i18n::detail_sheet_label(),
+                Style::default().fg(theme().text_dim),
+            ),
             Span::styled(&result.sheet_name, Style::default().fg(theme().label)),
         ]));
         lines.push(Line::from(Span::styled(
@@ -1406,7 +1426,10 @@ impl App {
                                     if s >= chunk_end || e <= chunk_start {
                                         None
                                     } else {
-                                        Some((s.max(chunk_start) - chunk_start, e.min(chunk_end) - chunk_start))
+                                        Some((
+                                            s.max(chunk_start) - chunk_start,
+                                            e.min(chunk_end) - chunk_start,
+                                        ))
                                     }
                                 })
                                 .collect();
@@ -1488,7 +1511,11 @@ impl App {
         } else if self.loading {
             let char_idx = self.tick_count % spinner_chars.len();
             Line::from(Span::styled(
-                format!(" {} {}", spinner_chars[char_idx], crate::i18n::status_loading()),
+                format!(
+                    " {} {}",
+                    spinner_chars[char_idx],
+                    crate::i18n::status_loading()
+                ),
                 Style::default().fg(theme().label),
             ))
         } else if let Some(stats) = &self.stats {
@@ -1539,7 +1566,10 @@ impl App {
 
             Line::from(vec![
                 Span::styled(
-                    crate::i18n::status_matches_label(stats.total_matches, stats.total_rows_searched),
+                    crate::i18n::status_matches_label(
+                        stats.total_matches,
+                        stats.total_rows_searched,
+                    ),
                     Style::default().fg(theme().text),
                 ),
                 Span::styled(" │ ", Style::default().fg(theme().text_dim)),
@@ -1553,16 +1583,26 @@ impl App {
                 Span::styled(view_indicator, Style::default().fg(theme().info)),
                 Span::styled(" │ ", Style::default().fg(theme().text_dim)),
                 Span::styled(sheet_info.join(" "), Style::default().fg(theme().text_dim)),
-                Span::styled(aggregate_indicator, Style::default().fg(theme().highlight_match)),
+                Span::styled(
+                    aggregate_indicator,
+                    Style::default().fg(theme().highlight_match),
+                ),
             ])
         } else if let Some(ref data) = self.browse_data {
             let total_rows = data.rows.len();
             let total_cols = data.columns.len();
             let selected = self.table_state.selected().unwrap_or(0);
-            let row_indicator = format!("Row {}/{}", self.browse_scroll_offset + selected + 1, total_rows);
+            let row_indicator = format!(
+                "Row {}/{}",
+                self.browse_scroll_offset + selected + 1,
+                total_rows
+            );
             let col_indicator = format!(" Col {}/{}", self.browse_col_offset + 1, total_cols);
             Line::from(vec![
-                Span::styled(format!(" {} / {}", data.file_name, data.sheet_name), Style::default().fg(theme().text)),
+                Span::styled(
+                    format!(" {} / {}", data.file_name, data.sheet_name),
+                    Style::default().fg(theme().text),
+                ),
                 Span::styled(" │ ", Style::default().fg(theme().text_dim)),
                 Span::styled(row_indicator, Style::default().fg(theme().text)),
                 Span::styled(col_indicator, Style::default().fg(theme().text_dim)),
@@ -1869,10 +1909,7 @@ impl App {
             Span::styled("  │  ", dim_style),
             Span::styled(crate::i18n::sql_info_col_columns(), header_style),
         ]));
-        lines.push(Line::from(Span::styled(
-            "─".repeat(60),
-            dim_style,
-        )));
+        lines.push(Line::from(Span::styled("─".repeat(60), dim_style)));
 
         let visible_height = area.height as usize;
         let max_scroll = self.table_aliases.len().saturating_sub(1);
@@ -1955,7 +1992,10 @@ impl App {
         let files = rfd::FileDialog::new()
             .add_filter(
                 "Table & Archive Files",
-                &["xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "zip", "tar", "gz", "tgz", "bz2", "xz", "zst"],
+                &[
+                    "xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "zip", "tar", "gz", "tgz", "bz2",
+                    "xz", "zst",
+                ],
             )
             .set_title("Open Excel Files")
             .pick_files();

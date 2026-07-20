@@ -43,15 +43,14 @@ fn test_opengauss_v2_tables() {
 
 #[test]
 fn test_sql_detail_wdr_tables() {
-    let html =
-        std::fs::read_to_string(Path::new(WDR_DIR).join("test_sql_detail_wdr.html"))
-            .expect("read sql detail file");
+    let html = std::fs::read_to_string(Path::new(WDR_DIR).join("test_sql_detail_wdr.html"))
+        .expect("read sql detail file");
     let tables = extract_tables(&html).unwrap();
     assert!(!tables.is_empty());
 
-    let sql_table = tables.iter().find(|t| {
-        t.name.contains("SQL") || t.headers.iter().any(|h| h.contains("SQL ID"))
-    });
+    let sql_table = tables
+        .iter()
+        .find(|t| t.name.contains("SQL") || t.headers.iter().any(|h| h.contains("SQL ID")));
     assert!(sql_table.is_some(), "should find a SQL-related table");
     let sql_table = sql_table.unwrap();
     assert!(

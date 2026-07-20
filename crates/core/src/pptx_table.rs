@@ -7,8 +7,8 @@ pub fn parse_pptx(path: &Path) -> anyhow::Result<Vec<SheetData>> {
     let file = std::fs::File::open(path)
         .map_err(|e| anyhow::anyhow!("failed to open pptx '{}': {}", path.display(), e))?;
     let reader = std::io::BufReader::new(file);
-    let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| anyhow::anyhow!("invalid pptx ZIP: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| anyhow::anyhow!("invalid pptx ZIP: {}", e))?;
 
     let mut slides = list_slides(&mut archive);
     slides.sort_by_key(|(n, _)| *n);
@@ -57,14 +57,15 @@ fn list_slides(
         .collect()
 }
 
-fn extract_tables_from_slide(
-    doc: &roxmltree::Document,
-    slide_num: usize,
-) -> Vec<SheetData> {
+fn extract_tables_from_slide(doc: &roxmltree::Document, slide_num: usize) -> Vec<SheetData> {
     let mut tables = Vec::new();
     let mut table_idx = 0usize;
 
-    for tbl in doc.root_element().descendants().filter(|n| n.has_tag_name("tbl")) {
+    for tbl in doc
+        .root_element()
+        .descendants()
+        .filter(|n| n.has_tag_name("tbl"))
+    {
         if !is_top_level_pptx_table(tbl) {
             continue;
         }
@@ -99,9 +100,15 @@ struct PptxCellMeta {
 fn parse_pptx_table(tbl: roxmltree::Node, name: String) -> Option<SheetData> {
     let mut raw_rows: Vec<Vec<PptxCellMeta>> = Vec::new();
 
-    for tr in tbl.children().filter(|n| n.is_element() && n.has_tag_name("tr")) {
+    for tr in tbl
+        .children()
+        .filter(|n| n.is_element() && n.has_tag_name("tr"))
+    {
         let mut row: Vec<PptxCellMeta> = Vec::new();
-        for tc in tr.children().filter(|n| n.is_element() && n.has_tag_name("tc")) {
+        for tc in tr
+            .children()
+            .filter(|n| n.is_element() && n.has_tag_name("tc"))
+        {
             let text = extract_pptx_cell_text(tc);
             let grid_span = parse_pptx_attr_usize(tc, "gridSpan").unwrap_or(1).max(1);
             let row_span = parse_pptx_attr_usize(tc, "rowSpan").unwrap_or(1).max(1);
@@ -199,13 +206,16 @@ fn expand_row_spans(rows: &mut [Vec<PptxCellMeta>]) {
                     if target >= rows.len() {
                         break;
                     }
-                    rows[target].insert(col_idx, PptxCellMeta {
-                        text: text.clone(),
-                        grid_span: gs,
-                        row_span: 1,
-                        h_merge: false,
-                        v_merge: false,
-                    });
+                    rows[target].insert(
+                        col_idx,
+                        PptxCellMeta {
+                            text: text.clone(),
+                            grid_span: gs,
+                            row_span: 1,
+                            h_merge: false,
+                            v_merge: false,
+                        },
+                    );
                 }
             }
             col_idx += 1;

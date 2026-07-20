@@ -43,12 +43,15 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
                         .collect();
 
                     if string_table.len() >= 2 && !string_table[0].is_empty() {
-                        Some((page_num, SheetData {
-                            name: String::new(),
-                            headers: string_table[0].clone(),
-                            rows: string_table[1..].to_vec(),
-                            col_widths: Vec::new(),
-                        }))
+                        Some((
+                            page_num,
+                            SheetData {
+                                name: String::new(),
+                                headers: string_table[0].clone(),
+                                rows: string_table[1..].to_vec(),
+                                col_widths: Vec::new(),
+                            },
+                        ))
                     } else {
                         None
                     }
@@ -80,6 +83,7 @@ pub fn parse_pdf(path: &Path) -> anyhow::Result<Vec<SheetData>> {
 /// - They have the same number of columns.
 ///
 /// If the continuation page repeats the header row, that row is skipped.
+#[cfg(feature = "pdf-support")]
 fn merge_consecutive_tables(page_tables: Vec<(usize, SheetData)>) -> Vec<SheetData> {
     if page_tables.is_empty() {
         return Vec::new();
@@ -90,8 +94,8 @@ fn merge_consecutive_tables(page_tables: Vec<(usize, SheetData)>) -> Vec<SheetDa
     let mut current_page = page_tables[0].0;
 
     for (page_num, table) in page_tables.into_iter().skip(1) {
-        let same_table = page_num == current_page + 1
-            && table.headers.len() == current.headers.len();
+        let same_table =
+            page_num == current_page + 1 && table.headers.len() == current.headers.len();
 
         if same_table {
             let data_rows = if first_row_matches_headers(&current.headers, &table.rows) {
@@ -118,6 +122,7 @@ fn merge_consecutive_tables(page_tables: Vec<(usize, SheetData)>) -> Vec<SheetDa
 
 /// Returns `true` if the first data row of a continuation table looks like
 /// repeated headers (all cells match exactly).
+#[cfg(feature = "pdf-support")]
 fn first_row_matches_headers(headers: &[String], rows: &[Vec<String>]) -> bool {
     if rows.is_empty() || rows[0].len() != headers.len() {
         return false;
