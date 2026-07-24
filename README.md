@@ -26,7 +26,7 @@ grep-excel provides a fast, interactive terminal interface for searching across 
 - **Repair Damaged Files** — Recover data from corrupted `.xlsx` files at the ZIP/XML level (`--repair`)
 - **Cloud Share URL Import** — Pass Kingsoft Docs / WPS (`kdocs.cn`) share links directly; downloads via session cookie. Use `--kdocs-cookie` or `KDOCS_COOKIE` env var. For enterprise domains, set `SHARE_HOSTS` env var
 - **Archive Support** — Import table files directly from `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz` archives and `.zip.001` split volumes without manual decompression
-- **Excel Date Auto-Detection** — Detects Excel date serial numbers and converts them to readable `YYYYMMDD` strings, so date-based searches (`-q 0615`) work correctly
+- **Excel Date Auto-Detection** — Detects Excel date serial numbers and converts them to ISO 8601 format (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`), preserving time information for date-range searches
 - **Multiple Output Formats** — Markdown tables, pretty-printed, JSON, and simple TSV (`--format`)
 - **CSV Export** — Export search or SQL results to CSV files
 - **Friendly Table Aliases** — Use `filename.sheetname` syntax in SQL instead of internal `sheet_N_M` names
@@ -508,7 +508,7 @@ grep-excel 提供快速的交互式终端界面，用于在多个电子表格与
 - **修复损坏文件** — 在 ZIP/XML 层面从损坏的 `.xlsx` 文件中恢复数据（`--repair`）
 - **云文档链接导入** — 直接传入金山文档 (kdocs.cn) 分享链接；通过登录 Cookie 下载。使用 `--kdocs-cookie` 或 `KDOCS_COOKIE` 环境变量。企业版域名请设置 `SHARE_HOSTS` 环境变量
 - **归档文件支持** — 直接导入 `.zip`、`.tar`、`.tar.gz`、`.tar.bz2`、`.tar.xz` 归档文件及 `.zip.001` 分卷压缩包，无需手动解压
-- **Excel 日期自动识别** — 自动检测 Excel 日期序列号并转换为可读的 `YYYYMMDD` 字符串，确保基于日期的搜索（`-q 0615`）能正确命中
+- **Excel 日期自动识别** — 自动检测 Excel 日期序列号并转换为 ISO 8601 格式（`YYYY-MM-DD` 或 `YYYY-MM-DD HH:MM:SS`），保留时间信息，支持日期范围搜索
 - **多种输出格式** — Markdown 表格、美化打印、JSON 和简单 TSV（`--format`）
 - **CSV 导出** — 将搜索或 SQL 结果导出为 CSV 文件
 - **友好表别名** — 在 SQL 中使用 `文件名.工作表名` 语法替代内部 `sheet_N_M` 名称
