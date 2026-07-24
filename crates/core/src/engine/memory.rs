@@ -872,16 +872,19 @@ fn matches_conditions(row: &[String], headers: &[String], conditions: &[SearchCo
             "!=" | "<>" => val != cond.value,
             "ILIKE" => val.to_lowercase().contains(&cond.value.to_lowercase()),
             "LIKE" => super::like_match(&cond.value, val),
-            ">" | "<" | ">=" | "<=" => match (val.parse::<f64>(), cond.value.parse::<f64>()) {
-                (Ok(a), Ok(b)) => match cond.operator.as_str() {
-                    ">" => a > b,
-                    "<" => a < b,
-                    ">=" => a >= b,
-                    "<=" => a <= b,
+            ">" | "<" | ">=" | "<=" => {
+                let ord = match (val.parse::<f64>(), cond.value.parse::<f64>()) {
+                    (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => val.cmp(cond.value.as_str()),
+                };
+                match cond.operator.as_str() {
+                    ">" => ord == std::cmp::Ordering::Greater,
+                    "<" => ord == std::cmp::Ordering::Less,
+                    ">=" => ord != std::cmp::Ordering::Less,
+                    "<=" => ord != std::cmp::Ordering::Greater,
                     _ => false,
-                },
-                _ => false,
-            },
+                }
+            }
             _ => false,
         };
         if !matched {
@@ -917,5 +920,72 @@ mod temp_table_stub_tests {
             "got: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_iso_date_comparison() {
+        let row = vec!["2023-06-15".to_string()];
+        let headers = vec!["date".to_string()];
+
+        let cond_gt = SearchCondition {
+            column: "date".into(),
+            operator: ">".into(),
+            value: "2023-01-01".into(),
+        };
+        assert!(matches_conditions(&row, &headers, &[cond_gt]));
+
+        let cond_lt = SearchCondition {
+            column: "date".into(),
+            operator: "<".into(),
+            value: "2024-01-01".into(),
+        };
+        assert!(matches_conditions(&row, &headers, &[cond_lt]));
+
+        let cond_ge = SearchCondition {
+            column: "date".into(),
+            operator: ">=".into(),
+            value: "2023-06-15".into(),
+        };
+        assert!(matches_conditions(&row, &headers, &[cond_ge]));
+
+        let cond_le = SearchCondition {
+            column: "date".into(),
+            operator: "<=".into(),
+            value: "2023-06-15".into(),
+        };
+        assert!(matches_conditions(&row, &headers, &[cond_le]));
+    }
+
+    #[test]
+    fn test_string_comparison_non_numeric() {
+        let row = vec!["abc".to_string()];
+        let headers = vec!["col".to_string()];
+        let cond = SearchCondition {
+            column: "col".into(),
+            operator: ">".into(),
+            value: "aaa".into(),
+        };
+        assert!(matches_conditions(&row, &headers, &[cond]));
+    }
+
+    #[test]
+    fn test_numeric_comparison_different_digit_counts() {
+        let headers = vec!["salary".to_string()];
+
+        let cond_gt = SearchCondition {
+            column: "salary".into(),
+            operator: ">".into(),
+            value: "100".into(),
+        };
+        assert!(!matches_conditions(
+            &["99".to_string()],
+            &headers,
+            &[cond_gt.clone()],
+        ));
+        assert!(matches_conditions(
+            &["150".to_string()],
+            &headers,
+            &[cond_gt],
+        ));
     }
 }

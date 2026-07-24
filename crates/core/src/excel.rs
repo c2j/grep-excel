@@ -3,7 +3,7 @@ use crate::parquet_table::parse_parquet;
 use crate::pdf_table::parse_pdf;
 use anyhow::Result;
 use calamine::{open_workbook_auto, Data, Dimensions, Reader, Sheets};
-use chrono::{Datelike, Duration};
+use chrono::{Datelike, Duration, Timelike};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -548,43 +548,75 @@ fn is_date_column_name(name: &str) -> bool {
     DATE_COLUMN_KEYWORDS.iter().any(|kw| lower.contains(kw))
 }
 
-/// Convert an Excel serial date number to a "YYYYMMDD" formatted string.
+/// Conservative check: does this float look like a pure Excel date serial?
+/// Used for column-level date detection (Signal 2 heuristic).
+/// Rejects fractional parts (datetime values) to avoid false positives on
+/// numeric columns like prices, quantities, or IDs.
+fn looks_like_date_serial(serial: f64) -> bool {
+    if !(1.0..=100_000.0).contains(&serial) {
+        return false;
+    }
+    let frac = serial - serial.trunc();
+    frac < 0.001
+}
+
+/// Convert an Excel serial number to an ISO 8601 date/datetime string.
+/// Accepts fractional serials (preserves time component).
+/// Assumes 1900 date system (heuristic path has no is_1904 info).
 /// Uses the same algorithm as calamine's `ExcelDateTime::as_datetime()`:
 /// epoch = 1899-12-30, with the Lotus 1-2-3 leap year bug (day 60 = Feb 29, 1900).
-fn excel_serial_to_date_string(serial: f64) -> Option<String> {
+fn serial_to_datetime_string(serial: f64) -> Option<String> {
     if !(1.0..=100_000.0).contains(&serial) {
         return None;
     }
-    // Skip values with significant fractional parts (likely non-date numbers)
-    let frac = serial - serial.trunc();
-    if frac >= 0.001 {
-        return None;
-    }
     let ms_multiplier: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
-    // Excel incorrectly treats 1900 as a leap year.
-    // For values >= 60, offset by 1 to compensate.
+    // Excel incorrectly treats 1900 as a leap year (fake Feb 29 = serial 60).
+    // For serials < 60, add 1 to align with the real calendar.
     let adjusted = if serial >= 60.0 { serial } else { serial + 1.0 };
     let ms = (adjusted * ms_multiplier).round() as i64;
-    let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30)?;
-    let date = epoch + Duration::milliseconds(ms);
-    Some(format!(
-        "{:04}{:02}{:02}",
-        date.year(),
-        date.month(),
-        date.day()
-    ))
+    let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30)?.and_hms_opt(0, 0, 0)?;
+    let dt = epoch + Duration::milliseconds(ms);
+    let frac = serial - serial.trunc();
+    if frac < 0.001 {
+        Some(format!(
+            "{:04}-{:02}-{:02}",
+            dt.year(),
+            dt.month(),
+            dt.day()
+        ))
+    } else {
+        Some(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second()
+        ))
+    }
 }
 
-/// Like `data_to_string`, but for `Data::DateTime` uses calamine's
-/// `as_datetime()` to produce a human-readable date string, and for
-/// `Data::Float` tries date conversion.
 fn date_aware_to_string(data: &Data) -> String {
     match data {
-        Data::DateTime(dt) => dt
-            .as_datetime()
-            .map(|ndt| format!("{:04}{:02}{:02}", ndt.year(), ndt.month(), ndt.day()))
-            .unwrap_or_else(|| dt.to_string()),
-        Data::Float(f) => excel_serial_to_date_string(*f).unwrap_or_else(|| f.to_string()),
+        Data::DateTime(dt) => {
+            if dt.is_duration() {
+                dt.as_datetime()
+                    .map(|t| t.format("%H:%M:%S").to_string())
+                    .unwrap_or_else(|| dt.to_string())
+            } else {
+                dt.as_datetime()
+                    .map(|ndt| {
+                        if dt.as_f64().fract() == 0.0 {
+                            ndt.format("%Y-%m-%d").to_string()
+                        } else {
+                            ndt.format("%Y-%m-%d %H:%M:%S").to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| dt.to_string())
+            }
+        }
+        Data::Float(f) => serial_to_datetime_string(*f).unwrap_or_else(|| f.to_string()),
         other => data_to_string(other),
     }
 }
@@ -626,7 +658,7 @@ fn detect_date_columns_from_data(raw_rows: &[Vec<Data>], headers: &[String]) -> 
                 .iter()
                 .fold((0usize, 0usize), |(dl, tf), row| match row.get(col_idx) {
                     Some(Data::Float(f)) => {
-                        let is_date = excel_serial_to_date_string(*f).is_some();
+                        let is_date = looks_like_date_serial(*f);
                         (dl + is_date as usize, tf + 1)
                     }
                     _ => (dl, tf),
@@ -654,7 +686,7 @@ fn convert_date_columns_in_place(headers: &[String], rows: &mut [Vec<String>]) {
             .filter(|row| {
                 row.get(col_idx)
                     .and_then(|v| v.parse::<f64>().ok())
-                    .and_then(excel_serial_to_date_string)
+                    .and_then(serial_to_datetime_string)
                     .is_some()
             })
             .count();
@@ -664,7 +696,7 @@ fn convert_date_columns_in_place(headers: &[String], rows: &mut [Vec<String>]) {
         for row in rows.iter_mut() {
             if let Some(value) = row.get_mut(col_idx) {
                 if let Ok(serial) = value.parse::<f64>() {
-                    if let Some(date_str) = excel_serial_to_date_string(serial) {
+                    if let Some(date_str) = serial_to_datetime_string(serial) {
                         *value = date_str;
                     }
                 }
@@ -1718,5 +1750,71 @@ mod merged_cell_tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0], vec!["h".to_string()]);
         assert_eq!(rows[1], vec!["far".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod date_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn test_looks_like_date_serial() {
+        assert!(looks_like_date_serial(1.0));
+        assert!(looks_like_date_serial(45000.0));
+        assert!(looks_like_date_serial(100_000.0));
+        assert!(!looks_like_date_serial(0.0));
+        assert!(!looks_like_date_serial(100_001.0));
+        assert!(!looks_like_date_serial(45000.5));
+        assert!(!looks_like_date_serial(-1.0));
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_pure_date() {
+        assert_eq!(
+            serial_to_datetime_string(1.0).as_deref(),
+            Some("1900-01-01")
+        );
+        assert_eq!(
+            serial_to_datetime_string(45000.0).as_deref(),
+            Some("2023-03-15")
+        );
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_with_time() {
+        assert_eq!(
+            serial_to_datetime_string(45000.5).as_deref(),
+            Some("2023-03-15 12:00:00")
+        );
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_out_of_range() {
+        assert_eq!(serial_to_datetime_string(0.0), None);
+        assert_eq!(serial_to_datetime_string(100_001.0), None);
+        assert_eq!(serial_to_datetime_string(-1.0), None);
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_post_leap_boundary() {
+        let s = serial_to_datetime_string(61.0).unwrap();
+        assert_eq!(s, "1900-03-01");
+    }
+
+    #[test]
+    fn test_date_aware_to_string_pure_date() {
+        let dt =
+            calamine::ExcelDateTime::new(45000.0, calamine::ExcelDateTimeType::DateTime, false);
+        assert_eq!(date_aware_to_string(&Data::DateTime(dt)), "2023-03-15");
+    }
+
+    #[test]
+    fn test_date_aware_to_string_datetime() {
+        let dt =
+            calamine::ExcelDateTime::new(45000.5, calamine::ExcelDateTimeType::DateTime, false);
+        assert_eq!(
+            date_aware_to_string(&Data::DateTime(dt)),
+            "2023-03-15 12:00:00"
+        );
     }
 }

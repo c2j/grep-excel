@@ -707,10 +707,10 @@ import_excel (excel.rs)
     │
     ├── detect_date_columns_from_data()
     │   ├── 信号 1（高置信度）：列含 ≥1 个 Data::DateTime 单元格 → 标记为日期列
-    │   └── 信号 2（兜底）：列名匹配日期关键词 + >50% Float 值在 Excel 序列号范围 [1, 100000]
+    │   └── 信号 2（保守兜底）：列名匹配日期关键词 + >50% Float 值为纯整数且在 Excel 序列号范围 [1, 100000]
     │
-    ├── 第二遍：对日期列调用 as_datetime() / excel_serial_to_date_string()
-    │           转换为 YYYYMMDD 字符串
+    ├── 第二遍：对日期列调用 date_aware_to_string() / serial_to_datetime_string()
+    │           转换为 ISO 8601 格式（YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS）
     │
     └── --repair 路径：convert_date_columns_in_place() 执行同样的后处理
 ```
