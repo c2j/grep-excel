@@ -1,12 +1,18 @@
 use grep_excel_core::html_table::extract_tables;
-use std::path::Path;
+use std::path::PathBuf;
 
-const WDR_DIR: &str = "/Users/c2j/Projects/Desktop_Projects/DB/WDRProbe/example";
+fn wdr_fixture(name: &str) -> PathBuf {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    PathBuf::from(manifest)
+        .join("../..")
+        .join("tests/fixtures/wdr")
+        .join(name)
+}
 
 #[test]
 fn test_opengauss_v1_tables() {
-    let html = std::fs::read_to_string(Path::new(WDR_DIR).join("opengauss_v1.html"))
-        .expect("read v1 file");
+    let path = wdr_fixture("opengauss_v1.html");
+    let html = std::fs::read_to_string(&path).expect(&format!("read v1 file: {}", path.display()));
     let tables = extract_tables(&html).unwrap();
     assert!(!tables.is_empty(), "should extract at least one table");
 
@@ -35,16 +41,17 @@ fn test_opengauss_v1_tables() {
 
 #[test]
 fn test_opengauss_v2_tables() {
-    let html = std::fs::read_to_string(Path::new(WDR_DIR).join("opengauss_v2.html"))
-        .expect("read v2 file");
+    let path = wdr_fixture("opengauss_v2.html");
+    let html = std::fs::read_to_string(&path).expect(&format!("read v2 file: {}", path.display()));
     let tables = extract_tables(&html).unwrap();
     assert!(!tables.is_empty(), "v2 should also yield tables");
 }
 
 #[test]
 fn test_sql_detail_wdr_tables() {
-    let html = std::fs::read_to_string(Path::new(WDR_DIR).join("test_sql_detail_wdr.html"))
-        .expect("read sql detail file");
+    let path = wdr_fixture("test_sql_detail_wdr.html");
+    let html =
+        std::fs::read_to_string(&path).expect(&format!("read sql detail file: {}", path.display()));
     let tables = extract_tables(&html).unwrap();
     assert!(!tables.is_empty());
 

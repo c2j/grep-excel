@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps (rfd file-dialog needs wayland on Linux)
+        run: sudo apt-get update && sudo apt-get install -y libwayland-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy (cli full, no duckdb)
+        run: cargo clippy -p grep-excel --features full -- -D warnings
+      # Optional format features (no DuckDB). Default core features skip pdf/parquet tests.
+      - name: test core
+        run: cargo test -p grep-excel-core --features pdf-support,parquet-support,archive-support
+      - name: test cli
+        run: cargo test -p grep-excel --features full
