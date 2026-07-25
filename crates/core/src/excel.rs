@@ -351,7 +351,14 @@ fn data_to_string(data: &Data) -> String {
         Data::Float(f) => f.to_string(),
         Data::Int(i) => i.to_string(),
         Data::Bool(b) => b.to_string(),
-        Data::DateTime(dt) => dt.to_string(),
+        Data::DateTime(dt) => {
+            let serial = dt.as_f64();
+            if (0.0..1.0).contains(&serial) {
+                format_time_only(dt).unwrap_or_else(|| dt.to_string())
+            } else {
+                dt.to_string()
+            }
+        }
         Data::DateTimeIso(s) => s.clone(),
         Data::DurationIso(s) => s.clone(),
         Data::Error(e) => format!("{:?}", e),
@@ -560,15 +567,29 @@ fn looks_like_date_serial(serial: f64) -> bool {
     frac < 0.001
 }
 
-/// Convert an Excel serial number to an ISO 8601 date/datetime string.
-/// Accepts fractional serials (preserves time component).
+/// Convert an Excel serial number to a date/datetime/time string.
+/// Handles pure dates (serial >= 1.0, no time), datetimes (serial >= 1.0 with
+/// fractional time), and pure times (serial < 1.0).
 /// Assumes 1900 date system (heuristic path has no is_1904 info).
 /// Uses the same algorithm as calamine's `ExcelDateTime::as_datetime()`:
 /// epoch = 1899-12-30, with the Lotus 1-2-3 leap year bug (day 60 = Feb 29, 1900).
 fn serial_to_datetime_string(serial: f64) -> Option<String> {
-    if !(1.0..=100_000.0).contains(&serial) {
+    if !(0.0..=100_000.0).contains(&serial) {
         return None;
     }
+
+    if serial < 1.0 {
+        let total_seconds = (serial * 86400.0).round() as u32;
+        let h = total_seconds / 3600;
+        let m = (total_seconds % 3600) / 60;
+        let s = total_seconds % 60;
+        return if s == 0 {
+            Some(format!("{:02}:{:02}", h, m))
+        } else {
+            Some(format!("{:02}:{:02}:{:02}", h, m, s))
+        };
+    }
+
     let ms_multiplier: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
     // Excel incorrectly treats 1900 as a leap year (fake Feb 29 = serial 60).
     // For serials < 60, add 1 to align with the real calendar.
@@ -597,17 +618,31 @@ fn serial_to_datetime_string(serial: f64) -> Option<String> {
     }
 }
 
+fn format_time_only(dt: &calamine::ExcelDateTime) -> Option<String> {
+    dt.as_datetime().map(|ndt| {
+        let t = ndt.time();
+        if t.second() == 0 && t.nanosecond() == 0 {
+            t.format("%H:%M").to_string()
+        } else {
+            t.format("%H:%M:%S").to_string()
+        }
+    })
+}
+
 fn date_aware_to_string(data: &Data) -> String {
     match data {
         Data::DateTime(dt) => {
+            let serial = dt.as_f64();
             if dt.is_duration() {
                 dt.as_datetime()
                     .map(|t| t.format("%H:%M:%S").to_string())
                     .unwrap_or_else(|| dt.to_string())
+            } else if (0.0..1.0).contains(&serial) {
+                format_time_only(dt).unwrap_or_else(|| dt.to_string())
             } else {
                 dt.as_datetime()
                     .map(|ndt| {
-                        if dt.as_f64().fract() == 0.0 {
+                        if serial.fract() == 0.0 {
                             ndt.format("%Y-%m-%d").to_string()
                         } else {
                             ndt.format("%Y-%m-%d %H:%M:%S").to_string()
@@ -1790,9 +1825,27 @@ mod date_conversion_tests {
 
     #[test]
     fn test_serial_to_datetime_string_out_of_range() {
-        assert_eq!(serial_to_datetime_string(0.0), None);
+        assert_eq!(serial_to_datetime_string(-0.1), None);
         assert_eq!(serial_to_datetime_string(100_001.0), None);
         assert_eq!(serial_to_datetime_string(-1.0), None);
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_pure_time() {
+        assert_eq!(serial_to_datetime_string(0.5).as_deref(), Some("12:00"));
+        assert_eq!(serial_to_datetime_string(0.0).as_deref(), Some("00:00"));
+        assert_eq!(
+            serial_to_datetime_string(0.9993055556).as_deref(),
+            Some("23:59")
+        );
+    }
+
+    #[test]
+    fn test_serial_to_datetime_string_pure_time_with_seconds() {
+        assert_eq!(
+            serial_to_datetime_string(0.4796875).as_deref(),
+            Some("11:30:45")
+        );
     }
 
     #[test]
@@ -1816,5 +1869,30 @@ mod date_conversion_tests {
             date_aware_to_string(&Data::DateTime(dt)),
             "2023-03-15 12:00:00"
         );
+    }
+
+    #[test]
+    fn test_date_aware_to_string_pure_time_non_midnight() {
+        let dt = calamine::ExcelDateTime::new(0.5, calamine::ExcelDateTimeType::DateTime, false);
+        assert_eq!(date_aware_to_string(&Data::DateTime(dt)), "12:00");
+    }
+
+    #[test]
+    fn test_date_aware_to_string_pure_time_midnight() {
+        let dt = calamine::ExcelDateTime::new(0.0, calamine::ExcelDateTimeType::DateTime, false);
+        assert_eq!(date_aware_to_string(&Data::DateTime(dt)), "00:00");
+    }
+
+    #[test]
+    fn test_date_aware_to_string_pure_time_with_seconds() {
+        let dt =
+            calamine::ExcelDateTime::new(0.4796875, calamine::ExcelDateTimeType::DateTime, false);
+        assert_eq!(date_aware_to_string(&Data::DateTime(dt)), "11:30:45");
+    }
+
+    #[test]
+    fn test_date_aware_to_string_time_delta() {
+        let dt = calamine::ExcelDateTime::new(0.25, calamine::ExcelDateTimeType::TimeDelta, false);
+        assert_eq!(date_aware_to_string(&Data::DateTime(dt)), "06:00:00");
     }
 }
