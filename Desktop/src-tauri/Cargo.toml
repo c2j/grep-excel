@@ -2,9 +2,9 @@
 name = "grep-excel-desktop"
 version = "0.3.3"
 description = "Desktop GUI for grep-excel"
-authors = ["you"]
+authors = ["c2j"]
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [lib]
 name = "grep_excel_desktop_lib"

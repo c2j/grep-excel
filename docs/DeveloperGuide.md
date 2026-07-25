@@ -767,4 +767,4 @@ grep_excel-{target}-v{version}.zip
 
 - [README.md](../README.md) — 项目说明（中英双语）
 - [UserGuide.md](UserGuide.md) — 最终用户手册
-- [CONTRIBUTION.md](../CONTRIBUTION.md) — 贡献指南
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — 贡献指南

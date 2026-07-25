@@ -1,6 +1,32 @@
+# Rust
 /target
-test_data.xlsx
-test.docx
+**/target/
+
+# Local manual / scratch (never commit)
 test_attr
-.worktrees/
+test.docx
+test_data.xlsx
+*.swp
+*.swo
+*~
+
+# OS / editors
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local agent / worktree scaffolding
 .sisyphus/
+.worktrees/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
