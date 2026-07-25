@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WDR Report with SQL Details</title>
+</head>
+<body>
+    <h1>WDR Report for Database: test_sql_db</h1>
+    
+    <h3>Snapshot Information</h3>
+    <table summary="snapshot info">
+        <tr>
+            <th>Snap ID</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Elapsed Time (min)</th>
+        </tr>
+        <tr>
+            <td>2001</td>
+            <td>2024-01-15 10:00:00</td>
+            <td>2024-01-15 11:00:00</td>
+            <td>60</td>
+        </tr>
+    </table>
+    
+    <h3>SQL ordered by Total Time</h3>
+    <table>
+        <tr>
+            <th>Rank</th>
+            <th>SQL ID</th>
+            <th>Total Time (us)</th>
+            <th>Avg Time (us)</th>
+            <th>Executions</th>
+            <th>CPU Time (us)</th>
+            <th>Logical Reads</th>
+            <th>Physical Reads</th>
+            <th>Rows Returned</th>
+            <th>SQL Text</th>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>sql_001_abc123</td>
+            <td>5500000</td>
+            <td>11000</td>
+            <td>500</td>
+            <td>4200000</td>
+            <td>2500000</td>
+            <td>450000</td>
+            <td>125000</td>
+            <td>SELECT o.order_id, o.customer_id, o.order_date, o.total_amount, c.customer_name, c.email FROM orders o JOIN customers c ON o.customer_id = c.customer_id WHERE o.order_date >= '2024-01-01' AND o.status = 'COMPLETED' ORDER BY o.order_date DESC</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>sql_002_def456</td>
+            <td>4800000</td>
+            <td>9600</td>
+            <td>500</td>
+            <td>3600000</td>
+            <td>1800000</td>
+            <td>320000</td>
+            <td>95000</td>
+            <td>UPDATE inventory SET quantity = quantity - ? WHERE product_id = ? AND quantity >= ?</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>sql_003_ghi789</td>
+            <td>3200000</td>
+            <td>2667</td>
+            <td>1200</td>
+            <td>2400000</td>
+            <td>1200000</td>
+            <td>180000</td>
+            <td>240000</td>
+            <td>SELECT product_id, product_name, category_id, price, stock_quantity FROM products WHERE category_id = ? AND price BETWEEN ? AND ? AND stock_quantity > 0 ORDER BY price ASC</td>
+        </tr>
+        <tr>
+            <td>4</td>
+            <td>sql_004_jkl012</td>
+            <td>2900000</td>
+            <td>14500</td>
+            <td>200</td>
+            <td>2200000</td>
+            <td>950000</td>
+            <td>150000</td>
+            <td>45000</td>
+            <td>INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)</td>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>sql_005_mno345</td>
+            <td>2100000</td>
+            <td>3500</td>
+            <td>600</td>
+            <td>1500000</td>
+            <td>800000</td>
+            <td>120000</td>
+            <td>180000</td>
+            <td>SELECT COUNT(*) as total_orders, SUM(total_amount) as total_revenue FROM orders WHERE customer_id = ? AND order_date >= ? AND status IN ('COMPLETED', 'SHIPPED')</td>
+        </tr>
+        <tr>
+            <td>6</td>
+            <td>sql_006_pqr678</td>
+            <td>1800000</td>
+            <td>1800</td>
+            <td>1000</td>
+            <td>1200000</td>
+            <td>600000</td>
+            <td>90000</td>
+            <td>150000</td>
+            <td>DELETE FROM shopping_cart WHERE customer_id = ? AND created_date < ?</td>
+        </tr>
+        <tr>
+            <td>7</td>
+            <td>sql_007_stu901</td>
+            <td>1500000</td>
+            <td>7500</td>
+            <td>200</td>
+            <td>1100000</td>
+            <td>500000</td>
+            <td>75000</td>
+            <td>35000</td>
+            <td>UPDATE customers SET last_login_date = ?, login_count = login_count + 1 WHERE customer_id = ?</td>
+        </tr>
+        <tr>
+            <td>8</td>
+            <td>sql_008_vwx234</td>
+            <td>1200000</td>
+            <td>2400</td>
+            <td>500</td>
+            <td>800000</td>
+            <td>400000</td>
+            <td>60000</td>
+            <td>100000</td>
+            <td>SELECT p.product_name, p.price, i.quantity, i.last_updated FROM products p JOIN inventory i ON p.product_id = i.product_id WHERE i.quantity < ?</td>
+        </tr>
+        <tr>
+            <td>9</td>
+            <td>sql_009_yza567</td>
+            <td>950000</td>
+            <td>1900</td>
+            <td>500</td>
+            <td>650000</td>
+            <td>350000</td>
+            <td>50000</td>
+            <td>85000</td>
+            <td>SELECT category_name, COUNT(*) as product_count, AVG(price) as avg_price FROM products p JOIN categories c ON p.category_id = c.category_id GROUP BY c.category_id, c.category_name HAVING COUNT(*) > 10</td>
+        </tr>
+        <tr>
+            <td>10</td>
+            <td>sql_010_bcd890</td>
+            <td>800000</td>
+            <td>4000</td>
+            <td>200</td>
+            <td>550000</td>
+            <td>300000</td>
+            <td>45000</td>
+            <td>25000</td>
+            <td>INSERT INTO audit_log (table_name, operation_type, record_id, user_id, operation_time, details) VALUES (?, ?, ?, ?, ?, ?)</td>
+        </tr>
+    </table>
+    
+    <h3>Wait Events (Ordered by Total Wait Time)</h3>
+    <table>
+        <tr>
+            <th>Event Name</th>
+            <th>Total Waits</th>
+            <th>Total Wait Time (ms)</th>
+            <th>Avg Wait Time (ms)</th>
+            <th>% of Total</th>
+        </tr>
+        <tr>
+            <td>CPU</td>
+            <td>0</td>
+            <td>12500</td>
+            <td>0</td>
+            <td>45.2</td>
+        </tr>
+        <tr>
+            <td>data file read</td>
+            <td>85000</td>
+            <td>8500</td>
+            <td>0.10</td>
+            <td>30.7</td>
+        </tr>
+        <tr>
+            <td>db file sequential read</td>
+            <td>65000</td>
+            <td>4200</td>
+            <td>0.065</td>
+            <td>15.2</td>
+        </tr>
+        <tr>
+            <td>latch: cache buffers chains</td>
+            <td>25000</td>
+            <td>1800</td>
+            <td>0.072</td>
+            <td>6.5</td>
+        </tr>
+        <tr>
+            <td>log file sync</td>
+            <td>15000</td>
+            <td>680</td>
+            <td>0.045</td>
+            <td>2.5</td>
+        </tr>
+    </table>
+    
+    <h3>Object Statistics</h3>
+    <table>
+        <tr>
+            <th>Schema</th>
+            <th>Object Name</th>
+            <th>Object Type</th>
+            <th>Seq Scans</th>
+            <th>Index Scans</th>
+            <th>Rows Read</th>
+            <th>Rows Returned</th>
+        </tr>
+        <tr>
+            <td>public</td>
+            <td>orders</td>
+            <td>TABLE</td>
+            <td>150</td>
+            <td>2500</td>
+            <td>8500000</td>
+            <td>1250000</td>
+        </tr>
+        <tr>
+            <td>public</td>
+            <td>customers</td>
+            <td>TABLE</td>
+            <td>80</td>
+            <td>1800</td>
+            <td>3200000</td>
+            <td>850000</td>
+        </tr>
+        <tr>
+            <td>public</td>
+            <td>products</td>
+            <td>TABLE</td>
+            <td>120</td>
+            <td>2200</td>
+            <td>5500000</td>
+            <td>1100000</td>
+        </tr>
+        <tr>
+            <td>public</td>
+            <td>inventory</td>
+            <td>TABLE</td>
+            <td>90</td>
+            <td>1500</td>
+            <td>2800000</td>
+            <td>650000</td>
+        </tr>
+    </table>
+</body>
+</html>
