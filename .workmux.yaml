@@ -1,0 +1,139 @@
+# .workmux.yaml — grep-excel 并行开发配置
+# 放在项目根目录，workmux add <branch> 时自动读取
+#
+# 使用示例：
+#   workmux add feat/mcp-new-tool     # 开新窗口开发 MCP 新工具
+#   workmux add feat/parquet-writer   # 开新窗口做 Parquet 写入
+#   workmux add fix/date-epoch        # 开新窗口修日期纪元 bug
+#   workmux dashboard                 # 看所有 Agent/窗口状态
+
+---
+# === 基础模式 ===
+# window = 在当前 tmux session 里新开窗口（推荐，切换快）
+# session = 每个分支独立 tmux session（隔离强）
+mode: window
+
+# === 创建 worktree 后自动执行 ===
+post_create:
+  # 1. 确保 Rust 工具链一致（避免不同 worktree 用不同 toolchain 导致 target 缓存失效）
+  - rustup show
+  # 2. 预热编译缓存（首次 build 较久，后台先跑）
+  - cargo check --workspace 2>/dev/null || true
+  # 3. 显示当前分支和待办提示
+  - |
+    echo "═══ grep-excel worktree 就绪 ═══" && \
+    echo "分支: $(git branch --show-current)" && \
+    echo "Worktree: $(pwd)" && \
+    echo "常用命令:" && \
+    echo "  cargo build --release --features full" && \
+    echo "  cargo test --workspace" && \
+    echo "  cargo run --bin grep_excel -- --mcp" && \
+    echo "  cargo run --bin grep_excel -- data.xlsx -t"
+
+# === 文件同步策略 ===
+# worktree 默认不共享 target/，这里用 symlink 把编译缓存集中管理，
+# 避免 5 个并行分支各编译一份 DuckDB C++ 库（节省数十 GB 磁盘和大量时间）
+files:
+  # 复制：每个 worktree 独立（不共享）
+  copy:
+    - Cargo.lock          # 各分支可能改依赖，独立锁定
+  # 符号链接：共享（只读或读写不影响正确性）
+  symlink:
+    - target              # 共享编译缓存！关键优化
+    - .cargo/config.toml  # 共享 cargo 配置（如国内镜像、target-dir 覆盖）
+  # 忽略：不复制也不链接（减少无关文件）
+  ignore:
+    - .git
+    - *.duckdb
+    - *.wal
+    - /tmp
+
+# === tmux 窗口布局 ===
+# 每个 worktree 创建后，自动分割为 3 个 pane：
+#   ┌─────────────┬─────────────┐
+#   │   editor    │  build/test │
+#   │   (focus)   │   (watch)   │
+#   ├─────────────┴─────────────┤
+#   │        shell / logs       │
+#   └───────────────────────────┘
+panes:
+  # Pane 1: 主编辑区（默认聚焦）
+  - command: $EDITOR
+    split: vertical
+    focus: true
+    size: "60%"
+
+  # Pane 2: 持续编译 & 测试（cargo watch 如果装了的话，否则手动）
+  - command: |
+      if command -v cargo-watch >/dev/null 2>&1; then
+        cargo watch -x "check --workspace" -x "test --workspace"
+      else
+        echo "提示: cargo install cargo-watch 可启用自动编译"
+        bash
+      fi
+    split: horizontal
+    size: "50%"
+
+  # Pane 3: 交互式 shell（跑 CLI、MCP、TUI 测试）
+  - command: bash
+    size: "30%"
+
+# === Agent 配置（AI 辅助编程） ===
+# 如果你用 Claude Code / claude 等 Agent，可在此配置
+agents:
+  # 主 Agent：负责当前特性开发
+  cc-dev:
+    type: claude
+    command: claude
+    args:
+      - --dangerously-skip-permissions
+    # 进入 worktree 后自动在底部 pane 启动
+    auto_start: false
+
+# === 分支命名规范（可选，workmux add -A 时 LLM 参考） ===
+branch_prefixes:
+  - feat
+  - fix
+  - refactor
+  - perf
+  - test
+  - docs
+
+# === 项目特定环境变量 ===
+env:
+  # 统一使用项目级 target，避免重复编译 DuckDB
+  CARGO_TARGET_DIR: "{{WORKTREE_ROOT}}/target"
+  # DuckDB 构建加速：下载预编译库而非从源码编译
+  DUCKDB_DOWNLOAD_LIB: "1"
+  # 测试用临时目录集中到 target/tmp，方便清理
+  TMPDIR: "{{WORKTREE_ROOT}}/target/tmp"
+  # 默认开启所有 feature 做集成测试（可覆盖）
+  GREP_EXCEL_FEATURES: "full"
+
+# === 合并后清理 ===
+# workmux merge 成功后自动执行
+post_merge:
+  - cargo test --workspace --features full
+  - cargo clippy --workspace --features full -- -D warnings
+  - echo "✓ 合并前检查通过"
+
+# === 自定义命令别名 ===
+# 在 worktree 内可用 workmux run <alias> 执行
+aliases:
+  # 快速构建全功能版本
+  build-full:
+    - cargo build --release --features full
+  # 运行 MCP server 测试
+  mcp-test:
+    - cargo run --bin grep_excel --features full -- --mcp
+  # 运行 TUI 并加载测试数据
+  tui-demo:
+    - cargo run --bin grep_excel --features full -- /tmp/demo.xlsx
+  # 清理当前 worktree 的 DuckDB 临时文件
+  clean-db:
+    - rm -f *.duckdb *.duckdb.wal
+  # 格式化并检查
+  lint:
+    - cargo fmt
+    - cargo clippy --workspace --features full -- -D warnings
+
