@@ -46,7 +46,7 @@ cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xls
 
 ## Docs: trust these
 
-- Trust: `README.md` (user surface, bilingual), `docs/DeveloperGuide.md` (architecture, SearchEngine trait, MCP dev), root `CONTRIBUTING.md` (process, features, PR checklist), `AGENTS.md` (this file).
+- Trust: `README.md` (user surface, English primary; `README.zh-CN.md` for Chinese), `docs/UserGuide.md` (end-user manual), `docs/DeveloperGuide.md` (architecture, SearchEngine trait, MCP dev), root `CONTRIBUTING.md` (process, features, PR checklist), `AGENTS.md` (this file). Each main doc has a `.zh-CN.md` Chinese variant.
 - Do not reintroduce foreign-project docs or Tauri template boilerplate under `docs/` or `Desktop/`.
 
 ## Release

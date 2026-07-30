@@ -1,75 +1,77 @@
-# 贡献指南
+[中文版](./CONTRIBUTING.zh-CN.md)
 
-感谢你对 grep-excel 的关注！本文档说明项目结构、开发环境、构建测试与提交流程。
+# Contributing Guide
 
-维护者/Agent 构建陷阱见 [AGENTS.md](AGENTS.md)。架构与扩展见 [docs/DeveloperGuide.md](docs/DeveloperGuide.md)。用户用法见 [docs/UserGuide.md](docs/UserGuide.md)。
+Thanks for your interest in grep-excel! This document covers the project structure, development setup, build & test workflow, and contribution process.
 
-## 目录
+For maintainer/agent build gotchas see [AGENTS.md](AGENTS.md). For architecture and extensibility see [docs/DeveloperGuide.md](docs/DeveloperGuide.md). For end-user usage see [docs/UserGuide.md](docs/UserGuide.md).
 
-- [项目结构](#项目结构)
-- [开发环境搭建](#开发环境搭建)
-- [构建与测试](#构建与测试)
+## Table of Contents
+
+- [Project Structure](#project-structure)
+- [Development Setup](#development-setup)
+- [Build & Test](#build--test)
 - [Feature Flags](#feature-flags)
-- [代码风格与约定](#代码风格与约定)
-- [提交流程](#提交流程)
-- [Pull Request 指南](#pull-request-指南)
-- [版本发布](#版本发布)
+- [Code Style & Conventions](#code-style--conventions)
+- [Commit Process](#commit-process)
+- [Pull Request Guidelines](#pull-request-guidelines)
+- [Release Process](#release-process)
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 grep-excel/
 ├── .github/workflows/     # ci.yml + release.yml
 ├── crates/
-│   ├── cli/               # package grep-excel, bin grep_excel（TUI/CLI/MCP/REPL）
-│   └── core/              # grep-excel-core（解析、引擎、types、i18n）
-├── Desktop/               # Tauri v1 + React GUI（独立版本号）
+│   ├── cli/               # package grep-excel, bin grep_excel (TUI/CLI/MCP/REPL)
+│   └── core/              # grep-excel-core (parsing, engines, types, i18n)
+├── Desktop/               # Tauri v1 + React GUI (independent version)
 ├── docs/
 │   ├── UserGuide.md
 │   ├── DeveloperGuide.md
-│   └── plans/             # 已提交的设计/实现计划
+│   └── plans/             # committed design/implementation plans
 ├── tests/
-│   ├── fixtures/          # 共享样例（pdf、parquet、manual 等）
-│   ├── regress/           # HTML/文本回归 fixtures
-│   └── benchmark/         # 性能脚本
-├── AGENTS.md              # 维护者/Agent 构建注意点
-├── CONTRIBUTING.md        # 本文件
+│   ├── fixtures/          # shared samples (pdf, parquet, manual, etc.)
+│   ├── regress/           # HTML/text regression fixtures
+│   └── benchmark/         # performance scripts
+├── AGENTS.md              # maintainer/agent build notes
+├── CONTRIBUTING.md        # this file
 ├── LICENSE                # MIT
 ├── README.md
-└── Cargo.toml             # workspace 根
+└── Cargo.toml             # workspace root
 ```
 
-### 依赖方向
+### Dependency Direction
 
 ```
 cli ──► core
 Desktop/src-tauri ──► core
 ```
 
-**禁止** `core` 依赖 `cli` 或 Desktop。新引擎实现 `SearchEngine`（`crates/core/src/engine/mod.rs`），并在 `crates/core` 与 `crates/cli` 的 feature 表中接线。
+**Never** let `core` depend on `cli` or Desktop. A new engine implements `SearchEngine` (`crates/core/src/engine/mod.rs`) and must be wired through the feature tables in both `crates/core` and `crates/cli`.
 
 ---
 
-## 开发环境搭建
+## Development Setup
 
-### 前提条件
+### Prerequisites
 
-- **Rust** 1.70+（推荐 [rustup](https://rustup.rs)）
-- **Cargo**、**Git**
-- Desktop 开发另需 Node.js 16+ 与 [Tauri v1 系统依赖](https://tauri.app/v1/guides/getting-started/prerequisites)
+- **Rust** 1.70+ ([rustup](https://rustup.rs) recommended)
+- **Cargo**, **Git**
+- For Desktop development: Node.js 16+ and the [Tauri v1 system prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)
 
-### 克隆
+### Clone
 
 ```bash
 git clone https://github.com/c2j/grep-excel.git
 cd grep-excel
 ```
 
-### 编辑器
+### Editor
 
-推荐 VS Code + rust-analyzer。可选：
+VS Code with rust-analyzer is recommended. Optional settings:
 
 ```json
 {
@@ -79,11 +81,11 @@ cd grep-excel
 
 ---
 
-## 构建与测试
+## Build & Test
 
-> **重要**：在 workspace 根执行无包名的 `cargo build` / `cargo test` / `cargo clippy` 会构建 **全部成员**，包括 `grep-excel-desktop`（默认 `engine-duckdb`，编译 DuckDB 可达 10–30 分钟，且 Linux 需要 Tauri/webkit 依赖）。CLI 开发请始终加 `-p`。
+> **Important**: Running `cargo build` / `cargo test` / `cargo clippy` without a package name at the workspace root builds **all members**, including `grep-excel-desktop` (which defaults to `engine-duckdb`, compiling DuckDB can take 10–30 minutes, and Linux requires Tauri/webkit dependencies). Always scope CLI development with `-p`.
 
-### 推荐验证循环
+### Recommended Verification Loop
 
 ```bash
 cargo fmt
@@ -92,86 +94,86 @@ cargo test -p grep-excel-core --features pdf-support,parquet-support,archive-sup
 cargo test -p grep-excel --features full
 ```
 
-### 常用构建
+### Common Builds
 
 ```bash
-# 默认（内存引擎 + 文件对话框，快）
+# Default (in-memory engine + file dialog, fast)
 cargo build -p grep-excel
 
-# full = memory + file-dialog + mcp + share-url + archive + pdf + parquet（仍不含 DuckDB）
+# full = memory + file-dialog + mcp + share-url + archive + pdf + parquet (still no DuckDB)
 cargo build -p grep-excel --features full
 
-# DuckDB（生产推荐；可下载预编译库加速）
+# DuckDB (recommended for production; download prebuilt lib to speed up)
 DUCKDB_DOWNLOAD_LIB=1 cargo build -p grep-excel --no-default-features \
   --features file-dialog,engine-duckdb,mcp-server,share-url,pdf-support
 
-# 避免：cargo clippy --all-features（会拉 duckdb-bundled + gui）
+# Avoid: cargo clippy --all-features (pulls duckdb-bundled + gui)
 ```
 
-### 单测与回归
+### Unit Tests & Regression
 
 ```bash
 cargo test -p grep-excel-core --test regress
 cargo test -p grep-excel-core regress_html_fragment
 ```
 
-Core 测试通过 `CARGO_MANIFEST_DIR` + `../..` 访问仓库根下 `tests/` fixtures（见 `crates/core/tests/text_table_test.rs` 的 `workspace_fixture()`）。不要用从 `crates/core` 出发的裸相对路径。
+Core tests reach workspace-root fixtures via `CARGO_MANIFEST_DIR` + `../..` (see the `workspace_fixture()` helper in `crates/core/tests/text_table_test.rs`). Do not use bare relative paths resolved from `crates/core`.
 
-### 手动冒烟
+### Manual Smoke Test
 
 ```bash
 cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xlsx -t
 cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xlsx -q "keyword"
 ```
 
-共享 fixtures：`tests/fixtures/`、`tests/regress/`。本地临时文件（`test_attr`、`test.docx` 等）已 gitignore，勿提交。
+Shared fixtures live under `tests/fixtures/` and `tests/regress/`. Local scratch files (`test_attr`, `test.docx`, etc.) are gitignored — do not commit them.
 
-### 加速 DuckDB
+### Speeding Up DuckDB Builds
 
 ```bash
 DUCKDB_DOWNLOAD_LIB=1 cargo build -p grep-excel --features engine-duckdb
-# duckdb-bundled 始终从源码编译，CI/本地开发默认不要开
+# duckdb-bundled always compiles from source; do not enable it for CI/local dev by default
 ```
 
 ---
 
 ## Feature Flags
 
-定义在 `crates/cli/Cargo.toml`（并转发到 core）：
+Defined in `crates/cli/Cargo.toml` (and forwarded to core):
 
-| Flag | 说明 |
-|------|------|
-| `engine-memory` | 纯内存引擎（默认） |
-| `engine-duckdb` | DuckDB 引擎 |
-| `duckdb-bundled` | DuckDB + 捆绑 C 库（自包含，编译慢） |
-| `engine-sqlite` | SQLite 引擎 |
-| `file-dialog` | 原生文件选择（默认） |
-| `mcp-server` | MCP 服务器 + xlsx 写入相关依赖 |
-| `share-url` | 云文档分享链接导入 |
-| `archive-support` | zip/tar 等归档 |
-| `pdf-support` | PDF 表格 |
-| `parquet-support` | Parquet 只读 |
-| `gui` | egui spike 实验 bin |
-| `full` | memory + file-dialog + mcp + share-url + archive + pdf + parquet（**不含** DuckDB） |
+| Flag | Description |
+|------|-------------|
+| `engine-memory` | Pure in-memory engine (default) |
+| `engine-duckdb` | DuckDB engine |
+| `duckdb-bundled` | DuckDB + bundled C library (self-contained, slow to compile) |
+| `engine-sqlite` | SQLite engine |
+| `file-dialog` | Native file picker dialog (default) |
+| `mcp-server` | MCP server mode including xlsx write support for AI assistant integration |
+| `share-url` | Cloud share URL import (kdocs.cn / enterprise domains) |
+| `archive-support` | Archive support (zip, tar, etc.) |
+| `pdf-support` | PDF table extraction |
+| `parquet-support` | Parquet read-only |
+| `gui` | egui experimental spike bin |
+| `full` | memory + file-dialog + mcp + share-url + archive + pdf + parquet (**excludes** DuckDB) |
 
-设计原则：默认轻量；重型依赖按需 feature；`#[cfg(feature = "...")]` 条件编译。
+Design principle: keep the default lightweight; gate heavy dependencies behind features; use `#[cfg(feature = "...")]` for conditional compilation.
 
-引擎在 **编译期** 选择；运行时 `DefaultEngine` 优先级：DuckDB > SQLite > Memory。
+The engine is selected at **compile time**; at runtime `DefaultEngine` priority is: DuckDB > SQLite > Memory.
 
 ---
 
-## 代码风格与约定
+## Code Style & Conventions
 
 - `cargo fmt` + `cargo clippy -p grep-excel --features full -- -D warnings`
-- 避免不必要的 `unsafe`
-- 错误处理：`anyhow` / `thiserror`（与现有代码一致）
-- **i18n 强制**：用户可见字符串走 `crates/core/src/i18n.rs`（中/英）
-- **MCP 参数共享**：工具参数结构体在 `crates/core/src/types.rs`，供 MCP 与 CLI `--exec` 共用；改接口须同步 schema 与 README 工具表
-- 禁止用类型压制掩盖错误（如 TS 的 `@ts-ignore`；Rust 侧避免无必要的 `as` 绕过）
+- Avoid unnecessary `unsafe`
+- Error handling: `anyhow` / `thiserror` (consistent with existing code)
+- **i18n is mandatory**: all user-visible strings go through `crates/core/src/i18n.rs` (Chinese + English)
+- **MCP params are shared**: tool parameter structs live in `crates/core/src/types.rs` and are shared by both the MCP server and CLI `--exec`; changing a tool interface requires updating the schema and the README tool table together
+- Never use type-suppression to mask errors (e.g. `@ts-ignore` in TS; avoid unnecessary `as` casts on the Rust side)
 
 ---
 
-## 提交流程
+## Commit Process
 
 ### Conventional Commits
 
@@ -179,76 +181,76 @@ DUCKDB_DOWNLOAD_LIB=1 cargo build -p grep-excel --features engine-duckdb
 <type>(<scope>): <description>
 ```
 
-常见 type：`feat` `fix` `refactor` `chore` `docs` `test` `ci` `style`  
-scope 示例：`engine` `archive` `cli` `mcp` `desktop`（以 `git log` 为准）
+Common types: `feat` `fix` `refactor` `chore` `docs` `test` `ci` `style`
+Scope examples: `engine` `archive` `cli` `mcp` `desktop` (check `git log` for the established vocabulary)
 
-### 分支
+### Branches
 
-- `main` — 稳定
-- `feat/*` / `fix/*` / `refactor/*` — 从 `main` 拉出
+- `main` — stable
+- `feat/*` / `fix/*` / `refactor/*` — branched from `main`
 
-### 流程
+### Workflow
 
-1. 从 `main` 建分支  
-2. 开发并用上文 **scoped** 命令自测  
-3. 推送并开 PR  
+1. Create a branch from `main`
+2. Develop and self-test with the **scoped** commands above
+3. Push and open a PR
 
 ---
 
-## Pull Request 指南
+## Pull Request Guidelines
 
-提交前：
+Before submitting:
 
 - [ ] `cargo fmt`
 - [ ] `cargo clippy -p grep-excel --features full -- -D warnings`
 - [ ] `cargo test -p grep-excel-core --features pdf-support,parquet-support,archive-support`
 - [ ] `cargo test -p grep-excel --features full`
-- [ ] 新功能有测试（如适用）
-- [ ] 用户可见变更已更新 `README.md` / `docs/UserGuide.md`
-- [ ] MCP 工具接口变更已更新 types + README 工具表
-- [ ] 新用户文案已中英双语（`i18n.rs`）
-- [ ] Commit 符合 Conventional Commits
+- [ ] New features have tests (where applicable)
+- [ ] User-visible changes are reflected in `README.md` / `docs/UserGuide.md` / `docs/DeveloperGuide.md`
+- [ ] MCP tool interface changes are reflected in types + README tool table
+- [ ] New user-facing copy is bilingual in `i18n.rs`
+- [ ] Commits follow Conventional Commits
 
-### PR 描述模板
+### PR Description Template
 
 ```markdown
-## 概述
+## Summary
 
-简述变更。
+Briefly describe the change.
 
-## 变更类型
+## Type of Change
 
 - [ ] feat
 - [ ] fix
 - [ ] refactor
 - [ ] docs
 - [ ] ci / chore
-- [ ] 其他
+- [ ] other
 
-## 测试
+## Testing
 
-- [ ] 已添加/更新测试
-- [ ] 已手动验证
-- [ ] scoped cargo test / clippy 通过
+- [ ] Tests added/updated
+- [ ] Manually verified
+- [ ] Scoped cargo test / clippy passes
 
-## 影响范围
+## Affected Areas
 
-列出模块（cli / core / desktop / docs / ci）。
+List the modules touched (cli / core / desktop / docs / ci).
 ```
 
 ---
 
-## 版本发布
+## Release Process
 
-- **cli + core**：只改根 `Cargo.toml` 的 `[workspace.package] version`（二者 inherit）
-- **Desktop**：独立版本（`Desktop/src-tauri/Cargo.toml` 与 `tauri.conf.json`），不随 workspace 自动 bump
-- 打 tag：`git tag vX.Y.Z && git push origin vX.Y.Z` → `release.yml` 多平台构建
+- **cli + core**: bump only `version` under `[workspace.package]` in the root `Cargo.toml` (both inherit it)
+- **Desktop**: independent version (`Desktop/src-tauri/Cargo.toml` and `tauri.conf.json`); not auto-bumped with the workspace
+- Tagging: `git tag vX.Y.Z && git push origin vX.Y.Z` → `release.yml` builds across platforms
 
-SemVer：补丁 / 次版本 / 主版本按兼容性选择。
+SemVer: choose patch / minor / major based on compatibility.
 
 ---
 
-## 获取帮助
+## Getting Help
 
 - [GitHub Issues](https://github.com/c2j/grep-excel/issues)
 - [docs/DeveloperGuide.md](docs/DeveloperGuide.md)

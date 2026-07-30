@@ -1,39 +1,42 @@
-# grep-excel 用户手册
+[中文版](./UserGuide.zh-CN.md)
 
-grep-excel 是一款基于 DuckDB 的高性能多格式表格文件搜索工具（Excel / CSV / TSV / HTML / 文本 / Markdown / Word / PowerPoint / DBF / XML），支持终端交互（TUI）、命令行（CLI）、MCP 服务器和批量执行等多种使用方式。
+# grep-excel User Guide
 
-## 目录
+grep-excel is a high-performance, multi-format tabular file search tool built on DuckDB. It handles Excel / CSV / TSV / HTML / text / Markdown / Word / PowerPoint / DBF / XML and offers several ways to work: an interactive terminal UI (TUI), one-shot command-line queries (CLI), an MCP server for AI assistant integration, and batch `--exec` pipelines.
 
-- [快速开始](#快速开始)
-- [支持的文件格式](#支持的文件格式)
-- [CLI 命令行模式](#cli-命令行模式)
-- [归档文件与云文档链接导入](#归档文件与云文档链接导入)
-- [交互式 SQL REPL（-i）](#交互式-sql-repl-i)
-- [TUI 交互模式](#tui-交互模式)
-- [MCP 服务器模式](#mcp-服务器模式)
-- [--exec 执行模式](#--exec-执行模式)
-- [--run Shell 命令模式](#--run-shell-命令模式)
-- [搜索模式详解](#搜索模式详解)
-- [SQL 查询指南](#sql-查询指南)
-- [文件编辑](#文件编辑)
-- [输出格式](#输出格式)
-- [常见问题](#常见问题)
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Supported File Formats](#supported-file-formats)
+- [CLI Mode](#cli-mode)
+- [Archives & Cloud Share URL Import](#archives--cloud-share-url-import)
+- [Interactive SQL REPL (`-i`)](#interactive-sql-repl-i)
+- [TUI Interactive Mode](#tui-interactive-mode)
+- [MCP Server Mode](#mcp-server-mode)
+- [`--exec` Execution Mode](#-exec-execution-mode)
+- [`--run` Shell Command Mode](#-run-shell-command-mode)
+- [Search Modes Explained](#search-modes-explained)
+- [SQL Query Guide](#sql-query-guide)
+- [File Editing](#file-editing)
+- [Output Formats](#output-formats)
+- [FAQ](#faq)
+- [Related Documentation](#related-documentation)
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 方式一：下载预编译二进制
+### Option 1: Download a prebuilt binary
 
-从 [GitHub Releases](https://github.com/c2j/grep-excel/releases) 下载对应平台的压缩包：
+Grab the archive for your platform from the [GitHub Releases](https://github.com/c2j/grep-excel/releases) page:
 
 - `grep_excel-windows-x86_64.zip` — Windows
-- `grep_excel-macos-x86_64.zip` — macOS Intel
-- `grep_excel-macos-aarch64.zip` — macOS Apple Silicon
+- `grep_excel-macos-x86_64.zip` — macOS (Intel)
+- `grep_excel-macos-aarch64.zip` — macOS (Apple Silicon)
 - `grep_excel-linux-x86_64.zip` — Linux x86_64
 - `grep_excel-linux-aarch64.zip` — Linux ARM64
 
-解压后即可使用：
+Extract and run:
 
 ```bash
 # Linux / macOS
@@ -44,232 +47,232 @@ chmod +x grep_excel
 grep_excel.exe --help
 ```
 
-### 方式二：从源码构建
+### Option 2: Build from source
 
 ```bash
 git clone https://github.com/c2j/grep-excel.git
 cd grep-excel
 
-# 快速构建（内存引擎）
+# Quick build (in-memory engine)
 cargo build --release
 
-# 推荐：全功能构建
+# Recommended: full-featured build
 cargo build --release --features full
 ```
 
-构建完成后，二进制文件位于 `target/release/grep_excel`。
+The binary is placed at `target/release/grep_excel`.
 
 ---
 
-## 支持的文件格式
+## Supported File Formats
 
-| 扩展名 | 说明 |
-|--------|------|
-| `.xlsx` / `.xls` / `.xlsm` / `.xlsb` / `.ods` | Excel / OpenDocument 电子表格 |
-| `.csv` | 逗号分隔值 |
-| `.tsv` / `.tab` | 制表符分隔值 |
-| `.html` / `.htm` | HTML 表格；每个 `<table>` 导入为一个 sheet；自动检测编码（UTF-8 / `<meta charset>` / CJK 回退） |
-| `.txt` | 纯文本表格（按章节、短横线分隔或列对齐启发式提取） |
-| `.md` / `.markdown` | GFM Markdown 管道表（`\| col \|`） |
-| `.dbf` | dBase 数据库文件 |
-| `.xml` | XML 数据文件（扁平约定：根元素下重复的同名子元素作为行，其子标签作为列） |
-| `.docx` | Word 文档；从 word/document.xml 提取表格，sheet 名取自表格前的标题段落，合并单元格自动前向填充；**只读**，不支持编辑 |
-| `.pptx` | PowerPoint 演示文稿；每页幻灯片的表格导入为一个 sheet，合并单元格自动填充；**只读**，不支持编辑 |
-| `.zip` / `.tar` / `.tar.gz` / `.tgz` / `.tar.bz2` / `.tar.xz` / `.tar.zst` | 归档文件；自动提取内部所有可识别的表格文件（见 [归档文件与云文档链接导入](#归档文件与云文档链接导入)） |
-| `.zip.001` / `.zip.002` | 分卷 ZIP 压缩包 |
+| Extension | Description |
+|-----------|-------------|
+| `.xlsx` / `.xls` / `.xlsm` / `.xlsb` / `.ods` | Excel / OpenDocument spreadsheets |
+| `.csv` | Comma-separated values |
+| `.tsv` / `.tab` | Tab-separated values |
+| `.html` / `.htm` | HTML tables; each `<table>` is imported as a sheet; encoding auto-detected (UTF-8 / `<meta charset>` / CJK fallback) |
+| `.txt` | Plain-text tables (extracted via section / dash-separator / column-alignment heuristics) |
+| `.md` / `.markdown` | GFM Markdown pipe tables (`\| col \|`) |
+| `.dbf` | dBase database files |
+| `.xml` | XML data files (flat convention: repeated sibling elements under the root become rows; their child tags become columns) |
+| `.docx` | Word documents; tables extracted from `word/document.xml`, sheet names derived from the heading paragraph preceding each table, merged cells forward-filled automatically; **read-only**, no editing |
+| `.pptx` | PowerPoint presentations; each slide's tables are imported as a sheet, merged cells auto-filled; **read-only**, no editing |
+| `.zip` / `.tar` / `.tar.gz` / `.tgz` / `.tar.bz2` / `.tar.xz` / `.tar.zst` | Archives; all recognizable table files inside are extracted and imported (see [Archives & Cloud Share URL Import](#archives--cloud-share-url-import)) |
+| `.zip.001` / `.zip.002` | Multi-volume split ZIP archives |
 
-其他格式与 Excel 用法相同：
+All other formats work the same way as Excel:
 
 ```bash
-# 搜索 HTML 报告（如 openGauss WDR）
+# Search an HTML report (e.g. openGauss WDR)
 grep_excel report.html -q "CPU"
 
-# 对 Markdown 中的表执行 SQL
+# Run SQL against a Markdown table
 grep_excel awr.md -x "SELECT * FROM sheet_1_0 LIMIT 10"
 
-# 列出文本文件中提取到的表
+# List tables extracted from a text file
 grep_excel data.txt -t
 
-# Word 文档中的表格
+# Tables inside a Word document
 grep_excel report.docx -q "预算"
 
-# PowerPoint：每页幻灯片一个 sheet
+# PowerPoint: one sheet per slide
 grep_excel slides.pptx -t
 
-# dBase / XML 数据文件
+# dBase / XML data files
 grep_excel legacy.dbf -q "Smith"
 grep_excel data.xml -x "SELECT * FROM data LIMIT 10"
 ```
 
-> 运行 `grep_excel --help` 可查看与当前版本一致的格式列表与选项说明（中英文随 `LANG` 自动切换）。
+> Run `grep_excel --help` to see the format list and option descriptions for your installed version (the output switches between Chinese and English based on your `LANG` setting).
 
 ---
 
-## CLI 命令行模式
+## CLI Mode
 
-### 基本搜索
+### Basic Search
 
 ```bash
-# 全文搜索（不区分大小写，子串匹配）
+# Full-text search (case-insensitive substring match)
 grep_excel data.xlsx -q "关键词"
 
-# 精确搜索（区分大小写，完全匹配）
+# Exact search (case-sensitive, full-cell match)
 grep_excel data.xlsx -q "Engineering" -m exact
 
-# 通配符搜索（% 匹配任意字符，_ 匹配单个字符）
+# Wildcard search (% matches any characters, _ matches a single character)
 grep_excel data.xlsx -q "张%" -m wildcard
 
-# 正则搜索（支持多关键词 OR）
+# Regex search (supports multi-keyword OR with |)
 grep_excel data.xlsx -q "张三|李四" -m regex
 ```
 
-### 搜索筛选
+### Search Filters
 
 ```bash
-# 仅搜索指定列
+# Search only a specific column
 grep_excel data.xlsx -q "关键词" -c "姓名"
 
-# 仅搜索指定工作表
+# Search only a specific sheet
 grep_excel data.xlsx -q "关键词" -s "Sheet1"
 
-# 反向匹配：查找不包含关键词的行
+# Invert match: find rows that do NOT contain the query
 grep_excel data.xlsx -q "已删除" -v
 ```
 
-### SQL 查询
+### SQL Queries
 
 ```bash
-# 基本查询
+# Basic query
 grep_excel data.xlsx -x "SELECT * FROM sheet_1_0 LIMIT 10"
 
-# 聚合统计
+# Aggregation
 grep_excel data.xlsx -x "SELECT 部门, COUNT(*) as 人数 FROM sheet_1_0 GROUP BY 部门"
 
-# 使用友好别名（先 --list-tables 查看可用表名）
+# Use a friendly alias (run --list-tables first to see available names)
 grep_excel data.xlsx -t
 grep_excel data.xlsx -x "SELECT * FROM data.Sheet1 WHERE 年龄 > 30"
 ```
 
-### 聚合统计
+### Aggregate Statistics
 
 ```bash
-# 统计匹配行中某列的值分布
+# Count distinct value distribution in a column among matched rows
 grep_excel data.xlsx -q "工程部" -g 职位
 
-# 输出示例：
-# 聚合列 '职位': 工程师 (15), 经理 (3), 实习生 (8)
+# Example output:
+# Aggregate column '职位': 工程师 (15), 经理 (3), 实习生 (8)
 ```
 
-### 导出结果
+### Exporting Results
 
 ```bash
-# 导出为 CSV
+# Export to CSV
 grep_excel data.xlsx -q "关键词" -e results.csv
 
-# 指定输出格式
+# Specify an output format
 grep_excel data.xlsx -q "关键词" -f json
 grep_excel data.xlsx -q "关键词" -f pretty
-grep_excel data.xlsx -q "关键词" -f simple  # TSV 格式
+grep_excel data.xlsx -q "关键词" -f simple  # TSV format
 ```
 
-### 修复损坏文件
+### Repairing Corrupted Files
 
 ```bash
-# 自动修复并导入
+# Auto-repair and import
 grep_excel corrupted.xlsx -q "数据" -r
 ```
 
-### 查看已导入表
+### Listing Imported Tables
 
 ```bash
-# 列出所有表及其列名
+# List all tables and their columns
 grep_excel data.xlsx employees.xlsx -t
 
-# 输出示例：
-# 可用表:
-#   data.Sheet1 → sheet_1_0 (150 行) [姓名, 部门, 职位]
-#   employees.Sheet1 → sheet_2_0 (200 行) [姓名, 工号, 薪资]
+# Example output:
+# Available tables:
+#   data.Sheet1 → sheet_1_0 (150 rows) [姓名, 部门, 职位]
+#   employees.Sheet1 → sheet_2_0 (200 rows) [姓名, 工号, 薪资]
 ```
 
-### 强制指定格式（--as）
+### Forcing a Format (`--as`)
 
-扩展名缺失或具有误导性时，用 `--as` 显式指定解析格式。`--as` 是**粘性**选项：对命令行中其后的所有文件生效，直到下一个 `--as`；未跟在任何 `--as` 之后的文件仍按扩展名自动检测。
+When a file extension is missing or misleading, use `--as` to explicitly specify the parsing format. `--as` is a **sticky** option: it applies to every file that follows on the command line until the next `--as`. Files not preceded by any `--as` are still auto-detected by extension.
 
 ```bash
-# access.log 按 CSV 解析，dump.dat 按 Excel 解析
+# Parse access.log as CSV, dump.dat as Excel
 grep_excel --as csv access.log --as excel dump.dat -t
 
-# 无扩展名文件
+# File with no extension
 grep_excel --as tsv exported_data -q "关键词"
 ```
 
-可选值：`csv`、`tsv`、`html`、`txt`、`md`、`dbf`、`xml`、`excel`、`docx`、`pptx`。
+Valid values: `csv`, `tsv`, `html`, `txt`, `md`, `dbf`, `xml`, `excel`, `docx`, `pptx`, `pdf`, `parquet`.
 
 ---
 
-## 归档文件与云文档链接导入
+## Archives & Cloud Share URL Import
 
-### 归档文件
+### Archive Files
 
-直接传入归档文件，grep-excel 自动提取内部所有可识别的表格文件并逐个导入，条目以 `archive::路径/文件名` 命名：
+Pass an archive file directly and grep-excel automatically extracts every recognizable table file inside, importing each one as a separate entry named `archive::path/filename`:
 
 ```bash
-# 搜索 ZIP 中的表格文件
+# Search table files inside a ZIP
 grep_excel audit_2026.zip -q "异常交易"
 
-# 查询 tar.gz 中的 CSV
+# Query a CSV inside a tar.gz
 grep_excel db_dump.tar.gz -x "SELECT * FROM sheet_1_0 LIMIT 10"
 
-# 分卷 ZIP（传入第一卷即可）
+# Multi-volume ZIP (pass the first volume)
 grep_excel big_data.zip.001 -t
 ```
 
-支持的归档格式：`.zip`、`.tar`、`.tar.gz` / `.tgz`、`.tar.bz2`、`.tar.xz`、`.tar.zst`、分卷 `.zip.001` / `.zip.002`。
+Supported archive formats: `.zip`, `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, and split `.zip.001` / `.zip.002`.
 
-> 需要 `archive-support` feature（`--features full` 已包含）。
+> Requires the `archive-support` feature (included in `--features full`).
 
-### 云文档链接导入
+### Cloud Share URL Import
 
-直接传入金山文档 / WPS（kdocs.cn）分享链接，通过登录 Cookie 下载：
+Pass a Kingsoft Docs / WPS (`kdocs.cn`) share link directly; grep-excel downloads the file using your session cookie:
 
 ```bash
 export KDOCS_COOKIE='wps_sid=...; ...'
 grep_excel 'https://www.kdocs.cn/l/xxxx' -q "关键词"
 
-# 或直接传入 Cookie
+# Or pass the cookie inline
 grep_excel --kdocs-cookie "$KDOCS_COOKIE" 'https://www.kdocs.cn/l/xxxx' -t
 ```
 
-企业版域名：设置 `SHARE_HOSTS` 环境变量（逗号分隔），或使用 `--share-hosts` 选项。
+For enterprise domains: set the `SHARE_HOSTS` environment variable (comma-separated), or use the `--share-hosts` option.
 
-> 需要 `share-url` feature（`--features full` 已包含）。
+> Requires the `share-url` feature (included in `--features full`).
 
 ---
 
-## 交互式 SQL REPL（-i）
+## Interactive SQL REPL (`-i`)
 
-`-i` / `--interactive` 启动一个基于 rustyline 的多行 SQL 交互式 shell，适合需要反复执行 SQL 查询的场景。
+The `-i` / `--interactive` flag launches a rustyline-backed multi-line SQL shell — ideal when you need to run several queries in succession.
 
-### 启动
+### Launching
 
 ```bash
-# 预导入文件后进入 REPL
+# Pre-import files, then enter the REPL
 grep_excel data.xlsx employees.xlsx -i
 
-# 也可不预导入，进入后用 --exec 或 .tables 查看状态
+# You can also start with no files and use --exec or .tables to inspect state
 grep_excel -i
 ```
 
-### 基本用法
+### Basic Usage
 
-REPL 使用 `$` 作为主提示符。输入 SQL 语句后以 `;` 结尾即可执行：
+The REPL uses `$` as the primary prompt. Type a SQL statement and end it with `;` to execute:
 
 ```
 $ SELECT * FROM sheet_1_0 LIMIT 5;
 $ SELECT 部门, COUNT(*) FROM sheet_1_0 GROUP BY 部门;
 ```
 
-**多行输入**：未以 `;` 结尾的输入会自动进入续行模式（提示符变为 `>`），可以跨多行编写长查询：
+**Multi-line input**: any input not terminated by `;` automatically enters continuation mode (the prompt changes to `>`), letting you spread a long query across multiple lines:
 
 ```
 $ SELECT 姓名, 部门
@@ -278,23 +281,25 @@ $ SELECT 姓名, 部门
 > ORDER BY 薪资 DESC;
 ```
 
-### 点命令
+### Dot-Commands
 
-REPL 支持以下以 `.` 开头的元命令：
+The REPL supports the following meta-commands, all prefixed with `.`:
 
-| 命令 | 功能 |
-|------|------|
-| `.tables` / `.schema` | 列出已导入的表及其友好别名、列名 |
-| `.files` | 列出已导入的文件 |
-| `.output <文件>` | 将后续 SQL 结果持续重定向到文件（CSV）；终端不再打印表格 |
-| `.output` | 关闭重定向，恢复终端输出 |
-| `.save <文件> [fmt]` | 将**上次** SQL 结果一次性保存到文件；`fmt` 可选 `csv`（默认）、`json`、`tsv`、`table` |
-| `.help` | 显示帮助信息 |
-| `.history` | 查看命令历史 |
-| `.clear` / `.cls` | 清屏 |
-| `.exit` / `.quit` | 退出 REPL |
+| Command | Action |
+|---------|--------|
+| `.tables` / `.schema` | List imported tables with their friendly aliases and columns |
+| `.files` | List imported files |
+| `.output <file>` | Redirect all subsequent SQL results to a file (CSV); the terminal no longer prints tables |
+| `.output` | Close redirection and restore terminal output |
+| `.save <file> [fmt]` | Save the **last** SQL result to a file; `fmt` can be `csv` (default), `json`, `tsv`, or `table` |
+| `.let <name> AS <sql>` | Materialize a SQL query as a named session temp table (e.g. `.let t AS SELECT City, COUNT(*) FROM sheet_1_0 GROUP BY City`) |
+| `.drop <name>` | Drop a temp table previously created via `.let` |
+| `.help` | Show help |
+| `.history` | Show command history |
+| `.clear` / `.cls` | Clear the screen |
+| `.exit` / `.quit` | Exit the REPL |
 
-导出示例：
+Export examples:
 
 ```
 $ SELECT * FROM sheet_1_0 WHERE 部门 = '工程部';
@@ -305,17 +310,25 @@ $ SELECT * FROM sheet_1_0;
 $ .output
 ```
 
-> 若上次结果因终端显示限制被截断，`.save` 会提示改用 `.output <文件>` 以导出完整数据（写入文件时不做行数截断）。
+Temp table example:
 
-### 退出方式
+```
+$ .let t AS SELECT 部门, COUNT(*) AS n FROM sheet_1_0 GROUP BY 部门
+$ SELECT * FROM t WHERE n > 5;
+$ .drop t
+```
 
-- 输入 `.exit` 或 `.quit`
-- 按 `Ctrl+D`（EOF）
-- 按 `Ctrl+C` 不会退出，只会取消当前输入行
+> If the last result was truncated for terminal display, `.save` will suggest using `.output <file>` instead to export the full data set (file output is never row-limited).
 
-### 结果展示
+### Exiting
 
-查询结果以 Unicode 对齐的表格形式输出，列宽自动适配（最长 40 字符截断），并显示行数统计：
+- Type `.exit` or `.quit`
+- Press `Ctrl+D` (EOF)
+- Pressing `Ctrl+C` does **not** exit — it only cancels the current input line
+
+### Result Display
+
+Query results render as Unicode-aligned tables with auto-fit column widths (truncated at 40 characters max) and a row-count summary:
 
 ```
   姓名   │ 部门    │ 薪资
@@ -323,137 +336,137 @@ $ .output
   张三    │ 工程部  │ 15000
   李四    │ 市场部  │ 12000
 
-  共 2 行 (用时 3ms)
+  2 rows (3ms)
 ```
 
-> **提示**：REPL 单次查询在终端最多显示约 1000 行；使用 `.output` 可导出完整结果。命令历史跨会话持久保存到 `~/.local/state/grep-excel/history.txt`（macOS：`~/Library/Application Support/grep-excel/history.txt`），最多 500 条，可用上下方向键浏览过往会话的输入。传入 `--no-history` 可关闭本次会话的持久化。
+> **Tip**: The REPL displays at most ~1000 rows per query in the terminal; use `.output` to export the complete result set. Command history persists across sessions at `~/.local/state/grep-excel/history.txt` (macOS: `~/Library/Application Support/grep-excel/history.txt`), capped at 500 entries. Use the up/down arrow keys to recall inputs from previous sessions. Pass `--no-history` to disable persistence for the current session.
 
 ---
 
-## TUI 交互模式
+## TUI Interactive Mode
 
-不带任何查询参数运行即可进入 TUI 交互模式：
+Run `grep_excel` without any query arguments to enter the TUI:
 
 ```bash
 grep_excel
 ```
 
-带文件启动：
+Launch with files:
 
 ```bash
 grep_excel data.xlsx employees.xlsx
 ```
 
-### 界面概览
+### Interface Overview
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ grep-excel │ [普通] │ 2 个文件                  │ ← 标题栏
+│ grep-excel │ [Normal] │ 2 files                 │ ← Title bar
 ├─────────────────────────────────────────────────┤
-│ 全部(2) │ data:员工 │ emp:Sheet1                │ ← 标签（多文件时带 file:sheet）
+│ All(2) │ data:员工 │ emp:Sheet1                 │ ← Tabs (file:sheet when multi-file)
 ├─────────────────────────────────────────────────┤
-│ [搜索________] [全文] [列___] [聚合___]         │ ← 搜索栏
+│ [search________] [fulltext] [column___] [agg__] │ ← Search bar
 ├─────────────────────────────────────────────────┤
-│ │ 来源        │ 姓名  │ 部门   │ 职位  │       │ ← 结果（全部标签用「来源」列）
-│ │ data:员工   │ 张三  │ 工程部 │ 工程师│       │
-│ │ data:员工   │ 李四  │ 工程部 │ 经理  │       │
+│ │ Source      │ Name │ Dept    │ Title  │       │ ← Results (All tab uses a Source column)
+│ │ data:员工   │ 张三 │ 工程部  │ 工程师 │       │
+│ │ data:员工   │ 李四 │ 工程部  │ 经理   │       │
 ├─────────────────────────────────────────────────┤
-│ 找到 2 个匹配 / 150 行, 用时 0.05s             │ ← 状态栏
+│ 2 matches / 150 rows, 0.05s                     │ ← Status bar
 ├─────────────────────────────────────────────────┤
-│ /搜索 c列 Tab模式 o打开 ?帮助 s导出 q退出      │ ← 提示栏
+│ /search c:column Tab:mode o:open ?:help s:export│ ← Hint bar
 └─────────────────────────────────────────────────┘
 ```
 
-### 自动浏览（Auto-browse）
+### Auto-browse
 
-带文件启动或通过 `o` 导入后，TUI **自动加载并显示首个 sheet 的数据**，无需先输入搜索词。可直接浏览、滚动，再用 `/` 搜索或 `S` 执行 SQL。
+When you launch with files (or import via `o`), the TUI **automatically loads and displays the first sheet's data** — no need to type a search term first. You can browse, scroll, then press `/` to search or `S` to run SQL.
 
-### 快捷键
+### Keybindings
 
-#### 导航
+#### Navigation
 
-| 按键 | 功能 |
-|------|------|
-| `j` / `↓` | 下移一行 |
-| `k` / `↑` | 上移一行 |
-| `g` | 跳转到顶部 |
-| `G` | 跳转到底部 |
-| `←` / `→` | 左右滚动列 |
-| `H` / `L` | 左右滚动列（vim 风格） |
-| `[` / `]` | 上一个 / 下一个 Sheet（浏览模式，跨文件） |
-| `Ctrl+←` / `Ctrl+→` | 在同一文件内切换 Sheet（浏览 / 平铺 / 表格视图均可用） |
-| `Ctrl+↑` / `Ctrl+↓` | 切换文件 |
-| `1`–`9` | 切换标签页（浏览模式下跳到第 N 个 Sheet） |
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down one row |
+| `k` / `↑` | Move up one row |
+| `g` | Jump to top |
+| `G` | Jump to bottom |
+| `←` / `→` | Scroll columns left / right |
+| `H` / `L` | Scroll columns left / right (vim-style) |
+| `[` / `]` | Previous / next sheet (browse mode; across files) |
+| `Ctrl+←` / `Ctrl+→` | Switch sheet within the current file (works in browse / flat / table views) |
+| `Ctrl+↑` / `Ctrl+↓` | Switch file |
+| `1`–`9` | Switch tab (in browse mode, jump to the Nth sheet) |
 
-#### 搜索
+#### Search
 
-| 按键 | 功能 |
-|------|------|
-| `/` 或 `e` | 输入搜索关键词 |
-| `c` | 设置列过滤器 |
-| `a` | 设置聚合统计列 |
-| `Tab` | 循环切换搜索模式（全文 → 精确 → 通配符 → 正则） |
-| `Enter` | 执行搜索 |
-| `n` | 加载更多结果（搜索截断时；浏览模式下再加载 500 行） |
+| Key | Action |
+|-----|--------|
+| `/` or `e` | Enter a search query |
+| `c` | Set a column filter |
+| `a` | Set an aggregate column |
+| `Tab` | Cycle search modes (fulltext → exact → wildcard → regex) |
+| `Enter` | Execute search |
+| `n` | Load more results (when search is truncated; in browse mode loads 500 more rows) |
 
-#### 文件与数据
+#### Files & Data
 
-| 按键 | 功能 |
-|------|------|
-| `o` | 打开文件选择器 / 查看已加载文件 |
-| `s` | 导出当前结果为 CSV |
-| `d` | 清除所有数据 |
-| `v` | 切换平铺/表格视图 |
-| `Enter` | 打开/关闭详情面板 |
+| Key | Action |
+|-----|--------|
+| `o` | Open the file picker / view loaded files |
+| `s` | Export current results to CSV |
+| `d` | Clear all data |
+| `v` | Toggle flat / table view |
+| `Enter` | Open / close the detail panel |
 
-#### SQL 模式
+#### SQL Mode
 
-| 按键 | 功能 |
-|------|------|
-| `S` | 进入 SQL 查询模式 |
+| Key | Action |
+|-----|--------|
+| `S` | Enter SQL query mode |
 
-#### 其他
+#### Other
 
-| 按键 | 功能 |
-|------|------|
-| `?` | 显示帮助（含 Ctrl+方向键说明） |
-| `q` | 退出 |
+| Key | Action |
+|-----|--------|
+| `?` | Show help (includes Ctrl+arrow explanations) |
+| `q` | Quit |
 
-### SQL 查询（TUI 内）
+### Running SQL (inside the TUI)
 
-1. 按 `S` 进入 SQL 模式（搜索栏变为 SQL 输入框）
-2. 输入 SQL 查询，例如：
+1. Press `S` to enter SQL mode (the search bar becomes a SQL input field)
+2. Type a query, for example:
    ```sql
    SELECT 部门, COUNT(*) as 人数 FROM sheet_1_0 GROUP BY 部门
    ```
-3. 按 `Enter` 执行
-4. 结果在表格中显示
-5. 按 `d` 清除 SQL 结果返回正常搜索模式
+3. Press `Enter` to execute
+4. Results appear in the table view
+5. Press `d` to clear SQL results and return to normal search mode
 
-### 平铺视图与来源列
+### Flat View and the Source Column
 
-按 `v` 可在表格视图和平铺视图之间切换。
+Press `v` to toggle between table view and flat view.
 
-- **表格视图**：结果在表格中展示；「全部」标签使用单一 **来源** 列（`文件:sheet`），单 sheet 标签不再重复显示文件/Sheet 列
-- **平铺视图**：每个工作表独立成块，块标题含来源信息；可用 `Ctrl+方向键` 在文件/Sheet 间切换
+- **Table view**: results are shown in a table; the **All** tab uses a single **Source** column (`file:sheet`), while single-sheet tabs omit the redundant file/sheet columns
+- **Flat view**: each worksheet is rendered as an independent block with a source header; use `Ctrl+arrows` to switch between files and sheets
 
 ---
 
-## MCP 服务器模式
+## MCP Server Mode
 
-MCP（Model Context Protocol）允许 AI 助手（如 Claude、Cursor）直接调用 grep-excel 的功能。
+MCP (Model Context Protocol) lets AI assistants (such as Claude and Cursor) call grep-excel's capabilities directly.
 
-### 启动 MCP 服务器
+### Starting the MCP Server
 
 ```bash
 grep_excel --mcp
 ```
 
-### 配置 AI 助手
+### Configuring Your AI Assistant
 
 #### Claude Desktop
 
-编辑 `claude_desktop_config.json`（位置见 [Claude 文档](https://docs.anthropic.com/en/docs/claude-desktop)）：
+Edit `claude_desktop_config.json` (location is described in the [Claude documentation](https://docs.anthropic.com/en/docs/claude-desktop)):
 
 ```json
 {
@@ -468,7 +481,7 @@ grep_excel --mcp
 
 #### Cursor
 
-在 Cursor 设置 → MCP 中添加：
+In Cursor, go to Settings → MCP and add:
 
 ```json
 {
@@ -481,111 +494,122 @@ grep_excel --mcp
 }
 ```
 
-### 可用工具
+### Available Tools
 
-| 工具 | 说明 | 主要参数 |
-|------|------|----------|
-| `import_file` | 导入表格文件（Excel/CSV/HTML/文本/Markdown） | `file_path` |
-| `list_files` | 列出已导入文件 | 无 |
-| `get_metadata` | 获取文件元数据（列名等） | `file_name`（可选） |
-| `get_sheet_sample` | 均匀采样行 | `file_name`, `sheet_name`, `sample_size` |
-| `get_sheet_data` | 分页获取行数据 | `file_name`, `sheet_name`, `start_row`, `end_row`, `columns` |
-| `search` | 搜索（支持上下文行、多条件筛选） | `query`, `column`, `sheet`, `mode`, `limit`, `aggregate`, `invert`, `context_lines`, `conditions` |
-| `execute_sql` | 执行 SQL | `sql`, `limit` |
-| `export_query` | 执行 SQL 并导出结果到 .xlsx | `sql`, `output_path`, `sheet_name` |
-| `get_sheet_statistics` | 按列统计（空值/去重计数/Top 值） | `file_name`, `sheet_name`, `max_top_values` |
-| `save_as` | 另存为新文件 | `file_name`, `output_path`, `sheet_name` |
-| `save` | 覆盖保存原文件 | `file_name`, `sheet_name` |
-| `update_cell` | 更新单个单元格 | `file_name`, `sheet_name`, `row`, `column`, `value` |
-| `update_cells` | 批量更新单元格 | `file_name`, `sheet_name`, `updates` |
-| `insert_rows` | 插入行 | `file_name`, `sheet_name`, `start_row`, `rows` |
-| `delete_rows` | 删除行 | `file_name`, `sheet_name`, `start_row`, `count` |
-| `add_column` | 添加列 | `file_name`, `sheet_name`, `column_name`, `default_value` |
-| `rename_column` | 重命名列 | `file_name`, `sheet_name`, `old_name`, `new_name` |
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `import_file` | Import a tabular file (Excel/CSV/HTML/text/Markdown) | `file_path` |
+| `list_files` | List imported files | none |
+| `get_metadata` | Get file metadata (column names, etc.) | `file_name` (optional) |
+| `get_sheet_sample` | Uniformly sample rows from a sheet | `file_name`, `sheet_name`, `sample_size` |
+| `get_sheet_data` | Fetch rows with pagination | `file_name`, `sheet_name`, `start_row`, `end_row`, `columns` |
+| `search` | Search (supports context lines, multi-condition filtering) | `query`, `column`, `sheet`, `mode`, `limit`, `aggregate`, `invert`, `context_lines`, `conditions` |
+| `execute_sql` | Execute a SQL query | `sql`, `limit` |
+| `export_query` | Execute SQL and export results to a .xlsx file | `sql`, `output_path`, `sheet_name` |
+| `get_sheet_statistics` | Per-column statistics (nulls / distinct count / top values) | `file_name`, `sheet_name`, `max_top_values` |
+| `materialize_query` | Save a read-only SQL result as a named session temp table for reuse in later `execute_sql` calls | `name`, `sql` |
+| `drop_temp_table` | Drop a session temp table created by `materialize_query` | `name` |
+| `save_as` | Save imported data to a new file | `file_name`, `output_path`, `sheet_name` |
+| `save` | Overwrite the original file with current data | `file_name`, `sheet_name` |
+| `update_cell` | Update a single cell | `file_name`, `sheet_name`, `row`, `column`, `value` |
+| `update_cells` | Batch-update cells | `file_name`, `sheet_name`, `updates` |
+| `insert_rows` | Insert rows | `file_name`, `sheet_name`, `start_row`, `rows` |
+| `delete_rows` | Delete rows | `file_name`, `sheet_name`, `start_row`, `count` |
+| `add_column` | Add a column | `file_name`, `sheet_name`, `column_name`, `default_value` |
+| `rename_column` | Rename a column | `file_name`, `sheet_name`, `old_name`, `new_name` |
 
-### 典型 MCP 工作流
+### Typical MCP Workflows
 
-#### 探索未知文件
-
-```
-你：导入 data.xlsx 并告诉我里面有什么
-AI：→ import_file → 显示文件名、工作表数和行数
-AI：→ get_metadata → 显示每个工作表的列名
-AI：→ get_sheet_sample → 显示 5 行均匀采样数据
-```
-
-#### 数据分析
+#### Exploring an unknown file
 
 ```
-你：分析销售数据，按地区统计销售额
-AI：→ import_file → 导入 sales.xlsx
-AI：→ execute_sql → SELECT 地区, SUM(销售额) FROM sales.Sheet1 GROUP BY 地区
+You: Import data.xlsx and tell me what's in it
+AI:  → import_file → shows file name, sheet count, and row counts
+AI:  → get_metadata → shows each sheet's column names
+AI:  → get_sheet_sample → shows 5 evenly-spaced sample rows
 ```
 
-#### 数据画像（get_sheet_statistics）
+#### Data analysis
 
 ```
-你：这个文件的数据质量怎么样？有没有空值？
-AI：→ import_file → 导入 data.xlsx
-AI：→ get_sheet_statistics → 每列的空值数、去重计数、Top 5 高频值
-     → "薪资列: 200 行中 3 行为空, 45 个不同值, 最高频: 10000(15次)"
+You: Analyze the sales data — break down revenue by region
+AI:  → import_file → imports sales.xlsx
+AI:  → execute_sql → SELECT 地区, SUM(销售额) FROM sales.Sheet1 GROUP BY 地区
 ```
 
-#### 多条件搜索 + 上下文（search 增强）
+#### Data profiling (get_sheet_statistics)
 
 ```
-你：找出薪资大于 12000 且部门是工程部的记录，附带前后 2 行上下文
-AI：→ search → query="工程部", conditions=[{column:"薪资", operator:">", value:"12000"}], context_lines=2
-     → 每个匹配结果额外返回前 2 行和后 2 行
+You: How's the data quality in this file? Any nulls?
+AI:  → import_file → imports data.xlsx
+AI:  → get_sheet_statistics → null counts, distinct counts, and top 5 frequent values per column
+     → "薪资 column: 3 of 200 rows null, 45 distinct values, most frequent: 10000 (15×)"
 ```
 
-#### 过滤导出（export_query）
+#### Multi-condition search with context (enhanced search)
 
 ```
-你：把北京地区的高薪员工导出到新文件
-AI：→ execute_sql → SELECT * FROM data.Sheet1 WHERE 城市='北京' AND 薪资 > 15000
-AI：→ export_query → sql="SELECT * FROM data.Sheet1 WHERE 城市='北京' AND 薪资 > 15000", output_path="beijing_high.xlsx"
-     → 直接生成 .xlsx 文件
+You: Find records where salary > 12000 and department is Engineering, with 2 rows of context above and below
+AI:  → search → query="工程部", conditions=[{column:"薪资", operator:">", value:"12000"}], context_lines=2
+     → each match also returns the 2 preceding and 2 following rows
 ```
 
-#### 编辑并保存
+#### Filtered export (export_query)
 
 ```
-你：把第 3 行的部门从 "工程部" 改成 "研发部"
-AI：→ update_cell → 修改单元格
+You: Export Beijing-based high-earning employees to a new file
+AI:  → execute_sql → SELECT * FROM data.Sheet1 WHERE 城市='北京' AND 薪资 > 15000
+AI:  → export_query → sql="SELECT * FROM data.Sheet1 WHERE 城市='北京' AND 薪资 > 15000", output_path="beijing_high.xlsx"
+     → generates a .xlsx file directly
+```
 
-你：保存
-AI：→ save → 覆盖原文件
+#### Session temp tables for multi-step analysis
+
+```
+You: Group the employees by department, then show only departments with more than 10 people
+AI:  → materialize_query → name="dept_summary", sql="SELECT 部门, COUNT(*) AS n FROM data.Sheet1 GROUP BY 部门"
+AI:  → execute_sql → SELECT * FROM dept_summary WHERE n > 10
+AI:  → drop_temp_table → name="dept_summary"
+```
+
+#### Edit and save
+
+```
+You: Change row 3's department from "工程部" to "研发部"
+AI:  → update_cell → modifies the cell
+
+You: Save
+AI:  → save → overwrites the original file
 ```
 
 ---
 
-## --exec 执行模式
+## `--exec` Execution Mode
 
-`--exec` 允许在命令行中直接执行 MCP 工具，无需启动 MCP 服务器。支持单条命令和多步流水线。
+`--exec` lets you run MCP tools directly from the command line without starting an MCP server. It supports single commands and multi-step pipelines.
 
-### 单条命令
+### Single Command
 
 ```bash
-# 查看帮助
+# Show help
 grep_excel --exec help
 
-# 导入并查看文件
+# Import and inspect a file
 grep_excel data.xlsx --exec '{"tool":"import_file","params":{"file_path":"data.xlsx"}}'
 
-# 搜索
+# Search
 grep_excel data.xlsx --exec '{"tool":"search","params":{"query":"张三","mode":"exact"}}'
 
-# 搜索 + 聚合
+# Search with aggregation
 grep_excel data.xlsx --exec '{"tool":"search","params":{"query":"工程部","aggregate":"职位"}}'
 
-# 执行 SQL
+# Execute SQL
 grep_excel data.xlsx --exec '{"tool":"execute_sql","params":{"sql":"SELECT * FROM sheet_1_0 LIMIT 5"}}'
 ```
 
-### 多步流水线
+### Multi-Step Pipeline
 
-使用 JSON 数组，命令按顺序执行，状态共享：
+Pass a JSON array; commands run in order with shared state:
 
 ```bash
 grep_excel --exec '[
@@ -597,229 +621,229 @@ grep_excel --exec '[
 ]'
 ```
 
-### 输出格式
+### Output Format
 
 ```bash
-# JSON 格式（默认）
+# JSON format (default)
 grep_excel data.xlsx --exec '{"tool":"list_files","params":{}}'
 
-# Markdown 表格
+# Markdown table
 grep_excel data.xlsx --exec '{"tool":"list_files","params":{}}' -f markdown
 
-# 简单 TSV 格式
+# Simple TSV format
 grep_excel data.xlsx --exec '{"tool":"list_files","params":{}}' -f simple
 ```
 
 ---
 
-## --run Shell 命令模式
+## `--run` Shell Command Mode
 
-`--run` 允许对每个匹配行执行外部 shell 命令，使用 `${列名}` 引用单元格值。
+`--run` executes an external shell command for each matching row, using `${column_name}` placeholders to reference cell values.
 
-### 基本用法
+### Basic Usage
 
 ```bash
-# 对每个匹配行执行命令
-grep_excel <文件> -q <查询> --run '<命令>'
+# Run a command for each matching row
+grep_excel <file> -q <query> --run '<command>'
 ```
 
-命令模板中使用 `${列名}` 占位符，值自动 shell 转义（单引号包裹）。`$$` 表示字面 `$`。
+Inside the command template, `${column_name}` placeholders are automatically shell-escaped (wrapped in single quotes). `$$` produces a literal `$`.
 
-### 示例
+### Examples
 
 ```bash
-# 对每个匹配行执行外部分析工具
+# Run an external analysis tool for each match
 grep_excel data.xlsx -q "ERROR" -c "级别" --run './analyzer "${内容}"'
 
-# 将命令输出写入新列，然后导出
+# Write command output to a new column, then export
 grep_excel data.xlsx -q "TODO" -c "类型" --run './classifier "${标题}"' --run-output-column "分类" -e output.xlsx
 
-# 配合 SQL 查询使用
+# Combine with a SQL query
 grep_excel data.xlsx --sql "SELECT 姓名, SQL FROM sheet_1_0 WHERE 类型='旧版'" --run './formatter "${SQL}"'
 ```
 
-### 相关选项
+### Related Options
 
-| 选项 | 说明 |
-|------|------|
-| `--run-output-column` | 将命令 stdout 写入该列（列不存在则自动创建） |
-| `--export` | 处理完成后导出完整 Excel 文件（需要 mcp-server feature） |
+| Option | Description |
+|--------|-------------|
+| `--run-output-column` | Write the command's stdout to this column (created automatically if it doesn't exist) |
+| `--export` | Export the full Excel file after processing completes (requires the `mcp-server` feature) |
 
-> **注意**：`--run` 必须配合 `--query`（`-q`）或 `--sql`（`-x`）使用。命令通过 `sh -c` 执行。
-
----
-
-## 搜索模式详解
-
-### fulltext（全文搜索）— 默认
-
-不区分大小写的子串匹配。最适合一般性搜索。
-
-```
-查询: "john"
-匹配: "John Smith", "Johnson", "JOHN", "john@example.com"
-不匹配: "Jon"
-```
-
-### exact（精确匹配）
-
-区分大小写的完全匹配。整个单元格内容必须完全等于查询文本。
-
-```
-查询: "Engineering"
-匹配: "Engineering" (完全一致)
-不匹配: "engineering", "Engineering Dept"
-```
-
-### wildcard（通配符）
-
-SQL LIKE 风格的模式匹配。不区分大小写。
-
-| 通配符 | 含义 |
-|--------|------|
-| `%` | 匹配任意字符序列（包括空字符串） |
-| `_` | 匹配恰好一个字符 |
-
-```
-查询: "San%"  → 匹配 "San Francisco", "San Jose", "San"
-查询: "A__"   → 匹配 "ABC", "Amy"（恰好 3 个字符）
-查询: "%公司"  → 匹配 "科技有限公司", "贸易公司"
-```
-
-### regex（正则表达式）
-
-正则表达式匹配。不区分大小写。支持完整 Rust 正则语法。
-
-```
-查询: "张三|李四"                    → 匹配包含任一关键词的单元格
-查询: "\d{4}-\d{2}-\d{2}"           → 匹配日期格式 2024-01-15
-查询: "^[A-Z]{3}-\d{3}$"            → 匹配编号格式 ABC-123
-查询: "(error|warning|critical)"    → 匹配日志级别
-```
+> **Note**: `--run` must be combined with `--query` (`-q`) or `--sql` (`-x`). Commands execute via `sh -c`.
 
 ---
 
-## SQL 查询指南
+## Search Modes Explained
 
-### 表名规则
+### fulltext — Default
 
-导入的工作表存储在数据库中，命名规则为：
+Case-insensitive substring matching. Best suited for general-purpose searches.
 
-- **内部表名**：`sheet_{文件ID}_{工作表索引}`（如 `sheet_1_0`、`sheet_2_0`）
-- **友好别名**：`文件名.工作表名`（如 `data.Sheet1`、`employees.员工表`）
+```
+Query: "john"
+Matches: "John Smith", "Johnson", "JOHN", "john@example.com"
+No match: "Jon"
+```
 
-先使用 `--list-tables` 或 MCP `list_files` 查看可用表名。
+### exact
 
-### 基础查询
+Case-sensitive full-cell match. The entire cell content must equal the query exactly.
+
+```
+Query: "Engineering"
+Match: "Engineering" (exact)
+No match: "engineering", "Engineering Dept"
+```
+
+### wildcard
+
+SQL `LIKE`-style pattern matching. Case-insensitive.
+
+| Wildcard | Meaning |
+|----------|---------|
+| `%` | Matches any sequence of characters (including the empty string) |
+| `_` | Matches exactly one character |
+
+```
+Query: "San%"  → matches "San Francisco", "San Jose", "San"
+Query: "A__"   → matches "ABC", "Amy" (exactly 3 characters)
+Query: "%公司"  → matches "科技有限公司", "贸易公司"
+```
+
+### regex
+
+Regular expression matching. Case-insensitive. Supports the full Rust regex syntax.
+
+```
+Query: "张三|李四"                    → matches cells containing either keyword
+Query: "\d{4}-\d{2}-\d{2}"           → matches dates like 2024-01-15
+Query: "^[A-Z]{3}-\d{3}$"            → matches IDs like ABC-123
+Query: "(error|warning|critical)"    → matches log levels
+```
+
+---
+
+## SQL Query Guide
+
+### Table Naming
+
+Imported worksheets are stored in the database using the following conventions:
+
+- **Internal table name**: `sheet_{file_id}_{sheet_index}` (e.g. `sheet_1_0`, `sheet_2_0`)
+- **Friendly alias**: `filename.sheetname` (e.g. `data.Sheet1`, `employees.员工表`)
+
+Use `--list-tables` or the MCP `list_files` tool to see available table names first.
+
+### Basic Queries
 
 ```sql
--- 查看前 10 行
+-- View the first 10 rows
 SELECT * FROM sheet_1_0 LIMIT 10
 
--- 筛选列
+-- Select specific columns
 SELECT 姓名, 部门 FROM sheet_1_0
 
--- 条件筛选
+-- Conditional filter
 SELECT * FROM sheet_1_0 WHERE 年龄 > 30
 
--- 排序
+-- Sort
 SELECT * FROM sheet_1_0 ORDER BY 薪资 DESC
 ```
 
-### 聚合分析
+### Aggregation
 
 ```sql
--- 计数
+-- Count
 SELECT 部门, COUNT(*) as 人数 FROM sheet_1_0 GROUP BY 部门
 
--- 求和
+-- Sum
 SELECT 部门, SUM(薪资) as 总薪资 FROM sheet_1_0 GROUP BY 部门
 
--- 平均值
+-- Average
 SELECT 部门, AVG(薪资) as 平均薪资 FROM sheet_1_0 GROUP BY 部门
 ```
 
-### 跨表查询（JOIN）
+### Cross-Table Queries (JOIN)
 
 ```sql
--- 先导入两个文件，再用友好别名查询
+-- Import both files first, then query using friendly aliases
 SELECT e.姓名, e.部门, d.部门负责人
 FROM employees.Sheet1 e
 JOIN departments.Sheet1 d ON e.部门 = d.部门名称
 ```
 
-### DuckDB 特有函数
+### DuckDB-Specific Functions
 
-使用 DuckDB 引擎时（`--features engine-duckdb`），可以使用：
+When using the DuckDB engine (`--features engine-duckdb`), you can take advantage of:
 
 ```sql
--- 不区分大小写匹配
+-- Case-insensitive matching
 SELECT * FROM sheet_1_0 WHERE 姓名 ILIKE '%张%'
 
--- 正则匹配
+-- Regex matching
 SELECT * FROM sheet_1_0 WHERE regexp_matches(邮箱, '.*@company\.com')
 
--- 类型转换
+-- Type casting
 SELECT 姓名, 薪资::INTEGER * 12 as 年薪 FROM sheet_1_0
 
--- 窗口函数
+-- Window functions
 SELECT 姓名, 薪资, RANK() OVER (PARTITION BY 部门 ORDER BY 薪资 DESC) as 排名
 FROM sheet_1_0
 ```
 
 ---
 
-## 文件编辑
+## File Editing
 
-grep-excel 支持通过 MCP 或 `--exec` 模式编辑 Excel 文件。
+grep-excel can edit Excel files via MCP or `--exec` mode.
 
-### 单元格编辑
+### Cell Editing
 
 ```bash
-# 更新单个单元格
+# Update a single cell
 grep_excel data.xlsx --exec '{"tool":"update_cell","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","row":0,"column":"姓名","value":"张三"}}'
 
-# 批量更新
+# Batch update
 grep_excel data.xlsx --exec '{"tool":"update_cells","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","updates":[{"row":0,"column":"姓名","value":"张三"},{"row":1,"column":"部门","value":"研发部"}]}}'
 ```
 
-### 行列操作
+### Row & Column Operations
 
 ```bash
-# 在第 5 行前插入新行
+# Insert a new row before row 5
 grep_excel data.xlsx --exec '{"tool":"insert_rows","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","start_row":4,"rows":[["新员工","研发部","工程师"]]}}'
 
-# 删除第 3-5 行（共 3 行）
+# Delete rows 3–5 (3 rows total)
 grep_excel data.xlsx --exec '{"tool":"delete_rows","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","start_row":2,"count":3}}'
 
-# 添加新列
+# Add a new column
 grep_excel data.xlsx --exec '{"tool":"add_column","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","column_name":"状态","default_value":"在职"}}'
 
-# 重命名列
+# Rename a column
 grep_excel data.xlsx --exec '{"tool":"rename_column","params":{"file_name":"data.xlsx","sheet_name":"Sheet1","old_name":"部门","new_name":"所属部门"}}'
 ```
 
-### 保存
+### Saving
 
 ```bash
-# 覆盖原文件
+# Overwrite the original file
 grep_excel data.xlsx --exec '{"tool":"save","params":{"file_name":"data.xlsx"}}'
 
-# 另存为新文件
+# Save as a new file
 grep_excel data.xlsx --exec '{"tool":"save_as","params":{"file_name":"data.xlsx","output_path":"data_modified.xlsx"}}'
 ```
 
-> **注意**：`save` 会覆盖原始文件，建议先用 `save_as` 另存备份。`save` 功能需要 `rust_xlsxwriter` feature flag。
+> **Note**: `save` overwrites the original file — consider using `save_as` to keep a backup first. The `save` / `save_as` functionality requires the `mcp-server` feature flag (which includes xlsx write support).
 
-> **只读格式**：`.docx` 和 `.pptx` 仅支持导入、搜索与查询导出（`export_query` / `--export`），所有编辑与保存类工具（`update_cell`、`update_cells`、`insert_rows`、`delete_rows`、`add_column`、`rename_column`、`save`、`save_as`）会直接报错拒绝。
+> **Read-only formats**: `.docx` and `.pptx` support only import, search, and query export (`export_query` / `--export`). All editing and save tools (`update_cell`, `update_cells`, `insert_rows`, `delete_rows`, `add_column`, `rename_column`, `save`, `save_as`) are rejected with an error.
 
 ---
 
-## 输出格式
+## Output Formats
 
-`--format` / `-f` 选项支持四种输出格式：
+The `--format` / `-f` option supports four output formats:
 
-### markdown（默认）
+### markdown (default)
 
 ```
 | 文件 | Sheet | 姓名 | 部门 |
@@ -830,11 +854,11 @@ grep_excel data.xlsx --exec '{"tool":"save_as","params":{"file_name":"data.xlsx"
 
 ### pretty
 
-带对齐的美化格式，适合终端直接阅读。
+Aligned, human-readable formatting — ideal for reading directly in the terminal.
 
 ### json
 
-完整 JSON 格式，适合程序化处理。
+Full JSON format, suitable for programmatic processing.
 
 ```json
 {
@@ -856,7 +880,7 @@ grep_excel data.xlsx --exec '{"tool":"save_as","params":{"file_name":"data.xlsx"
 
 ### simple
 
-TSV（Tab-Separated Values）格式，适合导入其他工具处理。
+TSV (tab-separated values) format, suitable for piping into other tools.
 
 ```
 文件	Sheet	姓名	部门
@@ -865,59 +889,68 @@ data	Sheet1	张三	工程部
 
 ---
 
-## 常见问题
+## FAQ
 
-### Q: 支持哪些文件格式？
+### Q: What file formats are supported?
 
-A: `.xlsx`、`.xls`、`.xlsm`、`.xlsb`、`.ods`、`.csv`、`.tsv`/`.tab`、`.html`/`.htm`、`.txt`、`.md`/`.markdown`、`.dbf`、`.xml`、`.docx`、`.pptx`，以及 `.zip`、`.tar` 系列归档和 `.zip.001` 分卷压缩包。HTML 与文本文件会自动检测编码；扩展名缺失或误导时可用 `--as` 强制指定格式；详见 [支持的文件格式](#支持的文件格式)。
+A: `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.csv`, `.tsv`/`.tab`, `.html`/`.htm`, `.txt`, `.md`/`.markdown`, `.dbf`, `.xml`, `.docx`, `.pptx`, plus `.zip` / `.tar` archive families and `.zip.001` split archives. HTML and text files have encoding auto-detected; when an extension is missing or misleading, use `--as` to force a format. See [Supported File Formats](#supported-file-formats) for the full list.
 
-### Q: 如何加速大文件搜索？
+### Q: How do I speed up searching large files?
 
-A: 使用 DuckDB 引擎（`--features engine-duckdb` 或 `--features full` 构建）。DuckDB 专为 OLAP 查询优化，处理百万行数据秒级响应。
+A: Use the DuckDB engine (build with `--features engine-duckdb` or `--features full`). DuckDB is purpose-built for OLAP queries and handles millions of rows with sub-second response times.
 
-### Q: MCP 模式下如何编辑文件？
+### Q: How do I edit files in MCP mode?
 
-A: 使用 `update_cell` / `update_cells` 修改数据后，必须调用 `save` 或 `save_as` 才能持久化。`save` 依赖 `rust_xlsxwriter` feature flag。
+A: After modifying data with `update_cell` / `update_cells`, you must call `save` or `save_as` to persist the changes. The `save` functionality requires the `mcp-server` feature flag.
 
-### Q: 如何修复损坏的 xlsx 文件？
+### Q: How do I repair a corrupted xlsx file?
 
-A: 使用 `--repair` / `-r` 选项。grep-excel 会尝试在 ZIP/XML 层面恢复数据。如果常规导入失败会自动触发修复模式。
+A: Use the `--repair` / `-r` option. grep-excel attempts to recover data at the ZIP/XML level. If a normal import fails, repair mode is triggered automatically.
 
-### Q: 中文搜索支持吗？
+### Q: Does it support Chinese (CJK) search?
 
-A: 完全支持。grep-excel 基于 UTF-8，中文搜索与英文搜索同样流畅。TUI 和 CLI 帮助文本会自动检测系统语言并显示中文或英文。
+A: Fully supported. grep-excel is built on UTF-8, so Chinese search works as smoothly as English. The TUI and CLI help text auto-detect your system language and display Chinese or English accordingly.
 
-### Q: 如何设置中文界面？
+### Q: How do I switch to the Chinese interface?
 
-A: 设置环境变量 `LANG=zh_CN.UTF-8` 即可。grep-excel 会在启动时自动检测。
+A: Set the `LANG=zh_CN.UTF-8` environment variable. grep-excel detects it automatically at startup.
 
-### Q: Windows 上能使用吗？
+### Q: Does it work on Windows?
 
-A: 支持 Windows 7 及以上版本。需要启用 ANSI 转义序列支持的终端（如 Windows Terminal，不支持旧版 cmd.exe）。
+A: Yes, Windows 7 and later are supported. You need a terminal with ANSI escape-sequence support (such as Windows Terminal; the legacy `cmd.exe` is not supported).
 
-### Q: 如何在 TUI 中执行 SQL？
+### Q: How do I run SQL in the TUI?
 
-A: 按 `S` 进入 SQL 模式，输入查询语句后按 `Enter`。先按 `o` 查看可用的表名。导入后会自动浏览首个 sheet；用 `Ctrl+←/→` 切换同文件 Sheet，`Ctrl+↑/↓` 切换文件。
+A: Press `S` to enter SQL mode, type your query, and press `Enter`. Press `o` first to see available table names. After import the first sheet auto-browses; use `Ctrl+←/→` to switch sheets within a file and `Ctrl+↑/↓` to switch files.
 
-### Q: REPL 如何导出查询结果？
+### Q: How do I export query results from the REPL?
 
-A: 使用 `.save <文件> [csv|json|tsv|table]` 保存上次结果，或 `.output <文件>` 将后续查询持续写入 CSV，再用 `.output` 恢复终端输出。
+A: Use `.save <file> [csv|json|tsv|table]` to save the last result, or `.output <file>` to continuously write subsequent query results to CSV, then call `.output` again to restore terminal output.
 
-### Q: --exec 和 --mcp 有什么区别？
+### Q: What's the difference between `--exec` and `--mcp`?
 
-A: `--exec` 是 CLI 一次性执行模式（执行完退出），`--mcp` 启动持久化 MCP 服务器（等待 AI 助手连接）。
+A: `--exec` is a one-shot CLI execution mode (it exits after running), while `--mcp` starts a persistent MCP server that waits for an AI assistant to connect.
 
-### Q: DuckDB 引擎和 SQLite 引擎怎么选？
+### Q: DuckDB engine or SQLite engine — which should I choose?
 
-A: DuckDB 专为分析查询优化，适合聚合、JOIN、窗口函数等操作。SQLite 更轻量，适合简单查询。默认内存引擎无额外依赖，适合基本搜索。
+A: DuckDB is optimized for analytical queries and is ideal for aggregations, JOINs, and window functions. SQLite is lighter and fine for simple queries. The default in-memory engine has no external dependencies and is great for basic search.
 
-### Q: Excel 中的日期显示为什么格式？
+### Q: How are Excel dates displayed?
 
-A: Excel 内部将日期存储为序列号（如 `46188` = 2026-06-15）。grep-excel 会**自动检测日期列**并将序列号转换为 ISO 8601 格式字符串：
+A: Excel stores dates internally as serial numbers (e.g. `46188` = 2026-06-15). grep-excel **auto-detects date columns** and converts serial numbers to ISO 8601 format strings:
 
-- 纯日期列显示为 `2026-06-15`
-- 包含时间的列显示为 `2026-06-15 14:30:00`
-- 可以直接用日期片段搜索，如 `-q 06-15` 匹配 6 月 15 日，`-q 2026-06` 匹配 2026 年 6 月
-- `--repair` 修复模式也会执行同样的日期转换
+- Pure date columns display as `2026-06-15`
+- Columns containing time display as `2026-06-15 14:30:00`
+- You can search on date fragments directly — e.g. `-q 06-15` matches June 15th, `-q 2026-06` matches June 2026
+- `--repair` mode applies the same date conversion
 
-检测逻辑分两层：① 如果列中已有 `Data::DateTime` 类型单元格（高置信度）；② 如果列名包含日期相关关键词且超过 50% 的值为纯整数且在 Excel 序列号范围内（保守兜底检测）。数值列（如薪资）不受影响。
+Detection works in two layers: (1) if a column already contains `Data::DateTime`-typed cells (high confidence); (2) if the column name contains date-related keywords and more than 50% of values are plain integers within the Excel serial-number range (a conservative fallback). Numeric columns (such as salary) are unaffected.
+
+---
+
+## Related Documentation
+
+- [README (Chinese)](../README.zh-CN.md) — project overview and feature summary
+- [User Guide (Chinese)](./UserGuide.zh-CN.md) — this guide in Chinese
+- [Developer Guide (Chinese)](./DeveloperGuide.zh-CN.md) — architecture, `SearchEngine` trait, and MCP development
+- [Contributing (Chinese)](../CONTRIBUTING.zh-CN.md) — development process, features, and PR checklist
