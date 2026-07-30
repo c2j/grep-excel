@@ -9,6 +9,7 @@ Step-by-step tutorials for common real-world tasks.
 | Skill | Description |
 |-------|-------------|
 | [Analyzing Database Exports](./analyzing-database-exports.md) | Import multi-table DB dumps, JOIN across files, aggregate, and export results |
+| [Analyzing Database Performance Reports](./analyzing-database-reports.md) | Diagnose Oracle AWR and openGauss WDR reports with SQL search and analysis |
 | [Debugging Corrupted Files](./debugging-corrupted-files.md) | Recover data from damaged Excel files with `--repair` |
 | [Using with AI Assistants](./using-with-ai-assistants.md) | Integrate grep-excel MCP with Claude Desktop or Cursor |
 | [Batch Processing Pipelines](./batch-processing-pipelines.md) | Automate workflows with `--exec` pipelines and `--run` shell commands |
