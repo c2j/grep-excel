@@ -60,7 +60,7 @@ cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xls
 
 ### 先读再改
 1. 确认改动落在哪个 crate（本仓库是 Cargo workspace，见「仓库地图」）。
-2. 只用本文件列出的 cargo 命令；不要发明裸 `cargo update`、不要擅自切换 toolchain（以 `rust-toolchain.toml` 为准）。
+2. 只用本文件列出的 cargo 命令；不要发明裸 `cargo update`。本仓库**没有** `rust-toolchain.toml`，toolchain 以 CI 使用的 `stable` 为准，不要擅自切换或加 `+nightly`。
 3. 先跑与改动相关的最小测试；提交前再跑 workspace 门禁（fmt + clippy + test）。
 4. 完成一个循环后按「完成标准与汇报」汇报，不要只说「做完了」。
 
@@ -76,10 +76,10 @@ cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xls
 - 把探索草稿、临时脚本、调试 `dbg!`/`println!` 留在主代码
 
 **Ask first**
-- 改人类已有测试（含断言、fixture、snapshot）
+- 改人类已有测试（含断言、fixture、golden 期望值）
 - 新增运行时依赖、`unsafe`、新的 workspace crate、新的外部服务
 - 为不可测代码做超出当前改动路径的重构
-- 接受/更新 snapshot（insta / golden file）且行为含义发生变化
+- 接受/更新 golden file 或固定 fixture 的期望值，且行为含义发生变化
 - 关闭 clippy lint、新增 `#[allow]`
 
 **Always**
@@ -109,7 +109,7 @@ cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xls
 
 ### 遗留代码与接缝
 
-**特征测试** — 锁定现有行为，不是证明它正确。用固定 fixture 或 `insta` snapshot。更新 snapshot 必须在汇报里写清 diff 含义；默认不接受「看起来差不多」。
+**特征测试** — 锁定现有行为，不是证明它正确。本仓库**未引入 `insta`**，用固定 fixture + 显式断言，或与 golden 文件逐字比对。更新期望值必须在汇报里写清 diff 含义；默认不接受「看起来差不多」。
 
 **接缝（优先顺序，靠后的更差）**
 1. trait + 泛型或 `impl Trait`，测试用假类型
@@ -128,7 +128,7 @@ cargo run -p grep-excel --bin grep_excel -- tests/fixtures/manual/test_data2.xls
 | 文档测试 | `///` 示例 | 公共 API 必须可运行；禁止滥用 `no_run` |
 | CLI/二进制 | 项目惯用方式 | 退出码与 stdout 契约 |
 | 不变量 | `proptest`（项目已用时） | 往返解析、幂等、单调性 |
-| 特征/快照 | `insta` 或固定 fixture | 遗留输出；接受 snapshot 必须说明 |
+| 特征/golden | 固定 fixture（本仓库未引入 `insta`） | 遗留输出；更新期望值必须说明 |
 
 不要把本该测公共契约的内容塞进 `#[cfg(test)]` 去读私有字段。
 
@@ -139,7 +139,7 @@ Rust 的 Red 允许是：测试引用了尚不存在的类型/函数导致编译
 - 无必要 `unsafe`；有则必须 `SAFETY` 注释
 - 一次性 `cargo update` 整个 lockfile
 - 用 `#[allow(...)]` 静默应修复的 lint
-- 为绿而改 snapshot 却不解释行为是否应该变
+- 为绿而改 golden/期望值却不解释行为是否应该变
 
 ### 命令
 
@@ -148,22 +148,25 @@ Rust 的 Red 允许是：测试引用了尚不存在的类型/函数导致编译
 cargo test -p grep-excel-core <test_name>
 
 # 默认引擎测试
-cargo test
+cargo test --workspace
 
-# 特定引擎测试
-cargo test --features engine-duckdb
-cargo test --features engine-sqlite
+# 特定引擎测试（根是虚拟 manifest，带 feature 必须指定 -p）
+cargo test -p grep-excel --features engine-duckdb
+cargo test -p grep-excel --features engine-sqlite
 
 # 全功能测试（含 MCP）
-cargo test --features full
+cargo test -p grep-excel --features full
 
-# 提交前门禁
+# 提交前门禁（与 .github/workflows/ci.yml 逐条一致）
 cargo fmt --all -- --check
-cargo clippy --all --all-targets
-cargo test
+cargo clippy -p grep-excel --features full -- -D warnings
+cargo test -p grep-excel-core --features pdf-support,parquet-support,archive-support
+cargo test -p grep-excel --features full
 ```
 
-循环内只跑受影响 crate；提交前再 workspace。
+> ⚠️ 裸 `cargo test`（default features）**覆盖不到 CI 跑的组合**。CI 用的是上面三条（`grep-excel-core` 带 pdf/parquet/archive、`grep-excel` 带 `full`，clippy 带 `-D warnings`）——只跑裸 `cargo test` 会出现「本地绿、CI 红」。
+
+循环内只跑受影响 crate；提交前跑上面的完整门禁。
 
 ### 完成标准与汇报
 
@@ -184,5 +187,5 @@ cargo test
 ### 质量判断（自我检查）
 - 这条测试在实现写错时会失败吗？
 - 我是否在测行为，而不是私有实现细节？
-- 我是否用 skip、更宽断言、unwrap、snapshot 盲收换绿？
+- 我是否用 skip、更宽断言、unwrap、golden 盲收换绿？
 - 命令是否来自本文件，而不是我编的？
